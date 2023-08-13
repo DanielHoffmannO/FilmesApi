@@ -4,16 +4,17 @@ using Filmes.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 using Serilog;
 
 namespace Filmes.Persistence
 {
     public static class DependencyInjection
     {
-        public static IServiceCollection RegisterPersistence(this IServiceCollection services) =>
+        public static IServiceCollection RegisterPersistence(this IServiceCollection services, IConfiguration configuration) =>
             services.AddDbContext<FilmeContext>(options =>
             {
-                options.UseSqlServer("Data Source=HOFFNOTE;User ID=sa;Password=daniel20;Connect Timeout=30;Encrypt=False;Trust Server Certificate=False;Application Intent=ReadWrite;Multi Subnet Failover=False");
+                options.UseSqlServer(configuration.GetConnectionString("FilmeConnection"));
 #if DEBUG
                 var loggerFactory = new LoggerFactory().AddSerilog(Log.Logger);
                 options.UseLoggerFactory(loggerFactory);

@@ -13,9 +13,7 @@ namespace Filmes.Persistence.Repositories
         {
         }
 
-        public Filme GetFilmeById(int id)
-        {
-            return DbSet.First();
-        }
+        public List<Filme> ObterLista() => DbSet.ToList();
+        public Filme ObterUltimo() => DbSet.OrderByDescending(x=>x.Id).First();
     }
 }

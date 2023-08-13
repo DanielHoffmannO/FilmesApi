@@ -14,3 +14,4 @@ namespace Filmes.Persistence.Context
             => type => type.Namespace != null && type.Namespace.EndsWith("Mappings.Filmes");
     }
 }
+

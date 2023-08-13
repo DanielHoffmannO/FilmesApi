@@ -1,5 +1,6 @@
 using Filmes.Persistence;
 using Havan.Credito.Risco.Application.Configuration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.OpenApi.Models;
 using Serilog;
 using System.Text.Json.Serialization;
@@ -34,7 +35,7 @@ services.AddMemoryCache();
 
 /* IOC */
 services.RegisterApplication();
-services.RegisterPersistence();
+services.RegisterPersistence(builder.Configuration);
 //services.RegisterServices(configuration);
 /* IOC */
 
