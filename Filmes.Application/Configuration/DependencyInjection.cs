@@ -2,7 +2,7 @@
 using Filmes.Application.Services;
 using Filmes.Application.Interfece;
 
-namespace Havan.Credito.Risco.Application.Configuration;
+namespace Filmes.Application.Configuration;
 
 public static class DependencyInjection
 {
