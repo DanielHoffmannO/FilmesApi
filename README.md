@@ -19,10 +19,6 @@ Este projeto implementa uma API web para gerenciar filmes. Ela fornece pontos de
 
 ## Começando
 
-### Pré-requisitos
-
-- [.NET Core SDK](https://dotnet.microsoft.com/download) (versão 3.1 ou superior)
-
 ### Instalação
 
 1. Clone este repositório para a sua máquina local.
@@ -56,10 +52,6 @@ Marca um filme como assistido, com base no seu ID.
 ### DELETE /Filme/{id}
 
 Remove um filme da coleção usando o seu ID.
-
-## Enumerações
-
-O projeto inclui uma enumeração `EGenero` que representa vários gêneros de filmes.
 
 ## Mapeamento de Entidades
 
