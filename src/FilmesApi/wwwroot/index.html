@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Filmes</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,sans-serif;background:#0d0d0d;color:#eee;min-height:100vh}
+header{background:#111;padding:16px 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #222}
+h1{font-size:20px;font-weight:600}
+.actions{display:flex;gap:8px}
+button{background:#222;color:#eee;border:1px solid #333;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:13px}
+button:hover{background:#333}
+.filters{padding:12px 24px;display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid #1a1a1a}
+.filter-btn{background:none;border:1px solid #333;color:#888;padding:6px 12px;border-radius:20px;font-size:12px}
+.filter-btn.active{border-color:#e50914;color:#fff}
+main{padding:24px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px}
+.card{background:#181818;border-radius:8px;overflow:hidden;cursor:pointer;transition:transform .15s,box-shadow .15s}
+.card:hover{transform:scale(1.03);box-shadow:0 8px 24px rgba(0,0,0,.5)}
+.card-body{padding:12px}
+.card-title{font-size:14px;font-weight:500;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card-meta{font-size:11px;color:#888;display:flex;gap:8px}
+.card-meta .badge{background:#e50914;color:#fff;padding:1px 6px;border-radius:3px;font-size:10px}
+.card.assistido .card-body{border-left:3px solid #2ecc40}
+.player-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:100;flex-direction:column;align-items:center;justify-content:center}
+.player-overlay.active{display:flex}
+.player-overlay video{max-width:95vw;max-height:85vh;border-radius:8px}
+.player-close{position:absolute;top:16px;right:24px;font-size:28px;color:#fff;cursor:pointer;z-index:101}
+.empty{text-align:center;color:#555;padding:60px 0;font-size:15px}
+.scan-msg{position:fixed;bottom:20px;right:20px;background:#2ecc40;color:#000;padding:10px 16px;border-radius:6px;font-size:13px;display:none}
+</style>
+</head>
+<body>
+<header>
+  <h1>🎬 Filmes</h1>
+  <div class="actions">
+    <button onclick="scanMedia()">📂 Scan Mídia</button>
+  </div>
+</header>
+
+<div class="filters" id="filters">
+  <button class="filter-btn active" data-filter="all">Todos</button>
+  <button class="filter-btn" data-filter="assistido">Assistidos</button>
+  <button class="filter-btn" data-filter="nao-assistido">Não assistidos</button>
+</div>
+
+<main>
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="empty" style="display:none">Nenhum filme encontrado. Clique em "Scan Mídia" para importar.</div>
+</main>
+
+<div class="player-overlay" id="player">
+  <span class="player-close" onclick="closePlayer()">✕</span>
+  <video id="video" controls autoplay></video>
+</div>
+
+<div class="scan-msg" id="scanMsg"></div>
+
+<script>
+const API = '/api/filmes';
+let filmes = [];
+let filtro = 'all';
+
+async function load() {
+  const res = await fetch(API);
+  filmes = await res.json();
+  render();
+}
+
+function render() {
+  const grid = document.getElementById('grid');
+  const empty = document.getElementById('empty');
+  let filtered = filmes;
+  if (filtro === 'assistido') filtered = filmes.filter(f => f.assistido);
+  if (filtro === 'nao-assistido') filtered = filmes.filter(f => !f.assistido);
+
+  if (!filtered.length) { grid.innerHTML = ''; empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+
+  grid.innerHTML = filtered.map(f => `
+    <div class="card ${f.assistido ? 'assistido' : ''}" onclick="play(${f.id})">
+      <div class="card-body">
+        <div class="card-title" title="${f.titulo}">${f.titulo}</div>
+        <div class="card-meta">
+          <span>${f.genero}</span>
+          ${f.anoLancamento ? `<span>${f.anoLancamento}</span>` : ''}
+          ${f.assistido ? '<span class="badge">✓</span>' : ''}
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+function play(id) {
+  const video = document.getElementById('video');
+  video.src = `${API}/${id}/stream`;
+  document.getElementById('player').classList.add('active');
+  // marca como assistido
+  fetch(`${API}/${id}/assistido`, { method: 'PUT' }).then(() => {
+    const f = filmes.find(x => x.id === id);
+    if (f) f.assistido = true;
+  });
+}
+
+function closePlayer() {
+  const video = document.getElementById('video');
+  video.pause();
+  video.src = '';
+  document.getElementById('player').classList.remove('active');
+  render();
+}
+
+async function scanMedia() {
+  const res = await fetch(`${API}/scan`, { method: 'POST' });
+  const data = await res.json();
+  const msg = document.getElementById('scanMsg');
+  msg.textContent = `${data.importados} vídeo(s) importado(s)`;
+  msg.style.display = 'block';
+  setTimeout(() => msg.style.display = 'none', 3000);
+  load();
+}
+
+document.getElementById('filters').addEventListener('click', e => {
+  if (!e.target.classList.contains('filter-btn')) return;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  e.target.classList.add('active');
+  filtro = e.target.dataset.filter;
+  render();
+});
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePlayer(); });
+load();
+</script>
+</body>
+</html>

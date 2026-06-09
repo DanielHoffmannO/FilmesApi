@@ -31,8 +31,10 @@ using (var scope = app.Services.CreateScope())
 
 // ─── Pipeline ───────────────────────────────────────────────────────────
 app.UseCors();
+app.UseStaticFiles();
 app.UseSwagger();
-app.UseSwaggerUI(c => c.RoutePrefix = string.Empty);
+app.UseSwaggerUI(c => c.RoutePrefix = "swagger");
 app.MapControllers();
+app.MapFallbackToFile("index.html");
 
 app.Run();
