@@ -1,72 +1,78 @@
-# API do Controller de Filmes
+# 🎬 FilmesApi — Mini Jellyflix Caseiro
 
-Este projeto implementa uma API web para gerenciar filmes. Ela fornece pontos de extremidade para executar várias ações relacionadas a filmes, como recuperar uma lista de filmes, adicionar novos filmes, atualizar detalhes de filmes, marcar filmes como assistidos e remover filmes.
+API REST para gerenciar e assistir sua coleção de filmes na TV. Sem login, sem complicação — sobe no Docker e acessa de qualquer dispositivo na LAN.
 
-## Sumário
+## 🎯 Features
 
-- [Começando](#começando)
-  - [Pré-requisitos](#pré-requisitos)
-  - [Instalação](#instalação)
-- [Pontos de Extremidade](#pontos-de-extremidade)
-  - [GET /Filme](#get-filme)
-  - [POST /Filme](#post-filme)
-  - [PUT /Filme/{id}](#put-filmeid)
-  - [PUT /Filme/{id}/MarcarAssistido](#put-filmeidmarcarassistido)
-  - [DELETE /Filme/{id}](#delete-filmeid)
-- [Enumerações](#enumerações)
-- [Mapeamento de Entidades](#mapeamento-de-entidades)
-- [Bibliotecas](#bibliotecas)
+- **Scan automático** de pasta de mídia (detecta `.mp4`, `.mkv`, `.avi`, etc.)
+- **Streaming de vídeo** com Range Processing (funciona em Smart TV, Chromecast, browser)
+- **CRUD** de filmes com filtro por gênero e status (assistido/não assistido)
+- **SQLite** — zero config de banco
+- **CORS aberto** — acessa de qualquer dispositivo na rede
+- **Docker** — um `docker compose up` e pronto
 
-## Começando
+## 📁 Estrutura
 
-### Instalação
+```
+FilmesApi/
+├── src/
+│   └── FilmesApi/
+│       ├── Controllers/FilmesController.cs
+│       ├── Services/FilmeService.cs
+│       ├── Models/Filme.cs + Dtos.cs
+│       ├── Data/AppDbContext.cs
+│       ├── Program.cs
+│       └── appsettings.json
+├── docker-compose.yml
+├── Dockerfile
+└── media/              ← seus filmes aqui
+```
 
-1. Clone este repositório para a sua máquina local.
-2. Navegue até o diretório raiz do projeto usando a linha de comando.
-3. Execute o seguinte comando para iniciar a aplicação:
+## 🚀 Como Rodar
 
-   ```bash
-   dotnet run
-   ```
+### Docker (recomendado)
 
-A API estará acessível em `https://localhost:5001` por padrão.
+```bash
+# Coloque seus filmes na pasta media/
+mkdir media data
 
-## Pontos de Extremidade
+# Sobe
+docker compose up -d
 
-### GET /Filme
+# Acessa na TV: http://IP_DO_PC:8080
+```
 
-Recupera uma lista de filmes.
+### Local (dev)
 
-### POST /Filme
+```bash
+dotnet run --project src/FilmesApi
+# Swagger: http://localhost:5000
+```
 
-Adiciona um novo filme à coleção.
+## 📡 Endpoints
 
-### PUT /Filme/{id}
+| Método | Rota | Descrição |
+|---|---|---|
+| `GET` | `/api/filmes` | Lista filmes (filtros: `?genero=Acao&assistido=false`) |
+| `GET` | `/api/filmes/{id}` | Detalhes de um filme |
+| `POST` | `/api/filmes` | Adiciona filme manualmente |
+| `PUT` | `/api/filmes/{id}/assistido` | Marca como assistido |
+| `DELETE` | `/api/filmes/{id}` | Remove |
+| `POST` | `/api/filmes/scan` | Escaneia pasta de mídia e importa novos vídeos |
+| `GET` | `/api/filmes/{id}/stream` | Stream do vídeo (pra assistir direto) |
 
-Atualiza os detalhes de um filme existente identificado pelo seu ID.
+### Assistir na TV
 
-### PUT /Filme/{id}/MarcarAssistido
+1. Suba o container
+2. Abra o browser da TV: `http://192.168.x.x:8080/api/filmes`
+3. Pra assistir: `http://192.168.x.x:8080/api/filmes/1/stream`
 
-Marca um filme como assistido, com base no seu ID.
+## 🛠️ Stack
 
-### DELETE /Filme/{id}
+- .NET 8 / ASP.NET Core
+- Entity Framework Core + SQLite
+- Docker (Alpine multi-stage)
 
-Remove um filme da coleção usando o seu ID.
+## 📄 Licença
 
-## Mapeamento de Entidades
-
-A classe `FilmesMapping` define o mapeamento de entidade para tabela de banco de dados para a entidade `Filme`.
-
-## Bibliotecas
-
-O projeto utiliza as seguintes bibliotecas:
-
-- [Daniel.Repository](https://www.nuget.org/packages/Daniel.Repository): Uma biblioteca para gerenciar operações de repositório de dados.
-- [Mapster](https://www.nuget.org/packages/Mapster): Um mapeador de objetos rápido e personalizável.
-- [Microsoft.EntityFrameworkCore](https://www.nuget.org/packages/Microsoft.EntityFrameworkCore): Entity Framework Core para operações de banco de dados.
-- [Microsoft.EntityFrameworkCore.SqlServer](https://www.nuget.org/packages/Microsoft.EntityFrameworkCore.SqlServer): Suporte ao SQL Server para o Entity Framework Core.
-- [Serilog.AspNetCore](https://www.nuget.org/packages/Serilog.AspNetCore): Biblioteca de registro para aplicações ASP.NET Core.
-- [Serilog.Extensions.Hosting](https://www.nuget.org/packages/Serilog.Extensions.Hosting): Integração do Serilog para .NET Core Generic Host.
-- [Swashbuckle.AspNetCore](https://www.nuget.org/packages/Swashbuckle.AspNetCore): Fornece documentação gerada automaticamente para a API usando o Swagger.
-
-Sinta-se à vontade para explorar o código para aprender mais sobre como a API funciona e como ela pode ser personalizada para atender às necessidades do seu projeto. Se tiver alguma dúvida ou precisar de mais assistência, não hesite em perguntar!
+Projeto pessoal de portfólio.
