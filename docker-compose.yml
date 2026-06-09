@@ -1,0 +1,13 @@
+services:
+  filmes-api:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data          # SQLite persiste aqui
+      - ./media:/media        # Pasta com seus filmes/séries
+    environment:
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__Default=Data Source=/data/filmes.db
+      - MediaPath=/media
+    restart: unless-stopped

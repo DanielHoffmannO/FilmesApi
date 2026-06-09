@@ -1,0 +1,9 @@
+**/.vs
+**/bin
+**/obj
+**/*.user
+**/*.db
+.git
+data/
+media/
+README.md
