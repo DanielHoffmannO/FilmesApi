@@ -53,7 +53,20 @@ public class FilmesController : ControllerBase
         var path = _service.ObterCaminhoAbsoluto(filme.ArquivoPath);
         if (path is null) return NotFound("Arquivo não encontrado no disco.");
 
-        var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-        return File(stream, "video/mp4", enableRangeProcessing: true);
+        var contentType = Path.GetExtension(path).ToLowerInvariant() switch
+        {
+            ".mp4" => "video/mp4",
+            ".mkv" => "video/x-matroska",
+            ".avi" => "video/x-msvideo",
+            ".mov" => "video/quicktime",
+            ".wmv" => "video/x-ms-wmv",
+            ".webm" => "video/webm",
+            ".flv" => "video/x-flv",
+            _ => "application/octet-stream"
+        };
+
+        var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            bufferSize: 65536, useAsync: true);
+        return File(stream, contentType, enableRangeProcessing: true);
     }
 }

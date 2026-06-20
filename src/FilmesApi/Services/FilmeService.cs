@@ -18,7 +18,7 @@ public class FilmeService
 
     public async Task<List<FilmeResponse>> ListarAsync(EGenero? genero = null, bool? assistido = null)
     {
-        var query = _db.Filmes.AsQueryable();
+        var query = _db.Filmes.AsNoTracking().AsQueryable();
         if (genero.HasValue) query = query.Where(f => f.Genero == genero.Value);
         if (assistido.HasValue) query = query.Where(f => f.Assistido == assistido.Value);
 
@@ -52,7 +52,7 @@ public class FilmeService
     {
         var filme = await _db.Filmes.FindAsync(id);
         if (filme is null) return false;
-        filme.Assistido = true;
+        filme.Assistido = !filme.Assistido;
         await _db.SaveChangesAsync();
         return true;
     }
@@ -73,11 +73,11 @@ public class FilmeService
     {
         if (!Directory.Exists(_mediaPath)) return 0;
 
-        var arquivos = Directory.GetFiles(_mediaPath, "*", SearchOption.AllDirectories)
-            .Where(f => VideoExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
-            .ToList();
+        var arquivos = Directory.EnumerateFiles(_mediaPath, "*", SearchOption.AllDirectories)
+            .Where(f => VideoExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()));
 
-        var existentes = await _db.Filmes.Select(f => f.ArquivoPath).ToListAsync();
+        var existentes = (await _db.Filmes.AsNoTracking().Select(f => f.ArquivoPath).ToListAsync())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var novos = 0;
 
         foreach (var arquivo in arquivos)
@@ -88,7 +88,7 @@ public class FilmeService
             var titulo = Path.GetFileNameWithoutExtension(arquivo)
                 .Replace('.', ' ').Replace('_', ' ').Replace('-', ' ');
 
-            _db.Filmes.Add(new Filme { Titulo = titulo, ArquivoPath = relativo, Genero = EGenero.Acao });
+            _db.Filmes.Add(new Filme { Titulo = titulo, ArquivoPath = relativo, Genero = EGenero.Drama });
             novos++;
         }
 
