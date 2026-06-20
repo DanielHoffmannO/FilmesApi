@@ -29,7 +29,3 @@ docker compose up -d
 | `DELETE` | `/api/filmes/{id}` | Eliminar |
 | `POST` | `/api/filmes/scan` | Importar videos de la carpeta de medios |
 | `GET` | `/api/filmes/{id}/stream` | Stream del video |
-
-## Autor
-
-Daniel Hoffmann
