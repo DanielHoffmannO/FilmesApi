@@ -1,3 +1,5 @@
+🌐 [English](README.en.md) | [Español](README.es.md)
+
 # FilmesApi
 
 API REST em .NET 8 para gerenciar e fazer streaming de uma coleção pessoal de filmes. Roda em Docker, sem autenticação, acessível por qualquer dispositivo na rede local.
