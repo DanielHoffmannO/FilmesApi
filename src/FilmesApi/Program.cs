@@ -5,6 +5,13 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// ─── Kestrel otimizado para ARM (Rock Pi) ───────────────────────────────
+builder.WebHost.ConfigureKestrel(k =>
+{
+    k.Limits.MaxResponseBufferSize = 65536;
+    k.Limits.MinResponseDataRate = null; // TV pode pausar stream sem timeout
+});
+
 // ─── Serviços ───────────────────────────────────────────────────────────
 builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseSqlite(builder.Configuration.GetConnectionString("Default") ?? "Data Source=/data/filmes.db"));
