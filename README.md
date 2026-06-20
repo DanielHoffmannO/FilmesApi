@@ -45,3 +45,5 @@ docker compose up -d
 | `DELETE` | `/api/filmes/{id}` | Remove |
 | `POST` | `/api/filmes/scan` | Importa vídeos da pasta de mídia |
 | `GET` | `/api/filmes/{id}/stream` | Stream do vídeo |
+
+Fim.
