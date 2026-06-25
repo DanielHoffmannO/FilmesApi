@@ -1,6 +1,6 @@
-🌐 [English](README.en.md) | [Español](README.es.md)
+ðŸŒ [English](README.en.md) | [EspaÃ±ol](README.es.md)
 
-# 🎬 FilmesApi
+# ðŸŽ¬ FilmesApi
 
 [![.NET Build](https://github.com/DanielHoffmannO/FilmesApi/actions/workflows/dotnet.yml/badge.svg)](https://github.com/DanielHoffmannO/FilmesApi/actions/workflows/dotnet.yml)
 ![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet)
@@ -8,12 +8,12 @@
 ![Docker](https://img.shields.io/badge/Docker-Alpine-2496ED?logo=docker&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-> API REST para gerenciar e streamar sua coleção pessoal de filmes na rede local.  
-> Rode no Raspberry Pi, NAS ou qualquer máquina com Docker e assista direto na Smart TV.
+> API REST para gerenciar e streamar sua coleÃ§Ã£o pessoal de filmes na rede local.  
+> Rode no Raspberry Pi, NAS ou qualquer mÃ¡quina com Docker e assista direto na Smart TV.
 
 ---
 
-## 🛠️ Tech Stack
+## ðŸ› ï¸ Tech Stack
 
 | Camada | Tecnologia |
 |--------|-----------|
@@ -25,7 +25,7 @@
 
 ---
 
-## 🚀 Como Rodar
+## ðŸš€ Como Rodar
 
 ### Docker (recomendado)
 
@@ -48,60 +48,60 @@ dotnet restore
 dotnet run --project src/FilmesApi
 ```
 
-### Variáveis de Ambiente
+### VariÃ¡veis de Ambiente
 
-| Variável | Padrão | Descrição |
+| VariÃ¡vel | PadrÃ£o | DescriÃ§Ã£o |
 |----------|--------|-----------|
 | `ConnectionStrings__Default` | `Data Source=/data/filmes.db` | Connection string SQLite |
-| `MediaPath` | `/media` | Pasta com os arquivos de vídeo |
+| `MediaPath` | `/media` | Pasta com os arquivos de vÃ­deo |
 
 ---
 
-## 📡 Endpoints
+## ðŸ“¡ Endpoints
 
-| Método | Rota | Descrição |
+| MÃ©todo | Rota | DescriÃ§Ã£o |
 |--------|------|-----------|
 | `GET` | `/api/filmes` | Lista filmes (filtro por `?genero=` e `?assistido=`) |
 | `GET` | `/api/filmes/{id}` | Detalhes de um filme |
 | `POST` | `/api/filmes` | Cadastra filme manualmente |
-| `PUT` | `/api/filmes/{id}/assistido` | Toggle assistido/não assistido |
-| `DELETE` | `/api/filmes/{id}` | Remove filme do catálogo |
-| `POST` | `/api/filmes/scan` | Escaneia pasta de mídia e importa novos vídeos |
-| `GET` | `/api/filmes/{id}/stream` | Stream de vídeo (suporta range/seek) |
+| `PUT` | `/api/filmes/{id}/assistido` | Toggle assistido/nÃ£o assistido |
+| `DELETE` | `/api/filmes/{id}` | Remove filme do catÃ¡logo |
+| `POST` | `/api/filmes/scan` | Escaneia pasta de mÃ­dia e importa novos vÃ­deos |
+| `GET` | `/api/filmes/{id}/stream` | Stream de vÃ­deo (suporta range/seek) |
 
-### Gêneros disponíveis
+### GÃªneros disponÃ­veis
 
 `Acao`, `Aventura`, `Comedia`, `Drama`, `Terror`, `Romance`, `FiccaoCientifica`, `Fantasia`, `Suspense`, `Crime`, `Animacao`, `Documentario`, `Musical`, `SuperHeroi`, `Familia`
 
 ---
 
-## 🏗️ Arquitetura
+## ðŸ—ï¸ Arquitetura
 
 ```
 FilmesApi/
-├── src/FilmesApi/
-│   ├── Controllers/    # Endpoints REST
-│   ├── Services/       # Lógica de negócio
-│   ├── Models/         # Entidades e DTOs
-│   ├── Data/           # DbContext (SQLite)
-│   └── wwwroot/        # Frontend estático (fallback)
-├── Dockerfile          # Multi-stage Alpine
-├── docker-compose.yml  # Orquestração + volumes
-└── .github/workflows/  # CI (build + restore)
+â”œâ”€â”€ src/FilmesApi/
+â”‚   â”œâ”€â”€ Controllers/    # Endpoints REST
+â”‚   â”œâ”€â”€ Services/       # LÃ³gica de negÃ³cio
+â”‚   â”œâ”€â”€ Models/         # Entidades e DTOs
+â”‚   â”œâ”€â”€ Data/           # DbContext (SQLite)
+â”‚   â””â”€â”€ wwwroot/        # Frontend estÃ¡tico (fallback)
+â”œâ”€â”€ Dockerfile          # Multi-stage Alpine
+â”œâ”€â”€ docker-compose.yml  # OrquestraÃ§Ã£o + volumes
+â””â”€â”€ .github/workflows/  # CI (build + restore)
 ```
 
-- **Auto-migrate**: banco criado automaticamente na inicialização
-- **Scan automático**: importa arquivos `.mp4`, `.mkv`, `.avi`, `.mov`, `.wmv`, `.flv`, `.webm`
+- **Auto-migrate**: banco criado automaticamente na inicializaÃ§Ã£o
+- **Scan automÃ¡tico**: importa arquivos `.mp4`, `.mkv`, `.avi`, `.mov`, `.wmv`, `.flv`, `.webm`
 - **Streaming otimizado**: buffer 64KB, sem timeout de data rate (TVs podem pausar)
 
 ---
 
-## 📄 Licença
+## ðŸ“„ LicenÃ§a
 
-[MIT](LICENSE) — use, modifique e distribua livremente.
+[MIT](LICENSE) â€” use, modifique e distribua livremente.
 
 ---
 
-## 👤 Autor
+## ðŸ‘¤ Autor
 
-**Daniel Hoffmann** — [GitHub](https://github.com/DanielHoffmannO)
+**Daniel Hoffmann** â€” [GitHub](https://github.com/DanielHoffmannO)
