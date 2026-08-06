@@ -396,3 +396,17 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# Pasta de mídia (filmes/vídeos importados pelo scan) - não deve subir pro repositório
+/media/
+media/
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.wmv
+*.flv
+*.webm
+
+# Banco de dados local
+/data/

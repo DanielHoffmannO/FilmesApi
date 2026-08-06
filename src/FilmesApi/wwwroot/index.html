@@ -16,6 +16,7 @@ button:hover{background:#333}
 .filter-btn{background:none;border:1px solid #333;color:#888;padding:6px 12px;border-radius:20px;font-size:12px}
 .filter-btn.active{border-color:#e50914;color:#fff}
 main{padding:24px}
+#grid{display:flex;flex-direction:column}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px}
 .card{background:#181818;border-radius:8px;overflow:hidden;cursor:pointer;transition:transform .15s,box-shadow .15s}
 .card:hover{transform:scale(1.03);box-shadow:0 8px 24px rgba(0,0,0,.5)}
@@ -28,6 +29,9 @@ main{padding:24px}
 .player-overlay.active{display:flex}
 .player-overlay video{max-width:95vw;max-height:85vh;border-radius:8px}
 .player-close{position:absolute;top:16px;right:24px;font-size:28px;color:#fff;cursor:pointer;z-index:101}
+.folder{margin-bottom:32px}
+.folder-title{font-size:16px;font-weight:600;margin-bottom:12px;color:#ccc;display:flex;align-items:center;gap:8px}
+.folder-title .count{font-size:12px;color:#666;font-weight:400}
 .empty{text-align:center;color:#555;padding:60px 0;font-size:15px}
 .scan-msg{position:fixed;bottom:20px;right:20px;background:#2ecc40;color:#000;padding:10px 16px;border-radius:6px;font-size:13px;display:none}
 </style>
@@ -79,7 +83,32 @@ function render() {
   if (!filtered.length) { grid.innerHTML = ''; empty.style.display = 'block'; return; }
   empty.style.display = 'none';
 
-  grid.innerHTML = filtered.map(f => `
+  const grupos = new Map();
+  for (const f of filtered) {
+    const pasta = pastaDe(f.arquivoPath);
+    if (!grupos.has(pasta)) grupos.set(pasta, []);
+    grupos.get(pasta).push(f);
+  }
+
+  const pastas = [...grupos.keys()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
+  grid.innerHTML = pastas.map(pasta => `
+    <div class="folder">
+      <div class="folder-title">📁 ${pasta} <span class="count">(${grupos.get(pasta).length})</span></div>
+      <div class="grid">
+        ${grupos.get(pasta).map(cardHtml).join('')}
+      </div>
+    </div>`).join('');
+}
+
+function pastaDe(arquivoPath) {
+  if (!arquivoPath) return 'Sem pasta';
+  const partes = arquivoPath.split('/');
+  return partes.length > 1 ? partes.slice(0, -1).join('/') : 'Sem pasta';
+}
+
+function cardHtml(f) {
+  return `
     <div class="card ${f.assistido ? 'assistido' : ''}" onclick="play(${f.id})">
       <div class="card-body">
         <div class="card-title" title="${f.titulo}">${f.titulo}</div>
@@ -89,7 +118,7 @@ function render() {
           ${f.assistido ? '<span class="badge">✓</span>' : ''}
         </div>
       </div>
-    </div>`).join('');
+    </div>`;
 }
 
 function play(id) {
