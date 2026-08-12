@@ -10,6 +10,7 @@ COPY src/ src/
 RUN dotnet publish src/FilmesApi/FilmesApi.csproj -c Release -o /app/publish --no-restore
 
 FROM base AS final
+RUN apk add --no-cache ffmpeg
 WORKDIR /app
 COPY --from=build /app/publish .
 ENV ASPNETCORE_URLS=http://+:8080

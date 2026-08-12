@@ -29,6 +29,7 @@ main{padding:24px}
 .player-overlay.active{display:flex}
 .player-overlay video{max-width:95vw;max-height:85vh;border-radius:8px}
 .player-close{position:absolute;top:16px;right:24px;font-size:28px;color:#fff;cursor:pointer;z-index:101}
+.converting{display:none;color:#ccc;font-size:14px;margin-top:16px}
 .folder{margin-bottom:32px}
 .folder-title{font-size:16px;font-weight:600;margin-bottom:12px;color:#ccc;display:flex;align-items:center;gap:8px}
 .folder-title .count{font-size:12px;color:#666;font-weight:400}
@@ -58,6 +59,7 @@ main{padding:24px}
 <div class="player-overlay" id="player">
   <span class="player-close" onclick="closePlayer()">✕</span>
   <video id="video" controls autoplay></video>
+  <div class="converting" id="converting">Convertendo vídeo para reprodução, aguarde...</div>
 </div>
 
 <div class="scan-msg" id="scanMsg"></div>
@@ -121,10 +123,29 @@ function cardHtml(f) {
     </div>`;
 }
 
-function play(id) {
+async function play(id) {
   const video = document.getElementById('video');
-  video.src = `${API}/${id}/stream`;
+  const converting = document.getElementById('converting');
+  video.removeAttribute('src');
+  converting.style.display = 'none';
   document.getElementById('player').classList.add('active');
+
+  let status = await checarStatus(id);
+  while (status === 'convertendo') {
+    converting.style.display = 'block';
+    await new Promise(r => setTimeout(r, 2000));
+    status = await checarStatus(id);
+  }
+  converting.style.display = 'none';
+
+  if (status === 'erro') {
+    converting.textContent = 'Falha ao converter o vídeo.';
+    converting.style.display = 'block';
+    return;
+  }
+
+  video.src = `${API}/${id}/stream`;
+  video.play();
   // marca como assistido
   fetch(`${API}/${id}/assistido`, { method: 'PUT' }).then(() => {
     const f = filmes.find(x => x.id === id);
@@ -132,11 +153,18 @@ function play(id) {
   });
 }
 
+async function checarStatus(id) {
+  const res = await fetch(`${API}/${id}/stream-status`);
+  const data = await res.json();
+  return data.status;
+}
+
 function closePlayer() {
   const video = document.getElementById('video');
   video.pause();
   video.src = '';
   document.getElementById('player').classList.remove('active');
+  document.getElementById('converting').style.display = 'none';
   render();
 }
 
