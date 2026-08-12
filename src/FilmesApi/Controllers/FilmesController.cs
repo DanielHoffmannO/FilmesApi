@@ -9,8 +9,13 @@ namespace FilmesApi.Controllers;
 public class FilmesController : ControllerBase
 {
     private readonly FilmeService _service;
+    private readonly TranscodeService _transcode;
 
-    public FilmesController(FilmeService service) => _service = service;
+    public FilmesController(FilmeService service, TranscodeService transcode)
+    {
+        _service = service;
+        _transcode = transcode;
+    }
 
     [HttpGet]
     public async Task<IActionResult> Listar([FromQuery] EGenero? genero, [FromQuery] bool? assistido)
@@ -43,9 +48,9 @@ public class FilmesController : ControllerBase
         return Ok(new { importados = novos });
     }
 
-    /// <summary>Stream de vídeo para assistir na TV.</summary>
-    [HttpGet("{id:int}/stream")]
-    public async Task<IActionResult> Stream(int id)
+    /// <summary>Verifica se o vídeo já pode ser tocado ou se ainda está sendo convertido.</summary>
+    [HttpGet("{id:int}/stream-status")]
+    public async Task<IActionResult> ObterStreamStatus(int id, CancellationToken ct)
     {
         var filme = await _service.ObterAsync(id);
         if (filme?.ArquivoPath is null) return NotFound();
@@ -53,19 +58,35 @@ public class FilmesController : ControllerBase
         var path = _service.ObterCaminhoAbsoluto(filme.ArquivoPath);
         if (path is null) return NotFound("Arquivo não encontrado no disco.");
 
-        var contentType = Path.GetExtension(path).ToLowerInvariant() switch
-        {
-            ".mp4" => "video/mp4",
-            ".mkv" => "video/x-matroska",
-            ".avi" => "video/x-msvideo",
-            ".mov" => "video/quicktime",
-            ".wmv" => "video/x-ms-wmv",
-            ".webm" => "video/webm",
-            ".flv" => "video/x-flv",
-            _ => "application/octet-stream"
-        };
+        var (status, _) = await _transcode.ObterStatusAsync(id, path, ct);
+        return Ok(new { status = status.ToString().ToLowerInvariant() });
+    }
 
-        var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+    /// <summary>Stream de vídeo para assistir na TV.</summary>
+    [HttpGet("{id:int}/stream")]
+    public async Task<IActionResult> Stream(int id, CancellationToken ct)
+    {
+        var filme = await _service.ObterAsync(id);
+        if (filme?.ArquivoPath is null) return NotFound();
+
+        var path = _service.ObterCaminhoAbsoluto(filme.ArquivoPath);
+        if (path is null) return NotFound("Arquivo não encontrado no disco.");
+
+        var (status, playablePath) = await _transcode.ObterStatusAsync(id, path, ct);
+        if (status is StreamStatus.Convertendo) return StatusCode(StatusCodes.Status202Accepted);
+        if (status is StreamStatus.Erro) return StatusCode(StatusCodes.Status500InternalServerError, "Falha ao converter o vídeo.");
+
+        var contentType = status == StreamStatus.Compativel
+            ? Path.GetExtension(playablePath).ToLowerInvariant() switch
+            {
+                ".mp4" or ".m4v" => "video/mp4",
+                ".webm" => "video/webm",
+                ".mov" => "video/quicktime",
+                _ => "application/octet-stream"
+            }
+            : "video/mp4";
+
+        var stream = new FileStream(playablePath!, FileMode.Open, FileAccess.Read, FileShare.Read,
             bufferSize: 65536, useAsync: true);
         return File(stream, contentType, enableRangeProcessing: true);
     }
