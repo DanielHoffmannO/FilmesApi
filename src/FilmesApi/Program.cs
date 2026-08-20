@@ -17,7 +17,8 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseSqlite(builder.Configuration.GetConnectionString("Default") ?? "Data Source=/data/filmes.db"));
 
 builder.Services.AddScoped<FilmeService>();
-builder.Services.AddSingleton<TranscodeService>();
+builder.Services.AddSingleton<RkmppCapabilityService>();
+builder.Services.AddSingleton<HlsTranscodeService>();
 builder.Services.AddSingleton<PlayerStateService>();
 
 builder.Services.AddControllers()
