@@ -74,6 +74,8 @@ main{padding:24px}
 
 <div class="scan-msg" id="scanMsg"></div>
 
+<script src="/vendor/hls.min.js"></script>
+
 <div class="remote" id="remote">
   <span class="titulo" id="remoteTitulo"></span>
   <button onclick="remoteSeek(-10)">« 10s</button>
@@ -151,17 +153,40 @@ async function toggleAssistido(id) {
   render();
 }
 
+let hls = null;
+
+function destruirHls() {
+  if (hls) { hls.destroy(); hls = null; }
+}
+
+function iniciarHls(video, url) {
+  destruirHls();
+  if (window.Hls && Hls.isSupported()) {
+    hls = new Hls();
+    hls.loadSource(url);
+    hls.attachMedia(video);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
+  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    video.src = url;
+    video.play();
+  } else {
+    console.error('Navegador sem suporte a HLS.');
+  }
+}
+
 async function play(id) {
   const video = document.getElementById('video');
   const converting = document.getElementById('converting');
   video.removeAttribute('src');
+  destruirHls();
   converting.style.display = 'none';
   document.getElementById('player').classList.add('active');
 
   let status = await checarStatus(id);
-  while (status === 'convertendo') {
+  while (status === 'preparando') {
+    converting.textContent = 'Preparando vídeo, só um instante...';
     converting.style.display = 'block';
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 1500));
     status = await checarStatus(id);
   }
   converting.style.display = 'none';
@@ -172,8 +197,12 @@ async function play(id) {
     return;
   }
 
-  video.src = `${API}/${id}/stream`;
-  video.play();
+  if (status === 'compativel') {
+    video.src = `${API}/${id}/stream`;
+    video.play();
+  } else {
+    iniciarHls(video, `${API}/${id}/hls/playlist.m3u8`);
+  }
 
   const f = filmes.find(x => x.id === id);
   if (f && !f.assistido) toggleAssistido(id);
@@ -187,6 +216,7 @@ async function checarStatus(id) {
 
 function closePlayer() {
   const video = document.getElementById('video');
+  destruirHls();
   video.pause();
   video.src = '';
   document.getElementById('player').classList.remove('active');

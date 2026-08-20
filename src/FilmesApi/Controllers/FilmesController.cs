@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using FilmesApi.Models;
 using FilmesApi.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -6,12 +7,12 @@ namespace FilmesApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class FilmesController : ControllerBase
+public partial class FilmesController : ControllerBase
 {
     private readonly FilmeService _service;
-    private readonly TranscodeService _transcode;
+    private readonly HlsTranscodeService _transcode;
 
-    public FilmesController(FilmeService service, TranscodeService transcode)
+    public FilmesController(FilmeService service, HlsTranscodeService transcode)
     {
         _service = service;
         _transcode = transcode;
@@ -48,23 +49,74 @@ public class FilmesController : ControllerBase
         return Ok(new { importados = novos });
     }
 
-    /// <summary>Verifica se o vídeo já pode ser tocado ou se ainda está sendo convertido.</summary>
+    /// <summary>Verifica se o vídeo já pode ser tocado direto, via HLS, ou se ainda está preparando.</summary>
     [HttpGet("{id:int}/stream-status")]
     public async Task<IActionResult> ObterStreamStatus(int id, CancellationToken ct)
     {
-        var filme = await _service.ObterAsync(id);
-        if (filme?.ArquivoPath is null) return NotFound();
+        var (status, _, erro) = await ResolverStatusAsync(id, ct);
+        if (erro is not null) return erro;
 
-        var path = _service.ObterCaminhoAbsoluto(filme.ArquivoPath);
-        if (path is null) return NotFound("Arquivo não encontrado no disco.");
-
-        var (status, _) = await _transcode.ObterStatusAsync(id, path, ct);
         return Ok(new { status = status.ToString().ToLowerInvariant() });
     }
 
-    /// <summary>Stream de vídeo para assistir na TV.</summary>
+    /// <summary>Stream direto do vídeo quando o navegador já toca o codec/container original.</summary>
     [HttpGet("{id:int}/stream")]
     public async Task<IActionResult> Stream(int id, CancellationToken ct)
+    {
+        var (status, caminho, erro) = await ResolverStatusAsync(id, ct);
+        if (erro is not null) return erro;
+
+        if (status is not StreamStatus.Compativel || caminho is null)
+            return Conflict(new { mensagem = "Este vídeo precisa de HLS, use /hls/playlist.m3u8." });
+
+        var contentType = Path.GetExtension(caminho).ToLowerInvariant() switch
+        {
+            ".mp4" or ".m4v" => "video/mp4",
+            ".webm" => "video/webm",
+            ".mov" => "video/quicktime",
+            _ => "application/octet-stream"
+        };
+
+        var stream = new FileStream(caminho, FileMode.Open, FileAccess.Read, FileShare.Read,
+            bufferSize: 65536, useAsync: true);
+        return File(stream, contentType, enableRangeProcessing: true);
+    }
+
+    /// <summary>Manifest HLS: dispara/reusa o job de transcodificação e serve a playlist assim que ela existir.</summary>
+    [HttpGet("{id:int}/hls/playlist.m3u8")]
+    public async Task<IActionResult> HlsPlaylist(int id, CancellationToken ct)
+    {
+        var (status, caminho, erro) = await ResolverStatusAsync(id, ct);
+        if (erro is not null) return erro;
+
+        if (status is StreamStatus.Compativel)
+            return Conflict(new { mensagem = "Este vídeo é compatível direto, use /stream." });
+        if (status is StreamStatus.Preparando)
+            return StatusCode(StatusCodes.Status202Accepted);
+
+        Response.Headers.CacheControl = "no-store";
+        return PhysicalFile(caminho!, "application/vnd.apple.mpegurl");
+    }
+
+    /// <summary>Segments HLS (.ts) gerados para o filme.</summary>
+    [HttpGet("{id:int}/hls/{arquivo}")]
+    public IActionResult HlsSegmento(int id, string arquivo)
+    {
+        if (!SegmentoValido().IsMatch(arquivo)) return NotFound();
+
+        var caminho = Path.Combine(_transcode.DiretorioCache(id), arquivo);
+        if (!System.IO.File.Exists(caminho)) return NotFound();
+
+        // Não marcar como "immutable": se um encode via rkmpp falhar no meio, o job apaga e
+        // regrava os mesmos nomes de segment via libx264 — um cliente que já buscou a versão
+        // antiga não pode ficar preso a ela por até 1 ano.
+        Response.Headers.CacheControl = "public, max-age=3600";
+        return PhysicalFile(caminho, "video/mp2t");
+    }
+
+    /// <summary>Serve sempre o arquivo original, sem nenhuma transcodificação — para players externos (VLC etc.).</summary>
+    [HttpGet("{id:int}/original")]
+    public async Task<IActionResult> Original(int id)
     {
         var filme = await _service.ObterAsync(id);
         if (filme?.ArquivoPath is null) return NotFound();
@@ -72,22 +124,35 @@ public class FilmesController : ControllerBase
         var path = _service.ObterCaminhoAbsoluto(filme.ArquivoPath);
         if (path is null) return NotFound("Arquivo não encontrado no disco.");
 
-        var (status, playablePath) = await _transcode.ObterStatusAsync(id, path, ct);
-        if (status is StreamStatus.Convertendo) return StatusCode(StatusCodes.Status202Accepted);
-        if (status is StreamStatus.Erro) return StatusCode(StatusCodes.Status500InternalServerError, "Falha ao converter o vídeo.");
+        var contentType = Path.GetExtension(path).ToLowerInvariant() switch
+        {
+            ".mp4" or ".m4v" => "video/mp4",
+            ".webm" => "video/webm",
+            ".mov" => "video/quicktime",
+            ".mkv" => "video/x-matroska",
+            _ => "application/octet-stream"
+        };
 
-        var contentType = status == StreamStatus.Compativel
-            ? Path.GetExtension(playablePath).ToLowerInvariant() switch
-            {
-                ".mp4" or ".m4v" => "video/mp4",
-                ".webm" => "video/webm",
-                ".mov" => "video/quicktime",
-                _ => "application/octet-stream"
-            }
-            : "video/mp4";
-
-        var stream = new FileStream(playablePath!, FileMode.Open, FileAccess.Read, FileShare.Read,
+        var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
             bufferSize: 65536, useAsync: true);
         return File(stream, contentType, enableRangeProcessing: true);
     }
+
+    private async Task<(StreamStatus Status, string? Caminho, IActionResult? Erro)> ResolverStatusAsync(int id, CancellationToken ct)
+    {
+        var filme = await _service.ObterAsync(id);
+        if (filme?.ArquivoPath is null) return (default, null, NotFound());
+
+        var path = _service.ObterCaminhoAbsoluto(filme.ArquivoPath);
+        if (path is null) return (default, null, NotFound("Arquivo não encontrado no disco."));
+
+        var (status, caminho) = await _transcode.ObterStatusAsync(id, path, ct);
+        if (status is StreamStatus.Erro)
+            return (status, null, StatusCode(StatusCodes.Status500InternalServerError, "Falha ao converter o vídeo."));
+
+        return (status, caminho, null);
+    }
+
+    [GeneratedRegex(@"^seg_\d{5}\.ts$")]
+    private static partial Regex SegmentoValido();
 }

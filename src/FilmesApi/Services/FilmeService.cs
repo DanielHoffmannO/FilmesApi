@@ -7,13 +7,17 @@ namespace FilmesApi.Services;
 public class FilmeService
 {
     private readonly AppDbContext _db;
+    private readonly HlsTranscodeService _transcode;
     private readonly string _mediaPath;
+    private readonly string _transcodeCachePathLegado;
     private static readonly string[] VideoExtensions = [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm"];
 
-    public FilmeService(AppDbContext db, IConfiguration config)
+    public FilmeService(AppDbContext db, HlsTranscodeService transcode, IConfiguration config)
     {
         _db = db;
+        _transcode = transcode;
         _mediaPath = config.GetValue<string>("MediaPath") ?? "/media";
+        _transcodeCachePathLegado = config.GetValue<string>("TranscodeCachePath") ?? "/data/transcoded";
     }
 
     public async Task<List<FilmeResponse>> ListarAsync(bool? assistido = null)
@@ -61,7 +65,23 @@ public class FilmeService
         if (filme is null) return false;
         _db.Filmes.Remove(filme);
         await _db.SaveChangesAsync();
+
+        LimparCacheDeTranscode(id);
         return true;
+    }
+
+    /// <summary>Apaga best-effort qualquer cache de transcode (HLS atual e .mp4 legado) do filme.</summary>
+    private void LimparCacheDeTranscode(int id)
+    {
+        try
+        {
+            _transcode.LimparCache(id);
+
+            var mp4Legado = Path.Combine(_transcodeCachePathLegado, $"{id}.mp4");
+            if (File.Exists(mp4Legado)) File.Delete(mp4Legado);
+        }
+        catch (IOException) { /* best-effort: não bloqueia a exclusão do filme */ }
+        catch (UnauthorizedAccessException) { /* best-effort: não bloqueia a exclusão do filme */ }
     }
 
     /// <summary>
@@ -94,9 +114,19 @@ public class FilmeService
         return novos;
     }
 
+    /// <summary>
+    /// Resolve um ArquivoPath pro caminho absoluto real, recusando qualquer resultado que
+    /// escape de _mediaPath (path absoluto injetado, "..", symlink etc.) — ArquivoPath pode
+    /// vir de fora (POST /api/filmes), então nunca confiar nele sem checar containment.
+    /// </summary>
     public string? ObterCaminhoAbsoluto(string relativePath)
     {
-        var full = Path.Combine(_mediaPath, relativePath);
+        var raiz = Path.GetFullPath(_mediaPath);
+        var full = Path.GetFullPath(Path.Combine(raiz, relativePath));
+
+        var dentroDaRaiz = full == raiz || full.StartsWith(raiz + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+        if (!dentroDaRaiz) return null;
+
         return File.Exists(full) ? full : null;
     }
 }
