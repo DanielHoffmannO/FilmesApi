@@ -22,11 +22,22 @@ RUN apt-get update \
  && apt-get purge -y gnupg curl \
  && apt-get autoremove -y \
  && rm -rf /var/lib/apt/lists/*
+
+# Roda como usuário não-root (UID/GID 1000, convenção do primeiro usuário em
+# Debian/Armbian/Raspberry Pi OS) em vez de root. No grupo "video" pra ter chance de acessar
+# o device node da VPU (RK3399/RK3588) quando ele for passado via `devices:` no compose — ver
+# RkmppCapabilityService. Se a pasta ./data do host no seu Radxa pertencer a outro UID, rode
+# `chown -R 1000:1000 ./data` no host ou sobrescreva com `user:` no docker-compose.yml.
+RUN groupadd -g 1000 filmesapi \
+ && useradd -u 1000 -g filmesapi -G video -M -s /usr/sbin/nologin filmesapi \
+ && mkdir -p /data && chown filmesapi:filmesapi /data
+
 WORKDIR /app
 EXPOSE 8080
-COPY --from=build /app/publish .
+COPY --from=build --chown=filmesapi:filmesapi /app/publish .
 ENV ASPNETCORE_URLS=http://+:8080
 # jellyfin-ffmpeg instala em /usr/lib/jellyfin-ffmpeg/, sem symlink garantido em /usr/bin.
 ENV FfmpegPath=/usr/lib/jellyfin-ffmpeg/ffmpeg
 ENV FfprobePath=/usr/lib/jellyfin-ffmpeg/ffprobe
+USER filmesapi
 ENTRYPOINT ["dotnet", "FilmesApi.dll"]
