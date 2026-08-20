@@ -18,6 +18,7 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
 
 builder.Services.AddScoped<FilmeService>();
 builder.Services.AddSingleton<TranscodeService>();
+builder.Services.AddSingleton<PlayerStateService>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
