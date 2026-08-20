@@ -15,6 +15,7 @@ video{width:100%;height:100%;object-fit:contain}
 <video id="video" autoplay></video>
 <div class="msg" id="msg">Aguardando seleção pelo controle remoto (celular)…</div>
 
+<script src="/vendor/hls.min.js"></script>
 <script>
 const API = '';
 let estadoAnterior = { filmeId: null, playing: false, volume: 1, seekVersion: 0, pararVersion: 0 };
@@ -38,22 +39,48 @@ async function checarStatus(filmeId) {
   return data.status;
 }
 
+let hls = null;
+
+function destruirHls() {
+  if (hls) { hls.destroy(); hls = null; }
+}
+
 async function carregarFilme(filmeId) {
   mostrarMsg('Preparando vídeo…');
+  destruirHls();
   let status = await checarStatus(filmeId);
-  while (status === 'convertendo') {
-    mostrarMsg('Convertendo vídeo, aguarde…');
-    await new Promise(r => setTimeout(r, 2000));
+  while (status === 'preparando') {
+    mostrarMsg('Preparando vídeo…');
+    await new Promise(r => setTimeout(r, 1500));
     status = await checarStatus(filmeId);
   }
   if (status === 'erro') {
     mostrarMsg('Falha ao converter o vídeo.');
     return;
   }
-  video.src = `/api/filmes/${filmeId}/stream`;
+
   video.volume = estadoAnterior.volume;
-  mostrarVideo();
-  video.play();
+
+  if (status === 'compativel') {
+    video.src = `/api/filmes/${filmeId}/stream`;
+    mostrarVideo();
+    video.play();
+    return;
+  }
+
+  const playlistUrl = `/api/filmes/${filmeId}/hls/playlist.m3u8`;
+  if (window.Hls && Hls.isSupported()) {
+    hls = new Hls();
+    hls.loadSource(playlistUrl);
+    hls.attachMedia(video);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => { mostrarVideo(); video.play(); });
+  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    video.src = playlistUrl;
+    mostrarVideo();
+    video.play();
+  } else {
+    mostrarMsg('Este navegador não suporta HLS.');
+  }
 }
 
 async function poll() {
@@ -62,6 +89,7 @@ async function poll() {
     const estado = await res.json();
 
     if (estado.pararVersion !== estadoAnterior.pararVersion && estado.filmeId === null) {
+      destruirHls();
       video.pause();
       video.removeAttribute('src');
       mostrarMsg('Aguardando seleção pelo controle remoto (celular)…');
