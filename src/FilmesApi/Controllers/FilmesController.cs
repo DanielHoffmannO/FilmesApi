@@ -69,17 +69,7 @@ public partial class FilmesController : ControllerBase
         if (status is not StreamStatus.Compativel || caminho is null)
             return Conflict(new { mensagem = "Este vídeo precisa de HLS, use /hls/playlist.m3u8." });
 
-        var contentType = Path.GetExtension(caminho).ToLowerInvariant() switch
-        {
-            ".mp4" or ".m4v" => "video/mp4",
-            ".webm" => "video/webm",
-            ".mov" => "video/quicktime",
-            _ => "application/octet-stream"
-        };
-
-        var stream = new FileStream(caminho, FileMode.Open, FileAccess.Read, FileShare.Read,
-            bufferSize: 65536, useAsync: true);
-        return File(stream, contentType, enableRangeProcessing: true);
+        return ServirComRange(caminho);
     }
 
     /// <summary>Manifest HLS: dispara/reusa o job de transcodificação e serve a playlist assim que ela existir.</summary>
@@ -118,13 +108,34 @@ public partial class FilmesController : ControllerBase
     [HttpGet("{id:int}/original")]
     public async Task<IActionResult> Original(int id)
     {
+        var (path, erro) = await ResolverCaminhoAsync(id);
+        return erro ?? ServirComRange(path!);
+    }
+
+    private async Task<(string? Path, IActionResult? Erro)> ResolverCaminhoAsync(int id)
+    {
         var filme = await _service.ObterAsync(id);
-        if (filme?.ArquivoPath is null) return NotFound();
+        if (filme?.ArquivoPath is null) return (null, NotFound());
 
         var path = _service.ObterCaminhoAbsoluto(filme.ArquivoPath);
-        if (path is null) return NotFound("Arquivo não encontrado no disco.");
+        return path is null ? (null, NotFound("Arquivo não encontrado no disco.")) : (path, null);
+    }
 
-        var contentType = Path.GetExtension(path).ToLowerInvariant() switch
+    private async Task<(StreamStatus Status, string? Caminho, IActionResult? Erro)> ResolverStatusAsync(int id, CancellationToken ct)
+    {
+        var (path, erro) = await ResolverCaminhoAsync(id);
+        if (erro is not null) return (default, null, erro);
+
+        var (status, caminho) = await _transcode.ObterStatusAsync(id, path!, ct);
+        if (status is StreamStatus.Erro)
+            return (status, null, StatusCode(StatusCodes.Status500InternalServerError, "Falha ao converter o vídeo."));
+
+        return (status, caminho, null);
+    }
+
+    private IActionResult ServirComRange(string caminho)
+    {
+        var contentType = Path.GetExtension(caminho).ToLowerInvariant() switch
         {
             ".mp4" or ".m4v" => "video/mp4",
             ".webm" => "video/webm",
@@ -133,24 +144,9 @@ public partial class FilmesController : ControllerBase
             _ => "application/octet-stream"
         };
 
-        var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+        var stream = new FileStream(caminho, FileMode.Open, FileAccess.Read, FileShare.Read,
             bufferSize: 65536, useAsync: true);
         return File(stream, contentType, enableRangeProcessing: true);
-    }
-
-    private async Task<(StreamStatus Status, string? Caminho, IActionResult? Erro)> ResolverStatusAsync(int id, CancellationToken ct)
-    {
-        var filme = await _service.ObterAsync(id);
-        if (filme?.ArquivoPath is null) return (default, null, NotFound());
-
-        var path = _service.ObterCaminhoAbsoluto(filme.ArquivoPath);
-        if (path is null) return (default, null, NotFound("Arquivo não encontrado no disco."));
-
-        var (status, caminho) = await _transcode.ObterStatusAsync(id, path, ct);
-        if (status is StreamStatus.Erro)
-            return (status, null, StatusCode(StatusCodes.Status500InternalServerError, "Falha ao converter o vídeo."));
-
-        return (status, caminho, null);
     }
 
     [GeneratedRegex(@"^seg_\d{5}\.ts$")]
