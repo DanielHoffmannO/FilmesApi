@@ -9,7 +9,6 @@ public class FilmeService
     private readonly AppDbContext _db;
     private readonly HlsTranscodeService _transcode;
     private readonly string _mediaPath;
-    private readonly string _transcodeCachePathLegado;
     private static readonly string[] VideoExtensions = [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm"];
 
     public FilmeService(AppDbContext db, HlsTranscodeService transcode, IConfiguration config)
@@ -17,7 +16,6 @@ public class FilmeService
         _db = db;
         _transcode = transcode;
         _mediaPath = config.GetValue<string>("MediaPath") ?? "/media";
-        _transcodeCachePathLegado = config.GetValue<string>("TranscodeCachePath") ?? "/data/transcoded";
     }
 
     public async Task<List<FilmeResponse>> ListarAsync(bool? assistido = null)
@@ -66,22 +64,8 @@ public class FilmeService
         _db.Filmes.Remove(filme);
         await _db.SaveChangesAsync();
 
-        LimparCacheDeTranscode(id);
+        _transcode.LimparCache(id);
         return true;
-    }
-
-    /// <summary>Apaga best-effort qualquer cache de transcode (HLS atual e .mp4 legado) do filme.</summary>
-    private void LimparCacheDeTranscode(int id)
-    {
-        try
-        {
-            _transcode.LimparCache(id);
-
-            var mp4Legado = Path.Combine(_transcodeCachePathLegado, $"{id}.mp4");
-            if (File.Exists(mp4Legado)) File.Delete(mp4Legado);
-        }
-        catch (IOException) { /* best-effort: não bloqueia a exclusão do filme */ }
-        catch (UnauthorizedAccessException) { /* best-effort: não bloqueia a exclusão do filme */ }
     }
 
     /// <summary>

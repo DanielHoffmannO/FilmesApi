@@ -22,6 +22,7 @@ public class HlsTranscodeService
     private readonly string _cachePath;
     private readonly string _ffmpegPath;
     private readonly string _ffprobePath;
+    private readonly string _cachePathLegado;
     private readonly TimeSpan _jobTimeout;
     private readonly SemaphoreSlim _slotEncoder;
     private readonly RkmppCapabilityService _rkmpp;
@@ -29,6 +30,7 @@ public class HlsTranscodeService
 
     private readonly ConcurrentDictionary<int, Task> _jobs = new();
     private readonly ConcurrentDictionary<int, bool> _falhas = new();
+    private readonly ConcurrentDictionary<int, bool> _completos = new();
     private readonly object _decisaoLock = new();
 
     public HlsTranscodeService(IConfiguration config, RkmppCapabilityService rkmpp, ILogger<HlsTranscodeService> logger)
@@ -36,6 +38,7 @@ public class HlsTranscodeService
         _cachePath = config.GetValue<string>("HlsCachePath") ?? "/data/hls";
         _ffmpegPath = config.GetValue<string>("FfmpegPath") ?? "ffmpeg";
         _ffprobePath = config.GetValue<string>("FfprobePath") ?? "ffprobe";
+        _cachePathLegado = config.GetValue<string>("TranscodeCachePath") ?? "/data/transcoded";
         var maxJobs = config.GetValue<int?>("MaxConcurrentTranscodeJobs") ?? 1;
         _jobTimeout = TimeSpan.FromHours(config.GetValue<double?>("TranscodeJobTimeoutHours") ?? 6);
         _slotEncoder = new SemaphoreSlim(maxJobs, maxJobs);
@@ -47,14 +50,23 @@ public class HlsTranscodeService
     public string DiretorioCache(int filmeId) => Path.Combine(_cachePath, filmeId.ToString());
     public string CaminhoPlaylist(int filmeId) => Path.Combine(DiretorioCache(filmeId), "playlist.m3u8");
 
-    /// <summary>Apaga o cache de um filme (usado ao deletar o filme do catálogo).</summary>
+    /// <summary>Apaga best-effort qualquer cache de transcode do filme (HLS atual e .mp4
+    /// legado de uma geração anterior) — usado ao deletar o filme do catálogo.</summary>
     public void LimparCache(int filmeId)
     {
-        lock (_decisaoLock)
+        try
         {
-            var dir = DiretorioCache(filmeId);
-            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+            lock (_decisaoLock)
+            {
+                var dir = DiretorioCache(filmeId);
+                if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+            }
+
+            var mp4Legado = Path.Combine(_cachePathLegado, $"{filmeId}.mp4");
+            if (File.Exists(mp4Legado)) File.Delete(mp4Legado);
         }
+        catch (IOException) { /* best-effort: não bloqueia a exclusão do filme */ }
+        catch (UnauthorizedAccessException) { /* best-effort: não bloqueia a exclusão do filme */ }
     }
 
     /// <summary>Retorna o status atual e, quando aplicável, o caminho pronto para servir
@@ -77,8 +89,17 @@ public class HlsTranscodeService
             if (_falhas.ContainsKey(filmeId))
                 return (StreamStatus.Erro, null);
 
-            if (File.Exists(playlist) && File.ReadAllText(playlist).Contains("#EXT-X-ENDLIST"))
+            // Uma vez confirmado completo, nunca mais muda — evita reler o playlist.m3u8
+            // inteiro do disco (que cresce com o número de segments) em toda chamada futura,
+            // inclusive nas próximas vezes que alguém reabrir o mesmo filme já cacheado.
+            if (_completos.ContainsKey(filmeId))
                 return (StreamStatus.Disponivel, playlist);
+
+            if (File.Exists(playlist) && File.ReadAllText(playlist).Contains("#EXT-X-ENDLIST"))
+            {
+                _completos[filmeId] = true;
+                return (StreamStatus.Disponivel, playlist);
+            }
 
             if (_jobs.ContainsKey(filmeId))
             {
@@ -114,7 +135,9 @@ public class HlsTranscodeService
         await _slotEncoder.WaitAsync(CancellationToken.None);
         try
         {
-            var (videoCodec, _) = await ProbeCodecsAsync(origem, CancellationToken.None);
+            // Só o codec de vídeo decide o caminho de encode aqui — não precisa do de áudio
+            // (que ProbeCodecsAsync também traria), então evita o segundo processo ffprobe.
+            var videoCodec = await RunFfprobeAsync(origem, "v:0", CancellationToken.None);
             var videoCompativel = videoCodec is not null && VideoCodecsCompativeis.Contains(videoCodec);
             var usarRkmpp = !videoCompativel && await _rkmpp.DisponivelAsync();
 
@@ -127,10 +150,10 @@ public class HlsTranscodeService
                 {
                     _logger.LogWarning("Encode via rkmpp falhou pro filme {Id} (exit {Code}): {Stderr}. Tentando de novo com libx264.",
                         filmeId, exitCode, stderr);
-                    // Segments já gerados pelo rkmpp podem já ter sido servidos (com cache
-                    // "immutable") a quem estava assistindo — apagar/recriar precisa do
-                    // mesmo lock que protege as leituras de ObterStatusAsync, senão uma
-                    // checagem concorrente pode ler o diretório no meio da troca.
+                    // Segments já gerados pelo rkmpp podem já ter sido servidos a quem estava
+                    // assistindo — apagar/recriar precisa do mesmo lock que protege as
+                    // leituras de ObterStatusAsync, senão uma checagem concorrente pode ler o
+                    // diretório no meio da troca.
                     lock (_decisaoLock)
                     {
                         Directory.Delete(dir, recursive: true);
@@ -162,87 +185,42 @@ public class HlsTranscodeService
     private async Task<(int ExitCode, string Stderr)> RunFfmpegHlsAsync(
         string origem, string dir, bool videoCompativel, bool usarRkmpp)
     {
-        var psi = new ProcessStartInfo(_ffmpegPath) { UseShellExecute = false, RedirectStandardError = true, WorkingDirectory = dir };
-        psi.ArgumentList.Add("-y");
-        psi.ArgumentList.Add("-i");
-        psi.ArgumentList.Add(origem);
+        List<string> args = ["-y", "-i", origem];
 
         if (videoCompativel)
         {
-            psi.ArgumentList.Add("-c:v");
-            psi.ArgumentList.Add("copy");
-        }
-        else if (usarRkmpp)
-        {
-            psi.ArgumentList.Add("-init_hw_device");
-            psi.ArgumentList.Add("rkmpp=rk");
-            psi.ArgumentList.Add("-filter_hw_device");
-            psi.ArgumentList.Add("rk");
-            psi.ArgumentList.Add("-vf");
-            psi.ArgumentList.Add("format=nv12,hwupload");
-            psi.ArgumentList.Add("-c:v");
-            psi.ArgumentList.Add("h264_rkmpp");
-            psi.ArgumentList.Add("-sc_threshold");
-            psi.ArgumentList.Add("0");
-            psi.ArgumentList.Add("-force_key_frames");
-            psi.ArgumentList.Add($"expr:gte(t,n_forced*{SegmentoSegundos})");
+            args.AddRange(["-c:v", "copy"]);
         }
         else
         {
-            psi.ArgumentList.Add("-c:v");
-            psi.ArgumentList.Add("libx264");
-            psi.ArgumentList.Add("-preset");
-            psi.ArgumentList.Add("veryfast");
-            psi.ArgumentList.Add("-crf");
-            psi.ArgumentList.Add("23");
-            psi.ArgumentList.Add("-sc_threshold");
-            psi.ArgumentList.Add("0");
-            psi.ArgumentList.Add("-force_key_frames");
-            psi.ArgumentList.Add($"expr:gte(t,n_forced*{SegmentoSegundos})");
+            if (usarRkmpp)
+                args.AddRange(["-init_hw_device", "rkmpp=rk", "-filter_hw_device", "rk", "-vf", "format=nv12,hwupload", "-c:v", "h264_rkmpp"]);
+            else
+                args.AddRange(["-c:v", "libx264", "-preset", "veryfast", "-crf", "23"]);
+
+            // Segmentação previsível mesmo com fps/keyframes irregulares da fonte — vale
+            // pros dois encoders de reencode, só não faz sentido no remux acima (-c:v copy
+            // só pode cortar em keyframes que já existem no arquivo original).
+            args.AddRange(["-sc_threshold", "0", "-force_key_frames", $"expr:gte(t,n_forced*{SegmentoSegundos})"]);
         }
 
-        psi.ArgumentList.Add("-c:a");
-        psi.ArgumentList.Add("aac");
-        psi.ArgumentList.Add("-b:a");
-        psi.ArgumentList.Add("192k");
+        args.AddRange(["-c:a", "aac", "-b:a", "192k"]);
+        args.AddRange([
+            "-f", "hls",
+            "-hls_time", SegmentoSegundos.ToString(),
+            "-hls_list_size", "0",
+            "-hls_playlist_type", "event",
+            "-hls_flags", "temp_file+independent_segments",
+            "-hls_segment_type", "mpegts",
+            "-start_number", "0",
+            "-hls_segment_filename", "seg_%05d.ts",
+            "playlist.m3u8",
+        ]);
 
-        psi.ArgumentList.Add("-f");
-        psi.ArgumentList.Add("hls");
-        psi.ArgumentList.Add("-hls_time");
-        psi.ArgumentList.Add(SegmentoSegundos.ToString());
-        psi.ArgumentList.Add("-hls_list_size");
-        psi.ArgumentList.Add("0");
-        psi.ArgumentList.Add("-hls_playlist_type");
-        psi.ArgumentList.Add("event");
-        psi.ArgumentList.Add("-hls_flags");
-        psi.ArgumentList.Add("temp_file+independent_segments");
-        psi.ArgumentList.Add("-hls_segment_type");
-        psi.ArgumentList.Add("mpegts");
-        psi.ArgumentList.Add("-start_number");
-        psi.ArgumentList.Add("0");
-        psi.ArgumentList.Add("-hls_segment_filename");
-        psi.ArgumentList.Add("seg_%05d.ts");
-        psi.ArgumentList.Add("playlist.m3u8");
+        var psi = new ProcessStartInfo(_ffmpegPath) { WorkingDirectory = dir };
+        foreach (var arg in args) psi.ArgumentList.Add(arg);
 
-        using var proc = Process.Start(psi);
-        if (proc is null) return (-1, "não foi possível iniciar o ffmpeg.");
-
-        var stderrTask = proc.StandardError.ReadToEndAsync();
-        using var cts = new CancellationTokenSource(_jobTimeout);
-        try
-        {
-            await proc.WaitForExitAsync(cts.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            proc.Kill(entireProcessTree: true);
-            // Sem timeout aqui, um ffmpeg travado ocuparia o único slot do semáforo pra
-            // sempre, travando a transcodificação de qualquer outro filme indefinidamente.
-            return (-1, $"ffmpeg excedeu o timeout de {_jobTimeout} e foi encerrado.");
-        }
-
-        var stderr = await stderrTask;
-        return (proc.ExitCode, stderr);
+        return await ProcessRunner.ExecutarComTimeoutAsync(psi, _jobTimeout);
     }
 
     private async Task<bool> EhCompativelAsync(string path, CancellationToken ct)
@@ -258,14 +236,15 @@ public class HlsTranscodeService
 
     private async Task<(string? Video, string? Audio)> ProbeCodecsAsync(string path, CancellationToken ct)
     {
-        var video = await RunFfprobeAsync(path, "v:0", ct);
-        var audio = await RunFfprobeAsync(path, "a:0", ct);
-        return (video, audio);
+        var videoTask = RunFfprobeAsync(path, "v:0", ct);
+        var audioTask = RunFfprobeAsync(path, "a:0", ct);
+        await Task.WhenAll(videoTask, audioTask);
+        return (videoTask.Result, audioTask.Result);
     }
 
     private async Task<string?> RunFfprobeAsync(string path, string stream, CancellationToken ct)
     {
-        var psi = new ProcessStartInfo(_ffprobePath) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+        var psi = new ProcessStartInfo(_ffprobePath) { RedirectStandardOutput = true };
         psi.ArgumentList.Add("-v");
         psi.ArgumentList.Add("error");
         psi.ArgumentList.Add("-select_streams");
