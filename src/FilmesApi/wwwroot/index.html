@@ -23,7 +23,9 @@ main{padding:24px}
 .card-body{padding:12px}
 .card-title{font-size:14px;font-weight:500;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card-meta{font-size:11px;color:#888;display:flex;gap:8px}
-.card-meta .badge{background:#e50914;color:#fff;padding:1px 6px;border-radius:3px;font-size:10px}
+.card-meta .badge{background:#333;color:#888;border:1px solid #444;padding:1px 8px;border-radius:3px;font-size:10px;cursor:pointer;user-select:none}
+.card-meta .badge:hover{border-color:#666;color:#ccc}
+.card-meta .badge.on{background:#2ecc40;color:#000;border-color:#2ecc40}
 .card.assistido .card-body{border-left:3px solid #2ecc40}
 .player-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:100;flex-direction:column;align-items:center;justify-content:center}
 .player-overlay.active{display:flex}
@@ -35,6 +37,14 @@ main{padding:24px}
 .folder-title .count{font-size:12px;color:#666;font-weight:400}
 .empty{text-align:center;color:#555;padding:60px 0;font-size:15px}
 .scan-msg{position:fixed;bottom:20px;right:20px;background:#2ecc40;color:#000;padding:10px 16px;border-radius:6px;font-size:13px;display:none}
+.cast-btn{background:none;border:none;color:#888;font-size:16px;cursor:pointer;padding:2px 4px;line-height:1}
+.cast-btn:hover{color:#fff}
+.card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:4px}
+.remote{position:fixed;left:0;right:0;bottom:0;background:#111;border-top:1px solid #222;padding:10px 16px;display:none;align-items:center;gap:12px;flex-wrap:wrap;z-index:50}
+.remote.active{display:flex}
+.remote .titulo{font-size:12px;color:#ccc;flex:1;min-width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.remote button{padding:8px 12px}
+.remote input[type=range]{width:100px}
 </style>
 </head>
 <body>
@@ -63,6 +73,15 @@ main{padding:24px}
 </div>
 
 <div class="scan-msg" id="scanMsg"></div>
+
+<div class="remote" id="remote">
+  <span class="titulo" id="remoteTitulo"></span>
+  <button onclick="remoteSeek(-10)">« 10s</button>
+  <button onclick="remotePlayPause()" id="remotePlayPauseBtn">⏸</button>
+  <button onclick="remoteSeek(10)">10s »</button>
+  <input type="range" id="remoteVolume" min="0" max="1" step="0.05" oninput="remoteVolume(this.value)">
+  <button onclick="remoteParar()">⏹ Parar</button>
+</div>
 
 <script>
 const API = '/api/filmes';
@@ -113,14 +132,23 @@ function cardHtml(f) {
   return `
     <div class="card ${f.assistido ? 'assistido' : ''}" onclick="play(${f.id})">
       <div class="card-body">
-        <div class="card-title" title="${f.titulo}">${f.titulo}</div>
+        <div class="card-top">
+          <div class="card-title" title="${f.titulo}">${f.titulo}</div>
+          <button class="cast-btn" title="Enviar para a TV" onclick="event.stopPropagation(); enviarParaTv(${f.id})">📺</button>
+        </div>
         <div class="card-meta">
-          <span>${f.genero}</span>
           ${f.anoLancamento ? `<span>${f.anoLancamento}</span>` : ''}
-          ${f.assistido ? '<span class="badge">✓</span>' : ''}
+          <span class="badge ${f.assistido ? 'on' : ''}" onclick="event.stopPropagation(); toggleAssistido(${f.id})">${f.assistido ? '✓ Assistido' : 'Marcar assistido'}</span>
         </div>
       </div>
     </div>`;
+}
+
+async function toggleAssistido(id) {
+  await fetch(`${API}/${id}/assistido`, { method: 'PUT' });
+  const f = filmes.find(x => x.id === id);
+  if (f) f.assistido = !f.assistido;
+  render();
 }
 
 async function play(id) {
@@ -146,11 +174,9 @@ async function play(id) {
 
   video.src = `${API}/${id}/stream`;
   video.play();
-  // marca como assistido
-  fetch(`${API}/${id}/assistido`, { method: 'PUT' }).then(() => {
-    const f = filmes.find(x => x.id === id);
-    if (f) f.assistido = true;
-  });
+
+  const f = filmes.find(x => x.id === id);
+  if (f && !f.assistido) toggleAssistido(id);
 }
 
 async function checarStatus(id) {
@@ -188,6 +214,65 @@ document.getElementById('filters').addEventListener('click', e => {
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePlayer(); });
 load();
+
+// ─── Controle remoto (TV) ─────────────────────────────────────────────
+const PLAYER_API = '/api/player';
+let ultimoEstadoRemoto = null;
+
+async function enviarParaTv(id) {
+  await fetch(`${PLAYER_API}/selecionar/${id}`, { method: 'POST' });
+  const f = filmes.find(x => x.id === id);
+  if (f && !f.assistido) toggleAssistido(id);
+  pollRemote();
+}
+
+async function remotePlayPause() {
+  await fetch(`${PLAYER_API}/play-pause`, { method: 'POST' });
+  pollRemote();
+}
+
+async function remoteSeek(delta) {
+  await fetch(`${PLAYER_API}/seek`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ delta })
+  });
+}
+
+async function remoteVolume(valor) {
+  await fetch(`${PLAYER_API}/volume`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ valor: Number(valor) })
+  });
+}
+
+async function remoteParar() {
+  await fetch(`${PLAYER_API}/parar`, { method: 'POST' });
+  pollRemote();
+}
+
+async function pollRemote() {
+  try {
+    const res = await fetch(`${PLAYER_API}/state`);
+    const estado = await res.json();
+    ultimoEstadoRemoto = estado;
+
+    const bar = document.getElementById('remote');
+    if (estado.filmeId === null) {
+      bar.classList.remove('active');
+    } else {
+      bar.classList.add('active');
+      const f = filmes.find(x => x.id === estado.filmeId);
+      document.getElementById('remoteTitulo').textContent = f ? `📺 ${f.titulo}` : '📺 Reproduzindo…';
+      document.getElementById('remotePlayPauseBtn').textContent = estado.playing ? '⏸' : '▶';
+      document.getElementById('remoteVolume').value = estado.volume;
+    }
+  } catch { /* ignora falha pontual de rede */ }
+  finally {
+    setTimeout(pollRemote, 2000);
+  }
+}
+
+pollRemote();
 </script>
 </body>
 </html>

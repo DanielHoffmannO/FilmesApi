@@ -15,7 +15,6 @@ public class AppDbContext : DbContext
         {
             e.HasKey(f => f.Id);
             e.Property(f => f.Titulo).IsRequired().HasMaxLength(200);
-            e.Property(f => f.Genero).HasConversion<byte>();
         });
     }
 }

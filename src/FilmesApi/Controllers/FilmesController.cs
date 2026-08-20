@@ -18,8 +18,8 @@ public class FilmesController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> Listar([FromQuery] EGenero? genero, [FromQuery] bool? assistido)
-        => Ok(await _service.ListarAsync(genero, assistido));
+    public async Task<IActionResult> Listar([FromQuery] bool? assistido)
+        => Ok(await _service.ListarAsync(assistido));
 
     [HttpGet("{id:int}")]
     public async Task<IActionResult> Obter(int id)
