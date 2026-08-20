@@ -19,8 +19,7 @@ RUN apt-get update \
  # nome do pacote muda com a major do ffmpeg (jellyfin-ffmpeg7, 8, ...) — pega sempre a mais nova disponível.
  && JELLYFIN_FFMPEG_PKG=$(apt-cache search '^jellyfin-ffmpeg[0-9]+$' | sort -V | tail -1 | cut -d' ' -f1) \
  && apt-get install -y --no-install-recommends "$JELLYFIN_FFMPEG_PKG" \
- && apt-get purge -y gnupg curl \
- && apt-get autoremove -y \
+ && apt-get purge -y --autoremove gnupg curl \
  && rm -rf /var/lib/apt/lists/*
 
 # Roda como usuário não-root (UID/GID 1000, convenção do primeiro usuário em

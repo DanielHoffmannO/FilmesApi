@@ -60,7 +60,7 @@ public class RkmppCapabilityService
     {
         try
         {
-            var psi = new ProcessStartInfo(_ffmpegPath) { UseShellExecute = false, RedirectStandardError = true };
+            var psi = new ProcessStartInfo(_ffmpegPath);
             psi.ArgumentList.Add("-init_hw_device");
             psi.ArgumentList.Add("rkmpp=rk");
             psi.ArgumentList.Add("-filter_hw_device");
@@ -77,32 +77,16 @@ public class RkmppCapabilityService
             psi.ArgumentList.Add("null");
             psi.ArgumentList.Add("-");
 
-            using var proc = Process.Start(psi);
-            if (proc is null) return false;
+            var (exitCode, stderr) = await ProcessRunner.ExecutarComTimeoutAsync(psi, TimeSpan.FromSeconds(10));
 
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            var stderrTask = proc.StandardError.ReadToEndAsync(cts.Token);
-
-            try
-            {
-                await proc.WaitForExitAsync(cts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                proc.Kill(entireProcessTree: true);
-                _logger.LogInformation("Probe de rkmpp expirou (10s); assumindo indisponível, usando libx264.");
-                return false;
-            }
-
-            if (proc.ExitCode == 0)
+            if (exitCode == 0)
             {
                 _logger.LogInformation("Encoder de hardware rkmpp (VPU) disponível — será preferido a libx264.");
                 return true;
             }
 
-            var stderr = await stderrTask;
             _logger.LogInformation("rkmpp indisponível (ffmpeg saiu com código {Code}), usando libx264. stderr: {Stderr}",
-                proc.ExitCode, stderr);
+                exitCode, stderr);
             return false;
         }
         catch (Exception ex)
