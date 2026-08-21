@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Text.Json;
 
 namespace FilmesApi.Services;
 
@@ -15,10 +16,10 @@ public enum StreamStatus { Compativel, Preparando, Disponivel, Erro }
 public class HlsTranscodeService
 {
     private const int SegmentoSegundos = 6;
-    private const string IdiomaAudioPreferido = "por";
 
     private static readonly string[] VideoCodecsCompativeis = ["h264", "vp9", "av1"];
     private static readonly string[] AudioCodecsCompativeis = ["aac", "mp3", "opus"];
+    private static readonly string[] IdiomasAudioPreferidos = ["por", "pt", "pob"];
 
     private readonly string _cachePath;
     private readonly string _ffmpegPath;
@@ -162,15 +163,15 @@ public class HlsTranscodeService
             // preferido) precisa ser escolhida antes de montar os args — os dois ffprobes
             // rodam em paralelo pra não pagar o custo em série.
             var videoCodecTask = RunFfprobeAsync(origem, "v:0", CancellationToken.None);
-            var audioIndexTask = SelecionarFaixaAudioAsync(origem, CancellationToken.None);
+            var audioIndexTask = EscolherStreamAudioAsync(origem, CancellationToken.None);
             await Task.WhenAll(videoCodecTask, audioIndexTask);
 
             var videoCodec = videoCodecTask.Result;
-            var audioIndex = audioIndexTask.Result;
+            var audioStreamIndex = audioIndexTask.Result;
             var videoCompativel = videoCodec is not null && VideoCodecsCompativeis.Contains(videoCodec);
             var usarRkmpp = !videoCompativel && await _rkmpp.DisponivelAsync();
 
-            var (exitCode, stderr) = await RunFfmpegHlsAsync(origem, dir, videoCompativel, usarRkmpp, audioIndex);
+            var (exitCode, stderr) = await RunFfmpegHlsAsync(origem, dir, videoCompativel, usarRkmpp, audioStreamIndex);
 
             if (usarRkmpp)
             {
@@ -188,7 +189,7 @@ public class HlsTranscodeService
                         Directory.Delete(dir, recursive: true);
                         Directory.CreateDirectory(dir);
                     }
-                    (exitCode, stderr) = await RunFfmpegHlsAsync(origem, dir, videoCompativel, usarRkmpp: false, audioIndex);
+                    (exitCode, stderr) = await RunFfmpegHlsAsync(origem, dir, videoCompativel, usarRkmpp: false, audioStreamIndex);
                 }
             }
 
@@ -214,15 +215,22 @@ public class HlsTranscodeService
     private async Task<(int ExitCode, string Stderr)> RunFfmpegHlsAsync(
         string origem, string dir, bool videoCompativel, bool usarRkmpp, int? audioStreamIndex)
     {
-        List<string> args = ["-y", "-i", origem];
-
+        // -map explícito: sem isso o ffmpeg escolhe sozinho, por heurística de codec/canais,
+        // qual stream de cada tipo entra no output — e essa heurística ignora idioma e pode
+        // até ignorar a flag "default" do arquivo. Em filme dual-áudio (ex.: português +
+        // francês) isso já produziu HLS com a faixa errada mesmo com português marcado como
+        // default. Mapear video+áudio manualmente também impede que uma legenda embutida
+        // incompatível (ex.: PGS/bitmap) entre sozinha no output e quebre o encode — a API
+        // não serve legenda nenhuma, então nem faz sentido incluir.
         // Mapeamento explícito: sem isso o ffmpeg escolhe sozinho (heurística padrão tende a
         // priorizar a faixa de áudio com mais canais, não a do idioma certo — foi assim que
         // uma faixa DTS 5.1 em francês acabou escolhida no lugar do AC3 estéreo em português
         // num arquivo dual-áudio). Uma vez que qualquer -map é passado, o ffmpeg para de
         // selecionar automaticamente qualquer stream — por isso o vídeo também precisa vir
-        // explícito aqui, senão o encode sairia sem vídeo nenhum.
-        args.AddRange(["-map", "0:v:0"]);
+        // explícito aqui, senão o encode sairia sem vídeo nenhum. Mapear áudio manualmente
+        // também impede que uma legenda embutida incompatível (ex.: PGS/bitmap) entre
+        // sozinha no output e quebre o encode — a API não serve legenda nenhuma.
+        List<string> args = ["-y", "-i", origem, "-map", "0:v:0"];
         args.AddRange(audioStreamIndex is int idx ? ["-map", $"0:{idx}"] : ["-map", "0:a:0?"]);
 
         if (videoCompativel)
@@ -249,7 +257,7 @@ public class HlsTranscodeService
         // respondendo 200 com playlist e segments do tamanho certo. Estéreo é o caminho mais
         // simples e universalmente compatível; 5.1 real exigiria mapear o layout de saída
         // explicitamente, o que não vale a pena só pra tocar no navegador.
-        args.AddRange(["-c:a", "aac", "-ac", "2", "-b:a", "192k"]);
+        if (audioStreamIndex is not null) args.AddRange(["-c:a", "aac", "-ac", "2", "-b:a", "192k"]);
         args.AddRange([
             "-f", "hls",
             "-hls_time", SegmentoSegundos.ToString(),
@@ -279,46 +287,56 @@ public class HlsTranscodeService
         return videoOk && audioOk;
     }
 
-    /// <summary>Escolhe o índice absoluto do stream (0:N, pro -map) da faixa de áudio a usar
-    /// no encode: prioriza a faixa com idioma <see cref="IdiomaAudioPreferido"/>, senão cai
-    /// pra primeira faixa de áudio disponível. Retorna null se o arquivo não tem áudio.</summary>
-    private async Task<int?> SelecionarFaixaAudioAsync(string path, CancellationToken ct)
-    {
-        var psi = new ProcessStartInfo(_ffprobePath) { RedirectStandardOutput = true };
-        foreach (var arg in new[]
-        {
-            "-v", "error", "-select_streams", "a",
-            "-show_entries", "stream=index:stream_tags=language",
-            "-of", "csv=p=0",
-        })
-            psi.ArgumentList.Add(arg);
-        psi.ArgumentList.Add(path);
-
-        using var proc = Process.Start(psi);
-        if (proc is null) return null;
-        var saida = await proc.StandardOutput.ReadToEndAsync(ct);
-        await proc.WaitForExitAsync(ct);
-
-        var faixas = saida.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(linha => linha.Split(',', 2))
-            .Where(campos => int.TryParse(campos[0].Trim(), out _))
-            .Select(campos => (Index: int.Parse(campos[0].Trim()), Idioma: campos.Length > 1 ? campos[1].Trim() : ""))
-            .ToList();
-
-        if (faixas.Count == 0) return null;
-
-        var escolhida = faixas.FirstOrDefault(
-            f => f.Idioma.Equals(IdiomaAudioPreferido, StringComparison.OrdinalIgnoreCase),
-            faixas[0]);
-        return escolhida.Index;
-    }
-
     private async Task<(string? Video, string? Audio)> ProbeCodecsAsync(string path, CancellationToken ct)
     {
         var videoTask = RunFfprobeAsync(path, "v:0", ct);
         var audioTask = RunFfprobeAsync(path, "a:0", ct);
         await Task.WhenAll(videoTask, audioTask);
         return (videoTask.Result, audioTask.Result);
+    }
+
+    /// <summary>Entre os streams de áudio do arquivo, escolhe o índice global (pra -map) da
+    /// faixa que deve ir pro HLS: primeiro tenta achar uma em português — rip "dual áudio"
+    /// costuma vir com a faixa errada marcada como default pelo grupo de release —, senão a
+    /// marcada default, senão a primeira. Retorna null se o arquivo não tem áudio.</summary>
+    private async Task<int?> EscolherStreamAudioAsync(string path, CancellationToken ct)
+    {
+        var psi = new ProcessStartInfo(_ffprobePath) { RedirectStandardOutput = true };
+        foreach (var arg in new[]
+        {
+            "-v", "error", "-select_streams", "a",
+            "-show_entries", "stream=index:stream_tags=language:disposition=default",
+            "-of", "json", path,
+        })
+            psi.ArgumentList.Add(arg);
+
+        using var proc = Process.Start(psi);
+        if (proc is null) return null;
+        var saida = await proc.StandardOutput.ReadToEndAsync(ct);
+        await proc.WaitForExitAsync(ct);
+
+        List<(int Index, string? Idioma, bool Default)> streams;
+        try
+        {
+            using var doc = JsonDocument.Parse(saida);
+            streams = doc.RootElement.GetProperty("streams").EnumerateArray().Select(s => (
+                Index: s.GetProperty("index").GetInt32(),
+                Idioma: s.TryGetProperty("tags", out var tags) && tags.TryGetProperty("language", out var lang)
+                    ? lang.GetString() : null,
+                Default: s.GetProperty("disposition").GetProperty("default").GetInt32() == 1
+            )).ToList();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        if (streams.Count == 0) return null;
+
+        return streams.Where(s => s.Idioma is not null && IdiomasAudioPreferidos.Contains(s.Idioma))
+                .Select(s => (int?)s.Index).FirstOrDefault()
+            ?? streams.Where(s => s.Default).Select(s => (int?)s.Index).FirstOrDefault()
+            ?? streams[0].Index;
     }
 
     private async Task<string?> RunFfprobeAsync(string path, string stream, CancellationToken ct)
