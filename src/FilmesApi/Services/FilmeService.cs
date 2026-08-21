@@ -75,8 +75,7 @@ public class FilmeService
     {
         if (!Directory.Exists(_mediaPath)) return 0;
 
-        var arquivos = Directory.EnumerateFiles(_mediaPath, "*", SearchOption.AllDirectories)
-            .Where(f => VideoExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()));
+        var arquivos = EnumerarArquivosDeVideo(_mediaPath);
 
         var existentes = (await _db.Filmes.AsNoTracking().Select(f => f.ArquivoPath).ToListAsync())
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -91,11 +90,49 @@ public class FilmeService
                 .Replace('.', ' ').Replace('_', ' ').Replace('-', ' ');
 
             _db.Filmes.Add(new Filme { Titulo = titulo, ArquivoPath = relativo });
+            // Marca já aqui (não só depois do SaveChangesAsync) pra não inserir o mesmo
+            // ArquivoPath duas vezes caso ele apareça mais de uma vez nesta mesma varredura.
+            existentes.Add(relativo);
             novos++;
         }
 
         if (novos > 0) await _db.SaveChangesAsync();
         return novos;
+    }
+
+    /// <summary>
+    /// Percorre a árvore de mídia recursivamente pulando diretórios que não podem ser lidos
+    /// (ex: /media/lost+found, reservado do ext4 e acessível só por root — desde que o
+    /// container passou a rodar como usuário não-root, listar esse diretório derruba a
+    /// varredura inteira com UnauthorizedAccessException) em vez de deixar propagar.
+    /// Directory.EnumerateFiles com SearchOption.AllDirectories não dá pra usar direto aqui
+    /// porque ele aborta no primeiro diretório inacessível em vez de pular e continuar.
+    /// </summary>
+    private static IEnumerable<string> EnumerarArquivosDeVideo(string raiz)
+    {
+        var pendentes = new Stack<string>();
+        pendentes.Push(raiz);
+
+        while (pendentes.Count > 0)
+        {
+            var dir = pendentes.Pop();
+            List<string> subDiretorios;
+            List<string> arquivosDoDir;
+            try
+            {
+                subDiretorios = Directory.EnumerateDirectories(dir).ToList();
+                arquivosDoDir = Directory.EnumerateFiles(dir).ToList();
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or DirectoryNotFoundException)
+            {
+                continue;
+            }
+
+            foreach (var sub in subDiretorios) pendentes.Push(sub);
+            foreach (var arquivo in arquivosDoDir)
+                if (VideoExtensions.Contains(Path.GetExtension(arquivo).ToLowerInvariant()))
+                    yield return arquivo;
+        }
     }
 
     /// <summary>
