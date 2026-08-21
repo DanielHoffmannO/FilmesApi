@@ -15,6 +15,7 @@ public enum StreamStatus { Compativel, Preparando, Disponivel, Erro }
 public class HlsTranscodeService
 {
     private const int SegmentoSegundos = 6;
+    private const string IdiomaAudioPreferido = "por";
 
     private static readonly string[] VideoCodecsCompativeis = ["h264", "vp9", "av1"];
     private static readonly string[] AudioCodecsCompativeis = ["aac", "mp3", "opus"];
@@ -29,9 +30,11 @@ public class HlsTranscodeService
     private readonly ILogger<HlsTranscodeService> _logger;
 
     private readonly ConcurrentDictionary<int, Task> _jobs = new();
-    private readonly ConcurrentDictionary<int, bool> _falhas = new();
+    // Valor = instante (UTC) da falha, não um marcador permanente — ver ObterStatusAsync.
+    private readonly ConcurrentDictionary<int, DateTime> _falhas = new();
     private readonly ConcurrentDictionary<int, bool> _completos = new();
     private readonly object _decisaoLock = new();
+    private readonly TimeSpan _falhaRetryApos;
 
     public HlsTranscodeService(IConfiguration config, RkmppCapabilityService rkmpp, ILogger<HlsTranscodeService> logger)
     {
@@ -41,6 +44,7 @@ public class HlsTranscodeService
         _cachePathLegado = config.GetValue<string>("TranscodeCachePath") ?? "/data/transcoded";
         var maxJobs = config.GetValue<int?>("MaxConcurrentTranscodeJobs") ?? 1;
         _jobTimeout = TimeSpan.FromHours(config.GetValue<double?>("TranscodeJobTimeoutHours") ?? 6);
+        _falhaRetryApos = TimeSpan.FromMinutes(config.GetValue<double?>("TranscodeFalhaRetryMinutos") ?? 10);
         _slotEncoder = new SemaphoreSlim(maxJobs, maxJobs);
         _rkmpp = rkmpp;
         _logger = logger;
@@ -60,6 +64,8 @@ public class HlsTranscodeService
             {
                 var dir = DiretorioCache(filmeId);
                 if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+                _completos.TryRemove(filmeId, out _);
+                _falhas.TryRemove(filmeId, out _);
             }
 
             var mp4Legado = Path.Combine(_cachePathLegado, $"{filmeId}.mp4");
@@ -86,14 +92,31 @@ public class HlsTranscodeService
         // terminando com sucesso, e apagar um cache recém-completo pra recomeçar à toa.
         lock (_decisaoLock)
         {
-            if (_falhas.ContainsKey(filmeId))
-                return (StreamStatus.Erro, null);
+            // Falha não é permanente: um encode pode falhar por motivo transitório (pico de
+            // carga, VPU ocupada, um teste externo que matou o processo com kill -9 etc.) e
+            // dar certo na tentativa seguinte. Passado o TTL, esquece a falha e deixa o fluxo
+            // abaixo começar um job novo — sem isso, a única forma de "desmarcar" um filme
+            // era reiniciar o container inteiro.
+            if (_falhas.TryGetValue(filmeId, out var falhouEm))
+            {
+                if (DateTime.UtcNow - falhouEm < _falhaRetryApos)
+                    return (StreamStatus.Erro, null);
+                _falhas.TryRemove(filmeId, out _);
+            }
 
-            // Uma vez confirmado completo, nunca mais muda — evita reler o playlist.m3u8
-            // inteiro do disco (que cresce com o número de segments) em toda chamada futura,
-            // inclusive nas próximas vezes que alguém reabrir o mesmo filme já cacheado.
+            // Uma vez confirmado completo, não relê o playlist.m3u8 inteiro do disco (que
+            // cresce com o número de segments) em toda chamada futura — só confere que o
+            // arquivo ainda existe (stat barato, não lê o conteúdo). Isso pega o caso de o
+            // cache HLS em disco ter sido apagado por fora (limpeza manual, restore, disco
+            // cheio) sem o processo ter reiniciado: sem essa checagem, ObterStatusAsync
+            // continuava dizendo "disponível" e o controller quebrava com
+            // FileNotFoundException ao tentar servir um playlist.m3u8 que não existe mais.
             if (_completos.ContainsKey(filmeId))
-                return (StreamStatus.Disponivel, playlist);
+            {
+                if (File.Exists(playlist))
+                    return (StreamStatus.Disponivel, playlist);
+                _completos.TryRemove(filmeId, out _);
+            }
 
             if (File.Exists(playlist) && File.ReadAllText(playlist).Contains("#EXT-X-ENDLIST"))
             {
@@ -135,13 +158,19 @@ public class HlsTranscodeService
         await _slotEncoder.WaitAsync(CancellationToken.None);
         try
         {
-            // Só o codec de vídeo decide o caminho de encode aqui — não precisa do de áudio
-            // (que ProbeCodecsAsync também traria), então evita o segundo processo ffprobe.
-            var videoCodec = await RunFfprobeAsync(origem, "v:0", CancellationToken.None);
+            // O codec de vídeo decide o caminho de encode, e a faixa de áudio certa (idioma
+            // preferido) precisa ser escolhida antes de montar os args — os dois ffprobes
+            // rodam em paralelo pra não pagar o custo em série.
+            var videoCodecTask = RunFfprobeAsync(origem, "v:0", CancellationToken.None);
+            var audioIndexTask = SelecionarFaixaAudioAsync(origem, CancellationToken.None);
+            await Task.WhenAll(videoCodecTask, audioIndexTask);
+
+            var videoCodec = videoCodecTask.Result;
+            var audioIndex = audioIndexTask.Result;
             var videoCompativel = videoCodec is not null && VideoCodecsCompativeis.Contains(videoCodec);
             var usarRkmpp = !videoCompativel && await _rkmpp.DisponivelAsync();
 
-            var (exitCode, stderr) = await RunFfmpegHlsAsync(origem, dir, videoCompativel, usarRkmpp);
+            var (exitCode, stderr) = await RunFfmpegHlsAsync(origem, dir, videoCompativel, usarRkmpp, audioIndex);
 
             if (usarRkmpp)
             {
@@ -159,7 +188,7 @@ public class HlsTranscodeService
                         Directory.Delete(dir, recursive: true);
                         Directory.CreateDirectory(dir);
                     }
-                    (exitCode, stderr) = await RunFfmpegHlsAsync(origem, dir, videoCompativel, usarRkmpp: false);
+                    (exitCode, stderr) = await RunFfmpegHlsAsync(origem, dir, videoCompativel, usarRkmpp: false, audioIndex);
                 }
             }
 
@@ -172,7 +201,7 @@ public class HlsTranscodeService
             lock (_decisaoLock)
             {
                 if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
-                _falhas[filmeId] = true;
+                _falhas[filmeId] = DateTime.UtcNow;
             }
         }
         finally
@@ -183,9 +212,18 @@ public class HlsTranscodeService
     }
 
     private async Task<(int ExitCode, string Stderr)> RunFfmpegHlsAsync(
-        string origem, string dir, bool videoCompativel, bool usarRkmpp)
+        string origem, string dir, bool videoCompativel, bool usarRkmpp, int? audioStreamIndex)
     {
         List<string> args = ["-y", "-i", origem];
+
+        // Mapeamento explícito: sem isso o ffmpeg escolhe sozinho (heurística padrão tende a
+        // priorizar a faixa de áudio com mais canais, não a do idioma certo — foi assim que
+        // uma faixa DTS 5.1 em francês acabou escolhida no lugar do AC3 estéreo em português
+        // num arquivo dual-áudio). Uma vez que qualquer -map é passado, o ffmpeg para de
+        // selecionar automaticamente qualquer stream — por isso o vídeo também precisa vir
+        // explícito aqui, senão o encode sairia sem vídeo nenhum.
+        args.AddRange(["-map", "0:v:0"]);
+        args.AddRange(audioStreamIndex is int idx ? ["-map", $"0:{idx}"] : ["-map", "0:a:0?"]);
 
         if (videoCompativel)
         {
@@ -204,7 +242,14 @@ public class HlsTranscodeService
             args.AddRange(["-sc_threshold", "0", "-force_key_frames", $"expr:gte(t,n_forced*{SegmentoSegundos})"]);
         }
 
-        args.AddRange(["-c:a", "aac", "-b:a", "192k"]);
+        // -ac 2: downmix forçado pra estéreo. Sem isso, converter uma faixa 5.1 pra AAC pode
+        // produzir um stream com channel_layout=unknown (visto via ffprobe no segmento real
+        // gerado) — ffprobe e players desktop toleram, mas o decoder AAC do Chrome via MSE
+        // (hls.js) rejeita, e o sintoma é "nenhum vídeo com formato suportado" mesmo a API
+        // respondendo 200 com playlist e segments do tamanho certo. Estéreo é o caminho mais
+        // simples e universalmente compatível; 5.1 real exigiria mapear o layout de saída
+        // explicitamente, o que não vale a pena só pra tocar no navegador.
+        args.AddRange(["-c:a", "aac", "-ac", "2", "-b:a", "192k"]);
         args.AddRange([
             "-f", "hls",
             "-hls_time", SegmentoSegundos.ToString(),
@@ -232,6 +277,40 @@ public class HlsTranscodeService
         var videoOk = video is not null && VideoCodecsCompativeis.Contains(video);
         var audioOk = audio is null || AudioCodecsCompativeis.Contains(audio);
         return videoOk && audioOk;
+    }
+
+    /// <summary>Escolhe o índice absoluto do stream (0:N, pro -map) da faixa de áudio a usar
+    /// no encode: prioriza a faixa com idioma <see cref="IdiomaAudioPreferido"/>, senão cai
+    /// pra primeira faixa de áudio disponível. Retorna null se o arquivo não tem áudio.</summary>
+    private async Task<int?> SelecionarFaixaAudioAsync(string path, CancellationToken ct)
+    {
+        var psi = new ProcessStartInfo(_ffprobePath) { RedirectStandardOutput = true };
+        foreach (var arg in new[]
+        {
+            "-v", "error", "-select_streams", "a",
+            "-show_entries", "stream=index:stream_tags=language",
+            "-of", "csv=p=0",
+        })
+            psi.ArgumentList.Add(arg);
+        psi.ArgumentList.Add(path);
+
+        using var proc = Process.Start(psi);
+        if (proc is null) return null;
+        var saida = await proc.StandardOutput.ReadToEndAsync(ct);
+        await proc.WaitForExitAsync(ct);
+
+        var faixas = saida.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(linha => linha.Split(',', 2))
+            .Where(campos => int.TryParse(campos[0].Trim(), out _))
+            .Select(campos => (Index: int.Parse(campos[0].Trim()), Idioma: campos.Length > 1 ? campos[1].Trim() : ""))
+            .ToList();
+
+        if (faixas.Count == 0) return null;
+
+        var escolhida = faixas.FirstOrDefault(
+            f => f.Idioma.Equals(IdiomaAudioPreferido, StringComparison.OrdinalIgnoreCase),
+            faixas[0]);
+        return escolhida.Index;
     }
 
     private async Task<(string? Video, string? Audio)> ProbeCodecsAsync(string path, CancellationToken ct)
