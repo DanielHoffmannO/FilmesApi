@@ -35,6 +35,9 @@ main{padding:24px}
 .folder{margin-bottom:32px}
 .folder-title{font-size:16px;font-weight:600;margin-bottom:12px;color:#ccc;display:flex;align-items:center;gap:8px}
 .folder-title .count{font-size:12px;color:#666;font-weight:400}
+.folder.serie .folder-title{cursor:pointer;user-select:none}
+.folder.serie .folder-title .caret{display:inline-block;width:14px;color:#888;font-size:12px}
+.folder.collapsed .grid{display:none}
 .empty{text-align:center;color:#555;padding:60px 0;font-size:15px}
 .scan-msg{position:fixed;bottom:20px;right:20px;background:#2ecc40;color:#000;padding:10px 16px;border-radius:6px;font-size:13px;display:none}
 .cast-btn{background:none;border:none;color:#888;font-size:16px;cursor:pointer;padding:2px 4px;line-height:1}
@@ -115,13 +118,30 @@ function render() {
 
   const pastas = [...grupos.keys()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 
-  grid.innerHTML = pastas.map(pasta => `
+  grid.innerHTML = pastas.map(pasta => {
+    const itens = grupos.get(pasta);
+    const isSerie = pasta !== 'Sem pasta' && itens.length > 1;
+    const cards = itens.map(cardHtml).join('');
+    if (!isSerie) {
+      return `
     <div class="folder">
-      <div class="folder-title">📁 ${pasta} <span class="count">(${grupos.get(pasta).length})</span></div>
-      <div class="grid">
-        ${grupos.get(pasta).map(cardHtml).join('')}
-      </div>
-    </div>`).join('');
+      <div class="folder-title">📁 ${pasta} <span class="count">(${itens.length})</span></div>
+      <div class="grid">${cards}</div>
+    </div>`;
+    }
+    return `
+    <div class="folder serie collapsed">
+      <div class="folder-title" onclick="toggleFolder(this)"><span class="caret">▸</span> 📺 ${pasta} <span class="count">(${itens.length} episódios)</span></div>
+      <div class="grid">${cards}</div>
+    </div>`;
+  }).join('');
+}
+
+function toggleFolder(el) {
+  const folder = el.parentNode;
+  folder.classList.toggle('collapsed');
+  const caret = el.querySelector('.caret');
+  if (caret) caret.textContent = folder.classList.contains('collapsed') ? '▸' : '▾';
 }
 
 function pastaDe(arquivoPath) {
