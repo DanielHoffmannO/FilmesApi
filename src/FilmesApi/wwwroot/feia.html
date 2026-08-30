@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>Filmes (modo TV antiga)</title>
+<style>
+/* Sem flexbox, sem grid, sem media queries: so o que TV velha entende. */
+* { margin: 0; padding: 0; }
+html, body {
+  background: #000;
+  color: #fff;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 28px;
+  line-height: 1.4;
+}
+body { padding: 5%; }              /* margem de overscan pra nao cortar nas bordas */
+h1 { font-size: 40px; margin-bottom: 20px; }
+h2 {
+  font-size: 30px;
+  color: #aaa;
+  margin: 30px 0 10px;
+  border-bottom: 2px solid #333;
+  padding-bottom: 6px;
+}
+a.item {
+  display: block;
+  color: #fff;
+  text-decoration: none;
+  padding: 14px 18px;
+  border: 2px solid #333;
+  margin-bottom: 8px;
+  background: #111;
+}
+a.item:focus, a.item.sel {
+  background: #e50914;
+  border-color: #fff;
+  outline: 0;
+}
+.ano { color: #bbb; font-size: 22px; }
+.visto { color: #2ecc40; font-size: 22px; }
+#msg { color: #bbb; margin: 20px 0; }
+#bar {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid #333;
+}
+#bar a {
+  display: inline-block;
+  color: #fff;
+  text-decoration: none;
+  padding: 10px 16px;
+  border: 2px solid #333;
+  background: #111;
+  margin-right: 8px;
+}
+#bar a:focus, #bar a.sel { background: #333; border-color: #fff; outline: 0; }
+
+/* player */
+#player { display: none; }
+#player.on { display: block; }
+#list.hide { display: none; }
+video { width: 100%; height: auto; background: #000; }
+#pmsg { color: #bbb; margin-top: 16px; }
+</style>
+</head>
+<body>
+
+<h1>Filmes &mdash; modo TV antiga</h1>
+
+<div id="list">
+  <div id="bar">
+    <a href="#" data-f="all" class="sel">Todos</a>
+    <a href="#" data-f="nao">Nao assistidos</a>
+    <a href="#" data-f="sim">Assistidos</a>
+    <a href="#" id="reload">Recarregar lista</a>
+  </div>
+  <div id="msg">Carregando...</div>
+  <div id="grid"></div>
+</div>
+
+<div id="player">
+  <video id="video" controls autoplay></video>
+  <div id="pmsg"></div>
+  <p style="margin-top:16px;color:#bbb">Botao Voltar do controle retorna a lista.</p>
+</div>
+
+<script>
+/* ES5 puro, XMLHttpRequest, sem Promise. Feito pra navegador de smart TV antiga. */
+(function () {
+  var API = '/api/filmes';
+  var filmes = [];
+  var filtro = 'all';
+  var links = [];      // itens navegaveis atuais
+  var idx = 0;
+
+  function get(url, cb) {
+    var x = new XMLHttpRequest();
+    x.open('GET', url, true);
+    x.onreadystatechange = function () {
+      if (x.readyState === 4) {
+        if (x.status >= 200 && x.status < 300) {
+          var d = null;
+          try { d = JSON.parse(x.responseText); } catch (e) {}
+          cb(null, d);
+        } else {
+          cb(x.status || 'erro', null);
+        }
+      }
+    };
+    x.send();
+  }
+
+  function send(method, url) {
+    var x = new XMLHttpRequest();
+    x.open(method, url, true);
+    x.send();
+  }
+
+  function esc(s) {
+    s = String(s == null ? '' : s);
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function pastaDe(p) {
+    if (!p) return 'Sem pasta';
+    var parts = p.split('/');
+    return parts.length > 1 ? parts.slice(0, -1).join('/') : 'Sem pasta';
+  }
+
+  function load() {
+    document.getElementById('msg').style.display = 'block';
+    document.getElementById('msg').innerHTML = 'Carregando...';
+    get(API, function (err, data) {
+      if (err) {
+        document.getElementById('msg').innerHTML = 'Falha ao carregar (erro ' + err + ').';
+        return;
+      }
+      filmes = data || [];
+      render();
+    });
+  }
+
+  function render() {
+    var grid = document.getElementById('grid');
+    var msg = document.getElementById('msg');
+    var list = [];
+    var i;
+    for (i = 0; i < filmes.length; i++) {
+      var f = filmes[i];
+      if (filtro === 'sim' && !f.assistido) continue;
+      if (filtro === 'nao' && f.assistido) continue;
+      list.push(f);
+    }
+    if (!list.length) {
+      grid.innerHTML = '';
+      msg.style.display = 'block';
+      msg.innerHTML = 'Nenhum filme nessa lista.';
+      buildNav();
+      return;
+    }
+    msg.style.display = 'none';
+
+    // agrupa por pasta
+    var grupos = {};
+    var ordem = [];
+    for (i = 0; i < list.length; i++) {
+      var pasta = pastaDe(list[i].arquivoPath);
+      if (!grupos[pasta]) { grupos[pasta] = []; ordem.push(pasta); }
+      grupos[pasta].push(list[i]);
+    }
+    ordem.sort();
+
+    var html = '';
+    for (i = 0; i < ordem.length; i++) {
+      var nome = ordem[i];
+      var arr = grupos[nome];
+      html += '<h2>' + esc(nome) + ' (' + arr.length + ')</h2>';
+      for (var j = 0; j < arr.length; j++) {
+        var m = arr[j];
+        html += '<a class="item" href="#" data-id="' + m.id + '">' +
+                esc(m.titulo) +
+                (m.anoLancamento ? ' <span class="ano">(' + m.anoLancamento + ')</span>' : '') +
+                (m.assistido ? ' <span class="visto">&#10003; assistido</span>' : '') +
+                '</a>';
+      }
+    }
+    grid.innerHTML = html;
+    buildNav();
+  }
+
+  function buildNav() {
+    // ordem de navegacao: barra de filtros + itens
+    var bar = document.getElementById('bar').getElementsByTagName('a');
+    var items = document.getElementById('grid').getElementsByClassName('item');
+    links = [];
+    var i;
+    for (i = 0; i < bar.length; i++) links.push(bar[i]);
+    for (i = 0; i < items.length; i++) links.push(items[i]);
+    if (idx >= links.length) idx = links.length - 1;
+    if (idx < 0) idx = 0;
+    focar(idx);
+  }
+
+  function focar(n) {
+    var i;
+    for (i = 0; i < links.length; i++) links[i].className = links[i].className.replace(/ ?sel/, '');
+    idx = Math.max(0, Math.min(n, links.length - 1));
+    var el = links[idx];
+    if (!el) return;
+    el.className += ' sel';
+    try { el.focus(); } catch (e) {}
+    if (el.scrollIntoView) el.scrollIntoView();
+  }
+
+  function ativar(el) {
+    if (!el) return;
+    var f = el.getAttribute('data-f');
+    if (f) {
+      filtro = f;
+      var bar = document.getElementById('bar').getElementsByTagName('a');
+      for (var i = 0; i < bar.length; i++) {
+        bar[i].className = bar[i].className.replace(/ ?sel/, '');
+        if (bar[i].getAttribute('data-f') === f) bar[i].className += ' sel';
+      }
+      render();
+      return;
+    }
+    if (el.id === 'reload') { load(); return; }
+    var id = el.getAttribute('data-id');
+    if (id) tocar(id);
+  }
+
+  // ---- player ----
+  var pollTimer = null;
+
+  function tocar(id) {
+    document.getElementById('list').className = 'hide';
+    document.getElementById('player').className = 'on';
+    var v = document.getElementById('video');
+    var pmsg = document.getElementById('pmsg');
+    pmsg.innerHTML = 'Preparando...';
+    v.removeAttribute('src');
+
+    checar(id, function (status) {
+      if (status === 'erro') { pmsg.innerHTML = 'Falha ao converter o video.'; return; }
+      if (status === 'compativel') {
+        v.src = API + '/' + id + '/stream';
+      } else {
+        // TV antiga nao roda HLS: serve o arquivo original e torce.
+        v.src = API + '/' + id + '/original';
+        pmsg.innerHTML = 'Enviando arquivo original (pode nao rodar em TV muito antiga). ' +
+                         'Se travar, use o app do celular pra mandar pra TV.';
+      }
+      try { v.load(); v.play(); } catch (e) {}
+      if (status === 'compativel') pmsg.innerHTML = '';
+      // marca assistido
+      send('PUT', API + '/' + id + '/assistido');
+    });
+  }
+
+  function checar(id, cb) {
+    get(API + '/' + id + '/stream-status', function (err, d) {
+      if (err) { cb('erro'); return; }
+      var s = d && d.status;
+      if (s === 'preparando') {
+        document.getElementById('pmsg').innerHTML = 'Preparando video, aguarde...';
+        pollTimer = setTimeout(function () { checar(id, cb); }, 2000);
+        return;
+      }
+      cb(s);
+    });
+  }
+
+  function fecharPlayer() {
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+    var v = document.getElementById('video');
+    try { v.pause(); } catch (e) {}
+    v.removeAttribute('src');
+    try { v.load(); } catch (e) {}
+    document.getElementById('player').className = '';
+    document.getElementById('list').className = '';
+    load();
+  }
+
+  // ---- teclado / controle remoto ----
+  document.onkeydown = function (e) {
+    e = e || window.event;
+    var k = e.keyCode;
+    var noPlayer = document.getElementById('player').className === 'on';
+
+    // Voltar (varia por fabricante: 8, 27, 461, 10009, 166)
+    if (k === 8 || k === 27 || k === 461 || k === 10009 || k === 166) {
+      if (noPlayer) { fecharPlayer(); if (e.preventDefault) e.preventDefault(); return false; }
+      return true;
+    }
+    if (noPlayer) return true; // no player deixa o controle nativo do <video> agir
+
+    if (k === 38) { focar(idx - 1); if (e.preventDefault) e.preventDefault(); return false; } // cima
+    if (k === 40) { focar(idx + 1); if (e.preventDefault) e.preventDefault(); return false; } // baixo
+    if (k === 13 || k === 32) { ativar(links[idx]); if (e.preventDefault) e.preventDefault(); return false; } // OK
+    return true;
+  };
+
+  // clique tambem funciona (mouse/touch de alguns controles)
+  document.getElementById('grid').onclick = function (e) {
+    e = e || window.event;
+    var t = e.target || e.srcElement;
+    while (t && t.className && t.className.indexOf('item') === -1) t = t.parentNode;
+    if (t) { ativar(t); return false; }
+  };
+  document.getElementById('bar').onclick = function (e) {
+    e = e || window.event;
+    var t = e.target || e.srcElement;
+    if (t && t.tagName === 'A') { ativar(t); return false; }
+  };
+
+  load();
+})();
+</script>
+</body>
+</html>
