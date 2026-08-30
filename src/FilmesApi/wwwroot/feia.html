@@ -37,6 +37,18 @@ a.item:focus, a.item.sel {
   border-color: #fff;
   outline: 0;
 }
+a.grp {
+  display: block;
+  color: #fff;
+  text-decoration: none;
+  font-size: 30px;
+  padding: 14px 18px;
+  border: 2px solid #333;
+  margin: 24px 0 8px;
+  background: #1a1a1a;
+}
+a.grp:focus, a.grp.sel { background: #e50914; border-color: #fff; outline: 0; }
+.eps { margin-left: 24px; }
 .ano { color: #bbb; font-size: 22px; }
 .visto { color: #2ecc40; font-size: 22px; }
 #msg { color: #bbb; margin: 20px 0; }
@@ -119,7 +131,7 @@ video { width: 100%; height: auto; background: #000; }
 
   function esc(s) {
     s = String(s == null ? '' : s);
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
   function pastaDe(p) {
@@ -171,18 +183,30 @@ video { width: 100%; height: auto; background: #000; }
     }
     ordem.sort();
 
+    function itemHtml(m) {
+      return '<a class="item" href="#" data-id="' + m.id + '">' +
+             esc(m.titulo) +
+             (m.anoLancamento ? ' <span class="ano">(' + m.anoLancamento + ')</span>' : '') +
+             (m.assistido ? ' <span class="visto">&#10003; assistido</span>' : '') +
+             '</a>';
+    }
+
     var html = '';
     for (i = 0; i < ordem.length; i++) {
       var nome = ordem[i];
       var arr = grupos[nome];
-      html += '<h2>' + esc(nome) + ' (' + arr.length + ')</h2>';
-      for (var j = 0; j < arr.length; j++) {
-        var m = arr[j];
-        html += '<a class="item" href="#" data-id="' + m.id + '">' +
-                esc(m.titulo) +
-                (m.anoLancamento ? ' <span class="ano">(' + m.anoLancamento + ')</span>' : '') +
-                (m.assistido ? ' <span class="visto">&#10003; assistido</span>' : '') +
-                '</a>';
+      var j;
+      var serie = nome !== 'Sem pasta' && arr.length > 1;
+      if (serie) {
+        var label = esc(nome) + ' (' + arr.length + ' episodios)';
+        html += '<a class="grp" href="#" data-g="' + i + '" data-label="' + label + '">&#9656; ' + label + '</a>';
+        html += '<div class="eps" data-g="' + i + '" style="display:none">';
+        for (j = 0; j < arr.length; j++) html += itemHtml(arr[j]);
+        html += '</div>';
+      } else {
+        html += '<h2>' + esc(nome) + '</h2><div class="movies">';
+        for (j = 0; j < arr.length; j++) html += itemHtml(arr[j]);
+        html += '</div>';
       }
     }
     grid.innerHTML = html;
@@ -190,16 +214,45 @@ video { width: 100%; height: auto; background: #000; }
   }
 
   function buildNav() {
-    // ordem de navegacao: barra de filtros + itens
+    // ordem de navegacao: barra de filtros + cabecalhos de serie + itens visiveis
     var bar = document.getElementById('bar').getElementsByTagName('a');
-    var items = document.getElementById('grid').getElementsByClassName('item');
+    var grid = document.getElementById('grid');
     links = [];
-    var i;
+    var i, j;
     for (i = 0; i < bar.length; i++) links.push(bar[i]);
-    for (i = 0; i < items.length; i++) links.push(items[i]);
+    var nodes = grid.childNodes;
+    for (i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      if (n.nodeType !== 1) continue;
+      var c = n.className || '';
+      if (c.indexOf('grp') !== -1) {
+        links.push(n);
+      } else if (c.indexOf('eps') !== -1) {
+        if (n.style.display !== 'none') {
+          var eps = n.getElementsByClassName('item');
+          for (j = 0; j < eps.length; j++) links.push(eps[j]);
+        }
+      } else if (c.indexOf('movies') !== -1) {
+        var mv = n.getElementsByClassName('item');
+        for (j = 0; j < mv.length; j++) links.push(mv[j]);
+      }
+    }
     if (idx >= links.length) idx = links.length - 1;
     if (idx < 0) idx = 0;
     focar(idx);
+  }
+
+  function toggleGrp(el) {
+    var g = el.getAttribute('data-g');
+    var boxes = document.getElementById('grid').getElementsByClassName('eps');
+    for (var i = 0; i < boxes.length; i++) {
+      if (boxes[i].getAttribute('data-g') === g) {
+        var aberto = boxes[i].style.display !== 'none';
+        boxes[i].style.display = aberto ? 'none' : 'block';
+        el.innerHTML = (aberto ? '▸ ' : '▾ ') + el.getAttribute('data-label');
+      }
+    }
+    buildNav();
   }
 
   function focar(n) {
@@ -215,6 +268,7 @@ video { width: 100%; height: auto; background: #000; }
 
   function ativar(el) {
     if (!el) return;
+    if (el.className && el.className.indexOf('grp') !== -1) { toggleGrp(el); return; }
     var f = el.getAttribute('data-f');
     if (f) {
       filtro = f;
@@ -306,8 +360,9 @@ video { width: 100%; height: auto; background: #000; }
   document.getElementById('grid').onclick = function (e) {
     e = e || window.event;
     var t = e.target || e.srcElement;
-    while (t && t.className && t.className.indexOf('item') === -1) t = t.parentNode;
-    if (t) { ativar(t); return false; }
+    while (t && t !== this && (!t.className ||
+           (t.className.indexOf('item') === -1 && t.className.indexOf('grp') === -1))) t = t.parentNode;
+    if (t && t !== this) { ativar(t); return false; }
   };
   document.getElementById('bar').onclick = function (e) {
     e = e || window.event;
