@@ -12,15 +12,21 @@ h1{font-size:20px;font-weight:600}
 .actions{display:flex;gap:8px}
 button{background:#222;color:#eee;border:1px solid #333;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:13px}
 button:hover{background:#333}
-.filters{padding:12px 24px;display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid #1a1a1a}
+.filters{padding:12px 24px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-bottom:1px solid #1a1a1a}
 .filter-btn{background:none;border:1px solid #333;color:#888;padding:6px 12px;border-radius:20px;font-size:12px}
 .filter-btn.active{border-color:#e50914;color:#fff}
+.filter-label{font-size:11px;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-left:12px}
+.filter-label:first-child{margin-left:0}
+.filter-sep{width:1px;align-self:stretch;background:#222;margin:2px 4px}
 main{padding:24px}
 #grid{display:flex;flex-direction:column}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px}
-.card{background:#181818;border-radius:8px;overflow:hidden;cursor:pointer;transition:transform .15s,box-shadow .15s}
+.card{background:#181818;border-radius:8px;overflow:hidden;cursor:pointer;transition:transform .15s,box-shadow .15s;position:relative}
 .card:hover{transform:scale(1.03);box-shadow:0 8px 24px rgba(0,0,0,.5)}
 .card-body{padding:12px}
+.progressbar{height:4px;background:#333}
+.progressbar-fill{height:100%;background:#e50914}
+.card-meta .resume{color:#e50914}
 .card-title{font-size:14px;font-weight:500;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card-meta{font-size:11px;color:#888;display:flex;gap:8px}
 .card-meta .badge{background:#333;color:#888;border:1px solid #444;padding:1px 8px;border-radius:3px;font-size:10px;cursor:pointer;user-select:none}
@@ -32,6 +38,9 @@ main{padding:24px}
 .player-overlay video{max-width:100vw;max-height:100vh;width:auto;height:auto}
 .player-close{position:absolute;top:16px;right:24px;font-size:28px;color:#fff;cursor:pointer;z-index:101}
 .converting{display:none;color:#ccc;font-size:14px;margin-top:16px}
+.secao{margin-bottom:40px}
+.secao-title{font-size:19px;font-weight:700;color:#fff;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #222}
+.secao-title .count{font-size:13px;color:#666;font-weight:400}
 .folder{margin-bottom:32px}
 .folder-title{font-size:16px;font-weight:600;margin-bottom:12px;color:#ccc;display:flex;align-items:center;gap:8px}
 .folder-title .count{font-size:12px;color:#666;font-weight:400}
@@ -59,9 +68,15 @@ main{padding:24px}
 </header>
 
 <div class="filters" id="filters">
-  <button class="filter-btn active" data-filter="all">Todos</button>
-  <button class="filter-btn" data-filter="assistido">Assistidos</button>
-  <button class="filter-btn" data-filter="nao-assistido">Não assistidos</button>
+  <span class="filter-label">Tipo</span>
+  <button class="filter-btn active" data-grupo="tipo" data-filter="all">Todos</button>
+  <button class="filter-btn" data-grupo="tipo" data-filter="filme">🎬 Filmes</button>
+  <button class="filter-btn" data-grupo="tipo" data-filter="serie">📺 Séries</button>
+  <span class="filter-sep"></span>
+  <span class="filter-label">Status</span>
+  <button class="filter-btn active" data-grupo="visto" data-filter="all">Todos</button>
+  <button class="filter-btn" data-grupo="visto" data-filter="assistido">Assistidos</button>
+  <button class="filter-btn" data-grupo="visto" data-filter="nao-assistido">Não assistidos</button>
 </div>
 
 <main>
@@ -91,22 +106,47 @@ main{padding:24px}
 <script>
 const API = '/api/filmes';
 let filmes = [];
-let filtro = 'all';
+let continuar = [];
+let filtroTipo = 'all';   // all | filme | serie
+let filtroVisto = 'all';  // all | assistido | nao-assistido
 
 async function load() {
-  const res = await fetch(API);
-  filmes = await res.json();
+  const [resF, resC] = await Promise.all([fetch(API), fetch(`${API}/continuar`)]);
+  filmes = await resF.json();
+  continuar = resC.ok ? await resC.json() : [];
   render();
 }
 
 function render() {
   const grid = document.getElementById('grid');
   const empty = document.getElementById('empty');
-  let filtered = filmes;
-  if (filtro === 'assistido') filtered = filmes.filter(f => f.assistido);
-  if (filtro === 'nao-assistido') filtered = filmes.filter(f => !f.assistido);
 
-  if (!filtered.length) { grid.innerHTML = ''; empty.style.display = 'block'; return; }
+  // classificação filme/série vem da lista COMPLETA — filtrar por "não assistido"
+  // não pode transformar uma série de 1 episódio pendente num "filme".
+  const totalPorPasta = new Map();
+  for (const f of filmes) {
+    const p = pastaDe(f.arquivoPath);
+    totalPorPasta.set(p, (totalPorPasta.get(p) || 0) + 1);
+  }
+  const ehSeriePasta = p => p !== 'Sem pasta' && totalPorPasta.get(p) > 1;
+  const ehSerieFilme = f => ehSeriePasta(pastaDe(f.arquivoPath));
+
+  const filtered = filmes.filter(f => {
+    if (filtroVisto === 'assistido' && !f.assistido) return false;
+    if (filtroVisto === 'nao-assistido' && f.assistido) return false;
+    if (filtroTipo === 'filme' && ehSerieFilme(f)) return false;
+    if (filtroTipo === 'serie' && !ehSerieFilme(f)) return false;
+    return true;
+  });
+
+  if (!filtered.length) {
+    grid.innerHTML = '';
+    empty.textContent = filmes.length
+      ? 'Nada corresponde a esse filtro.'
+      : 'Nenhum filme encontrado. Clique em "Scan Mídia" para importar.';
+    empty.style.display = 'block';
+    return;
+  }
   empty.style.display = 'none';
 
   const grupos = new Map();
@@ -118,23 +158,41 @@ function render() {
 
   const pastas = [...grupos.keys()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 
-  grid.innerHTML = pastas.map(pasta => {
-    const itens = grupos.get(pasta);
-    const isSerie = pasta !== 'Sem pasta' && itens.length > 1;
-    const cards = itens.map(cardHtml).join('');
-    if (!isSerie) {
-      return `
-    <div class="folder">
-      <div class="folder-title">📁 ${pasta} <span class="count">(${itens.length})</span></div>
-      <div class="grid">${cards}</div>
+  const filmesSoltos = [];
+  for (const pasta of pastas) if (!ehSeriePasta(pasta)) filmesSoltos.push(...grupos.get(pasta));
+  filmesSoltos.sort((a, b) => a.titulo.localeCompare(b.titulo, 'pt-BR'));
+  const seriesPastas = pastas.filter(ehSeriePasta);
+
+  let html = '';
+  if (filtroTipo === 'all' && filtroVisto === 'all' && continuar.length) {
+    html += `
+    <div class="secao">
+      <div class="secao-title">▶ Continuar assistindo <span class="count">(${continuar.length})</span></div>
+      <div class="grid">${continuar.map(continuarCardHtml).join('')}</div>
     </div>`;
-    }
-    return `
-    <div class="folder serie collapsed">
-      <div class="folder-title" onclick="toggleFolder(this)"><span class="caret">▸</span> 📺 ${pasta} <span class="count">(${itens.length} episódios)</span></div>
-      <div class="grid">${cards}</div>
+  }
+  if (filmesSoltos.length) {
+    html += `
+    <div class="secao">
+      <div class="secao-title">🎬 Filmes <span class="count">(${filmesSoltos.length})</span></div>
+      <div class="grid">${filmesSoltos.map(cardHtml).join('')}</div>
     </div>`;
-  }).join('');
+  }
+  if (seriesPastas.length) {
+    html += `
+    <div class="secao">
+      <div class="secao-title">📺 Séries <span class="count">(${seriesPastas.length})</span></div>
+      ${seriesPastas.map(pasta => {
+        const itens = grupos.get(pasta);
+        return `
+      <div class="folder serie collapsed">
+        <div class="folder-title" onclick="toggleFolder(this)"><span class="caret">▸</span> ${pasta} <span class="count">(${itens.length} ${itens.length === 1 ? 'episódio' : 'episódios'})</span></div>
+        <div class="grid">${itens.map(cardHtml).join('')}</div>
+      </div>`;
+      }).join('')}
+    </div>`;
+  }
+  grid.innerHTML = html;
 }
 
 function toggleFolder(el) {
@@ -150,7 +208,26 @@ function pastaDe(arquivoPath) {
   return partes.length > 1 ? partes.slice(0, -1).join('/') : 'Sem pasta';
 }
 
+function pctProgresso(item) {
+  if (!item.posicaoSegundos || !item.duracaoSegundos) return 0;
+  return Math.min(100, Math.round(100 * item.posicaoSegundos / item.duracaoSegundos));
+}
+
+function barraProgresso(item) {
+  const pct = pctProgresso(item);
+  return pct ? `<div class="progressbar"><div class="progressbar-fill" style="width:${pct}%"></div></div>` : '';
+}
+
+function formatarTempo(seg) {
+  seg = Math.max(0, Math.round(seg || 0));
+  const h = Math.floor(seg / 3600), m = Math.round((seg % 3600) / 60);
+  return h ? `${h}h ${m}min` : `${m}min`;
+}
+
 function cardHtml(f) {
+  const retomar = f.posicaoSegundos
+    ? `<span class="resume">▶ ${formatarTempo(f.posicaoSegundos)}</span>`
+    : '';
   return `
     <div class="card ${f.assistido ? 'assistido' : ''}" onclick="play(${f.id})">
       <div class="card-body">
@@ -160,9 +237,28 @@ function cardHtml(f) {
         </div>
         <div class="card-meta">
           ${f.anoLancamento ? `<span>${f.anoLancamento}</span>` : ''}
+          ${retomar}
           <span class="badge ${f.assistido ? 'on' : ''}" onclick="event.stopPropagation(); toggleAssistido(${f.id})">${f.assistido ? '✓ Assistido' : 'Marcar assistido'}</span>
         </div>
       </div>
+      ${barraProgresso(f)}
+    </div>`;
+}
+
+function continuarCardHtml(c) {
+  const info = c.duracaoSegundos
+    ? `${pctProgresso(c)}% · faltam ${formatarTempo(c.duracaoSegundos - c.posicaoSegundos)}`
+    : `${formatarTempo(c.posicaoSegundos)} assistidos`;
+  return `
+    <div class="card" onclick="play(${c.id})">
+      <div class="card-body">
+        <div class="card-top">
+          <div class="card-title" title="${c.titulo}">${c.titulo}</div>
+          <button class="cast-btn" title="Enviar para a TV" onclick="event.stopPropagation(); enviarParaTv(${c.id})">📺</button>
+        </div>
+        <div class="card-meta"><span class="resume">▶ ${info}</span></div>
+      </div>
+      ${barraProgresso(c)}
     </div>`;
 }
 
@@ -197,10 +293,19 @@ function iniciarHls(video, url) {
 async function play(id) {
   const video = document.getElementById('video');
   const converting = document.getElementById('converting');
+  salvarProgresso();  // se já estava vendo outro filme, guarda onde parou
   video.removeAttribute('src');
   destruirHls();
   converting.style.display = 'none';
   document.getElementById('player').classList.add('active');
+
+  filmeAtual = id;
+  ultimoSalvo = 0;
+  posicaoParaRetomar = 0;
+  retomarTentativas = 0;
+  duracaoConfiavel = false;
+  const prog = await fetch(`${API}/${id}/progresso`).then(r => r.ok ? r.json() : null).catch(() => null);
+  if (prog && prog.posicaoSegundos) posicaoParaRetomar = prog.posicaoSegundos;
 
   let status = await checarStatus(id);
   while (status === 'preparando') {
@@ -218,14 +323,15 @@ async function play(id) {
   }
 
   if (status === 'compativel') {
+    duracaoConfiavel = true;
     video.src = `${API}/${id}/stream`;
     video.play();
   } else {
     iniciarHls(video, `${API}/${id}/hls/playlist.m3u8`);
   }
-
-  const f = filmes.find(x => x.id === id);
-  if (f && !f.assistido) toggleAssistido(id);
+  // "assistido" agora é decidido pelo backend quando a reprodução chega perto do fim
+  // (só no stream direto, onde a duração é confiável), ou manualmente no badge —
+  // não mais ao simplesmente abrir.
 }
 
 async function checarStatus(id) {
@@ -235,13 +341,75 @@ async function checarStatus(id) {
 }
 
 function closePlayer() {
+  salvarProgresso();
   const video = document.getElementById('video');
   destruirHls();
   video.pause();
   video.src = '';
+  filmeAtual = null;
   document.getElementById('player').classList.remove('active');
   document.getElementById('converting').style.display = 'none';
-  render();
+  load();  // recarrega pra atualizar "continuar assistindo" e as barras de progresso
+}
+
+// ─── Continuar de onde parou ────────────────────────────────────────────
+let filmeAtual = null;
+let ultimoSalvo = 0;
+let posicaoParaRetomar = 0;
+let retomarTentativas = 0;
+// video.duration só é confiável no stream direto; no HLS ele cresce enquanto
+// transcodifica, então nem mandamos pro backend nem usamos pra decidir o "fim".
+let duracaoConfiavel = false;
+
+// Aplicar a retomada só no 'loadedmetadata' não cola: o Chromium volta o
+// currentTime pra 0 logo depois. 'loadeddata'/'canplay'/'seeked' já pegam, e
+// re-tentamos algumas vezes caso o primeiro seek seja revertido.
+function aplicarRetomada() {
+  const video = document.getElementById('video');
+  if (!(posicaoParaRetomar > 5)) return;
+  const dur = video.duration;
+  if (duracaoConfiavel && isFinite(dur) && posicaoParaRetomar >= dur - 5) { posicaoParaRetomar = 0; return; }
+  if (Math.abs(video.currentTime - posicaoParaRetomar) <= 1.5) { posicaoParaRetomar = 0; return; }
+  if (retomarTentativas++ > 4) { posicaoParaRetomar = 0; return; }
+  try { video.currentTime = posicaoParaRetomar; } catch { /* ainda não seekável */ }
+}
+
+function configurarProgresso() {
+  const video = document.getElementById('video');
+
+  video.addEventListener('loadeddata', aplicarRetomada);
+  video.addEventListener('canplay', aplicarRetomada);
+  video.addEventListener('seeked', aplicarRetomada);
+
+  video.addEventListener('timeupdate', () => {
+    if (filmeAtual == null || video.paused) return;
+    const agora = Date.now();
+    if (agora - ultimoSalvo < 10000) return;
+    ultimoSalvo = agora;
+    salvarProgresso();
+  });
+
+  video.addEventListener('pause', salvarProgresso);
+  window.addEventListener('pagehide', salvarProgresso);
+  video.addEventListener('ended', () => {
+    if (filmeAtual != null) {
+      fetch(`${API}/${filmeAtual}/progresso`, { method: 'DELETE', keepalive: true }).catch(() => {});
+    }
+  });
+}
+
+function salvarProgresso() {
+  const video = document.getElementById('video');
+  if (filmeAtual == null || !(video.currentTime > 15)) return;
+  fetch(`${API}/${filmeAtual}/progresso`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      posicao: video.currentTime,
+      duracao: duracaoConfiavel && isFinite(video.duration) && video.duration > 0 ? video.duration : null
+    }),
+    keepalive: true
+  }).catch(() => {});
 }
 
 async function scanMedia() {
@@ -255,14 +423,18 @@ async function scanMedia() {
 }
 
 document.getElementById('filters').addEventListener('click', e => {
-  if (!e.target.classList.contains('filter-btn')) return;
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  e.target.classList.add('active');
-  filtro = e.target.dataset.filter;
+  const btn = e.target.closest('.filter-btn');
+  if (!btn) return;
+  const grupo = btn.dataset.grupo;
+  document.querySelectorAll(`.filter-btn[data-grupo="${grupo}"]`).forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  if (grupo === 'tipo') filtroTipo = btn.dataset.filter;
+  else filtroVisto = btn.dataset.filter;
   render();
 });
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closePlayer(); });
+configurarProgresso();
 load();
 
 // ─── Controle remoto (TV) ─────────────────────────────────────────────
@@ -271,8 +443,6 @@ let ultimoEstadoRemoto = null;
 
 async function enviarParaTv(id) {
   await fetch(`${PLAYER_API}/selecionar/${id}`, { method: 'POST' });
-  const f = filmes.find(x => x.id === id);
-  if (f && !f.assistido) toggleAssistido(id);
   pollRemote();
 }
 
