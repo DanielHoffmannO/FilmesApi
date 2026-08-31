@@ -18,20 +18,29 @@ public class FilmeService
         _mediaPath = config.GetValue<string>("MediaPath") ?? "/media";
     }
 
+    // Projeção compartilhada — inclui o ponto de retomada (LEFT JOIN em Progressos).
+    private static readonly System.Linq.Expressions.Expression<Func<Filme, FilmeResponse>> ToResponse =
+        f => new FilmeResponse(
+            f.Id, f.Titulo, f.AnoLancamento, f.Diretor, f.ArquivoPath, f.Assistido, f.DataAdicionado,
+            f.Progresso != null ? f.Progresso.PosicaoSegundos : (double?)null,
+            f.Progresso != null ? f.Progresso.DuracaoSegundos : null);
+
     public async Task<List<FilmeResponse>> ListarAsync(bool? assistido = null)
     {
         var query = _db.Filmes.AsNoTracking().AsQueryable();
         if (assistido.HasValue) query = query.Where(f => f.Assistido == assistido.Value);
 
         return await query.OrderByDescending(f => f.DataAdicionado)
-            .Select(f => new FilmeResponse(f.Id, f.Titulo, f.AnoLancamento, f.Diretor, f.ArquivoPath, f.Assistido, f.DataAdicionado))
+            .Select(ToResponse)
             .ToListAsync();
     }
 
     public async Task<FilmeResponse?> ObterAsync(int id)
     {
-        var f = await _db.Filmes.FindAsync(id);
-        return f is null ? null : new FilmeResponse(f.Id, f.Titulo, f.AnoLancamento, f.Diretor, f.ArquivoPath, f.Assistido, f.DataAdicionado);
+        return await _db.Filmes.AsNoTracking()
+            .Where(f => f.Id == id)
+            .Select(ToResponse)
+            .FirstOrDefaultAsync();
     }
 
     public async Task<FilmeResponse> CriarAsync(FilmeRequest req)
@@ -45,7 +54,8 @@ public class FilmeService
         };
         _db.Filmes.Add(filme);
         await _db.SaveChangesAsync();
-        return new FilmeResponse(filme.Id, filme.Titulo, filme.AnoLancamento, filme.Diretor, filme.ArquivoPath, filme.Assistido, filme.DataAdicionado);
+        return new FilmeResponse(filme.Id, filme.Titulo, filme.AnoLancamento, filme.Diretor, filme.ArquivoPath,
+            filme.Assistido, filme.DataAdicionado, null, null);
     }
 
     public async Task<bool> MarcarAssistidoAsync(int id)
@@ -61,6 +71,9 @@ public class FilmeService
     {
         var filme = await _db.Filmes.FindAsync(id);
         if (filme is null) return false;
+
+        // FK tem ON DELETE CASCADE, mas não depender do PRAGMA foreign_keys da conexão.
+        await _db.Progressos.Where(p => p.FilmeId == id).ExecuteDeleteAsync();
         _db.Filmes.Remove(filme);
         await _db.SaveChangesAsync();
 

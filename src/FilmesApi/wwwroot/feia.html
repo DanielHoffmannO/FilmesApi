@@ -64,9 +64,12 @@ a.grp:focus, a.grp.sel { background: #e50914; border-color: #fff; outline: 0; }
   padding: 10px 16px;
   border: 2px solid #333;
   background: #111;
-  margin-right: 8px;
+  margin: 0 8px 8px 0;
 }
-#bar a:focus, #bar a.sel { background: #333; border-color: #fff; outline: 0; }
+#bar a.on { border-color: #e50914; color: #fff; }              /* filtro ativo */
+#bar a:focus, #bar a.sel { background: #333; border-color: #fff; outline: 0; }  /* foco do controle */
+#bar .lbl { color: #666; font-size: 18px; margin: 0 4px 0 10px; text-transform: uppercase; }
+#bar .sep { color: #444; margin: 0 4px; }
 
 /* player */
 #player { display: none; }
@@ -123,10 +126,17 @@ video { width: 100%; height: auto; background: #000; }
 
 <div id="list">
   <div id="bar">
-    <a href="#" data-f="all" class="sel">Todos</a>
-    <a href="#" data-f="nao">Nao assistidos</a>
-    <a href="#" data-f="sim">Assistidos</a>
-    <a href="#" id="reload">Recarregar lista</a>
+    <span class="lbl">Tipo</span>
+    <a href="#" data-fg="tipo" data-fv="all" class="on">Tudo</a>
+    <a href="#" data-fg="tipo" data-fv="filme">Filmes</a>
+    <a href="#" data-fg="tipo" data-fv="serie">Series</a>
+    <span class="sep">|</span>
+    <span class="lbl">Status</span>
+    <a href="#" data-fg="visto" data-fv="all" class="on">Todos</a>
+    <a href="#" data-fg="visto" data-fv="nao">Nao assistidos</a>
+    <a href="#" data-fg="visto" data-fv="sim">Assistidos</a>
+    <span class="sep">|</span>
+    <a href="#" id="reload">Recarregar</a>
   </div>
   <div id="msg">Carregando...</div>
   <div id="grid"></div>
@@ -143,9 +153,17 @@ video { width: 100%; height: auto; background: #000; }
 (function () {
   var API = '/api/filmes';
   var filmes = [];
-  var filtro = 'all';
+  var continuar = [];
+  var filtroTipo = 'all';   // all | filme | serie
+  var filtroVisto = 'all';  // all | sim | nao
   var links = [];      // itens navegaveis atuais
   var idx = 0;
+
+  // continuar de onde parou
+  var filmeAtual = null;
+  var ultimoSalvo = 0;
+  var posicaoRetomar = 0;
+  var retomarTentativas = 0;
 
   function get(url, cb) {
     var x = new XMLHttpRequest();
@@ -190,31 +208,53 @@ video { width: 100%; height: auto; background: #000; }
         return;
       }
       filmes = data || [];
-      render();
+      get(API + '/continuar', function (e2, d2) {
+        continuar = (!e2 && d2) ? d2 : [];
+        render();
+      });
     });
+  }
+
+  function formatarTempo(seg) {
+    seg = Math.max(0, Math.round(seg || 0));
+    var h = Math.floor(seg / 3600), m = Math.round((seg % 3600) / 60);
+    return h ? (h + 'h ' + m + 'min') : (m + 'min');
   }
 
   function render() {
     var grid = document.getElementById('grid');
     var msg = document.getElementById('msg');
+    var i, j, k;
+
+    // classificacao filme/serie sai da lista COMPLETA: filtrar por "nao assistido"
+    // nao pode rebaixar uma serie com 1 episodio pendente a "filme".
+    var totalPorPasta = {};
+    for (i = 0; i < filmes.length; i++) {
+      var pt = pastaDe(filmes[i].arquivoPath);
+      totalPorPasta[pt] = (totalPorPasta[pt] || 0) + 1;
+    }
+    function pastaEhSerie(p) { return p !== 'Sem pasta' && totalPorPasta[p] > 1; }
+    function ehSerie(m) { return pastaEhSerie(pastaDe(m.arquivoPath)); }
+
     var list = [];
-    var i;
     for (i = 0; i < filmes.length; i++) {
       var f = filmes[i];
-      if (filtro === 'sim' && !f.assistido) continue;
-      if (filtro === 'nao' && f.assistido) continue;
+      if (filtroVisto === 'sim' && !f.assistido) continue;
+      if (filtroVisto === 'nao' && f.assistido) continue;
+      if (filtroTipo === 'filme' && ehSerie(f)) continue;
+      if (filtroTipo === 'serie' && !ehSerie(f)) continue;
       list.push(f);
     }
     if (!list.length) {
       grid.innerHTML = '';
       msg.style.display = 'block';
-      msg.innerHTML = 'Nenhum filme nessa lista.';
+      msg.innerHTML = filmes.length ? 'Nada nesse filtro.' : 'Nenhum filme. Rode o Scan no celular.';
       buildNav();
       return;
     }
     msg.style.display = 'none';
 
-    // agrupa por pasta
+    // agrupa por pasta (so o que passou no filtro)
     var grupos = {};
     var ordem = [];
     for (i = 0; i < list.length; i++) {
@@ -232,23 +272,44 @@ video { width: 100%; height: auto; background: #000; }
              '</a>';
     }
 
-    var html = '';
+    var filmesSoltos = [];
+    var seriesNomes = [];
     for (i = 0; i < ordem.length; i++) {
-      var nome = ordem[i];
-      var arr = grupos[nome];
-      var j;
-      var serie = nome !== 'Sem pasta' && arr.length > 1;
-      if (serie) {
-        var label = esc(nome) + ' (' + arr.length + ' episodios)';
-        html += '<a class="grp" href="#" data-g="' + i + '" data-label="' + label + '">&#9656; ' + label + '</a>';
-        html += '<div class="eps" data-g="' + i + '" style="display:none">';
-        for (j = 0; j < arr.length; j++) html += itemHtml(arr[j]);
-        html += '</div>';
-      } else {
-        html += '<h2>' + esc(nome) + '</h2><div class="movies">';
-        for (j = 0; j < arr.length; j++) html += itemHtml(arr[j]);
-        html += '</div>';
+      var nm = ordem[i];
+      if (pastaEhSerie(nm)) seriesNomes.push(nm);
+      else for (k = 0; k < grupos[nm].length; k++) filmesSoltos.push(grupos[nm][k]);
+    }
+    filmesSoltos.sort(function (a, b) {
+      var x = String(a.titulo).toLowerCase(), y = String(b.titulo).toLowerCase();
+      return x < y ? -1 : (x > y ? 1 : 0);
+    });
+
+    var html = '';
+    if (filtroTipo === 'all' && filtroVisto === 'all' && continuar.length) {
+      html += '<h2>Continuar assistindo</h2><div class="movies">';
+      for (i = 0; i < continuar.length; i++) {
+        var c = continuar[i];
+        var pct = c.duracaoSegundos ? Math.round(100 * c.posicaoSegundos / c.duracaoSegundos) : 0;
+        var nota = pct ? (pct + '%') : formatarTempo(c.posicaoSegundos);
+        html += '<a class="item" href="#" data-id="' + c.id + '">' +
+                esc(c.titulo) + ' <span class="ano">(' + nota + ')</span></a>';
       }
+      html += '</div>';
+    }
+    if (filmesSoltos.length) {
+      html += '<h2>Filmes (' + filmesSoltos.length + ')</h2><div class="movies">';
+      for (i = 0; i < filmesSoltos.length; i++) html += itemHtml(filmesSoltos[i]);
+      html += '</div>';
+    }
+    for (i = 0; i < seriesNomes.length; i++) {
+      var nome = seriesNomes[i];
+      var arr = grupos[nome];
+      if (i === 0) html += '<h2>Series (' + seriesNomes.length + ')</h2>';
+      var label = esc(nome) + ' (' + arr.length + (arr.length === 1 ? ' episodio)' : ' episodios)');
+      html += '<a class="grp" href="#" data-g="' + i + '" data-label="' + label + '">&#9656; ' + label + '</a>';
+      html += '<div class="eps" data-g="' + i + '" style="display:none">';
+      for (j = 0; j < arr.length; j++) html += itemHtml(arr[j]);
+      html += '</div>';
     }
     grid.innerHTML = html;
     buildNav();
@@ -310,13 +371,15 @@ video { width: 100%; height: auto; background: #000; }
   function ativar(el) {
     if (!el) return;
     if (el.className && el.className.indexOf('grp') !== -1) { toggleGrp(el); return; }
-    var f = el.getAttribute('data-f');
-    if (f) {
-      filtro = f;
+    var fg = el.getAttribute('data-fg');
+    if (fg) {
+      var fv = el.getAttribute('data-fv');
+      if (fg === 'tipo') filtroTipo = fv; else filtroVisto = fv;
       var bar = document.getElementById('bar').getElementsByTagName('a');
       for (var i = 0; i < bar.length; i++) {
-        bar[i].className = bar[i].className.replace(/ ?sel/, '');
-        if (bar[i].getAttribute('data-f') === f) bar[i].className += ' sel';
+        if (bar[i].getAttribute('data-fg') !== fg) continue;
+        bar[i].className = bar[i].className.replace(/ ?on/, '');
+        if (bar[i].getAttribute('data-fv') === fv) bar[i].className += ' on';
       }
       render();
       return;
@@ -330,6 +393,7 @@ video { width: 100%; height: auto; background: #000; }
   var pollTimer = null;
 
   function tocar(id) {
+    salvarProgresso();  // se ja estava vendo outro, guarda onde parou
     document.getElementById('list').className = 'hide';
     document.getElementById('player').className = 'on';
     document.body.className = 'playing';
@@ -338,21 +402,72 @@ video { width: 100%; height: auto; background: #000; }
     pmsg.innerHTML = 'Preparando...';
     v.removeAttribute('src');
 
-    checar(id, function (status) {
-      if (status === 'erro') { pmsg.innerHTML = 'Falha ao converter o video.'; return; }
-      if (status === 'compativel') {
-        v.src = API + '/' + id + '/stream';
-      } else {
-        // TV antiga nao roda HLS: serve o arquivo original e torce.
-        v.src = API + '/' + id + '/original';
-        pmsg.innerHTML = 'Enviando arquivo original (pode nao rodar em TV muito antiga). ' +
-                         'Se travar, use o app do celular pra mandar pra TV.';
-      }
-      try { v.load(); v.play(); } catch (e) {}
-      if (status === 'compativel') pmsg.innerHTML = '';
-      // marca assistido
-      send('PUT', API + '/' + id + '/assistido');
+    filmeAtual = id;
+    ultimoSalvo = 0;
+    posicaoRetomar = 0;
+    retomarTentativas = 0;
+
+    // pega o ponto de retomada ANTES de setar o src (senao o loadedmetadata perde a corrida)
+    get(API + '/' + id + '/progresso', function (err, d) {
+      if (!err && d && d.posicaoSegundos) posicaoRetomar = d.posicaoSegundos;
+
+      checar(id, function (status) {
+        if (status === 'erro') { pmsg.innerHTML = 'Falha ao converter o video.'; return; }
+        if (status === 'compativel') {
+          v.src = API + '/' + id + '/stream';
+        } else {
+          // TV antiga nao roda HLS: serve o arquivo original e torce.
+          v.src = API + '/' + id + '/original';
+          pmsg.innerHTML = 'Enviando arquivo original (pode nao rodar em TV muito antiga). ' +
+                           'Se travar, use o app do celular pra mandar pra TV.';
+        }
+        try { v.load(); v.play(); } catch (e) {}
+        if (status === 'compativel') pmsg.innerHTML = '';
+        // "assistido" fica por conta do backend quando a reproducao chega perto do fim.
+      });
     });
+  }
+
+  // aplicar so no 'loadedmetadata' nao cola (o navegador volta pra 0 depois).
+  // 'loadeddata'/'canplay'/'seeked' pegam, e re-tenta se o seek for revertido.
+  function aplicarRetomada() {
+    var v = document.getElementById('video');
+    if (!(posicaoRetomar > 5)) return;
+    var dur = v.duration;
+    if (isFinite(dur) && posicaoRetomar >= dur - 5) { posicaoRetomar = 0; return; }
+    if (Math.abs(v.currentTime - posicaoRetomar) <= 1.5) { posicaoRetomar = 0; return; }
+    if (retomarTentativas++ > 4) { posicaoRetomar = 0; return; }
+    try { v.currentTime = posicaoRetomar; } catch (e) {}
+  }
+
+  function configurarProgresso() {
+    var v = document.getElementById('video');
+    v.onloadeddata = aplicarRetomada;
+    v.oncanplay = aplicarRetomada;
+    v.onseeked = aplicarRetomada;
+    v.ontimeupdate = function () {
+      if (filmeAtual == null || v.paused) return;
+      var t = (new Date()).getTime();
+      if (t - ultimoSalvo < 10000) return;
+      ultimoSalvo = t;
+      salvarProgresso();
+    };
+    v.onpause = salvarProgresso;
+    v.onended = function () {
+      if (filmeAtual != null) send('DELETE', API + '/' + filmeAtual + '/progresso');
+    };
+  }
+
+  function salvarProgresso() {
+    var v = document.getElementById('video');
+    if (filmeAtual == null || !(v.currentTime > 15)) return;
+    var x = new XMLHttpRequest();
+    x.open('PUT', API + '/' + filmeAtual + '/progresso', true);
+    x.setRequestHeader('Content-Type', 'application/json');
+    x.send(JSON.stringify({
+      posicao: v.currentTime,
+      duracao: (isFinite(v.duration) && v.duration > 0) ? v.duration : null
+    }));
   }
 
   function checar(id, cb) {
@@ -369,11 +484,13 @@ video { width: 100%; height: auto; background: #000; }
   }
 
   function fecharPlayer() {
+    salvarProgresso();
     if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
     var v = document.getElementById('video');
     try { v.pause(); } catch (e) {}
     v.removeAttribute('src');
     try { v.load(); } catch (e) {}
+    filmeAtual = null;
     document.getElementById('player').className = '';
     document.getElementById('list').className = '';
     document.body.className = '';
@@ -393,8 +510,8 @@ video { width: 100%; height: auto; background: #000; }
     }
     if (noPlayer) return true; // no player deixa o controle nativo do <video> agir
 
-    if (k === 38) { focar(idx - 1); if (e.preventDefault) e.preventDefault(); return false; } // cima
-    if (k === 40) { focar(idx + 1); if (e.preventDefault) e.preventDefault(); return false; } // baixo
+    if (k === 38 || k === 37) { focar(idx - 1); if (e.preventDefault) e.preventDefault(); return false; } // cima / esquerda
+    if (k === 40 || k === 39) { focar(idx + 1); if (e.preventDefault) e.preventDefault(); return false; } // baixo / direita
     if (k === 13 || k === 32) { ativar(links[idx]); if (e.preventDefault) e.preventDefault(); return false; } // OK
     return true;
   };
@@ -413,6 +530,7 @@ video { width: 100%; height: auto; background: #000; }
     if (t && t.tagName === 'A') { ativar(t); return false; }
   };
 
+  configurarProgresso();
   load();
 })();
 </script>

@@ -11,11 +11,13 @@ public partial class FilmesController : ControllerBase
 {
     private readonly FilmeService _service;
     private readonly HlsTranscodeService _transcode;
+    private readonly ProgressoService _progresso;
 
-    public FilmesController(FilmeService service, HlsTranscodeService transcode)
+    public FilmesController(FilmeService service, HlsTranscodeService transcode, ProgressoService progresso)
     {
         _service = service;
         _transcode = transcode;
+        _progresso = progresso;
     }
 
     [HttpGet]
@@ -48,6 +50,38 @@ public partial class FilmesController : ControllerBase
         var novos = await _service.ScanMediaAsync();
         return Ok(new { importados = novos });
     }
+
+    /// <summary>Filmes com reprodução pendente ("continuar assistindo"), mais recentes primeiro.</summary>
+    [HttpGet("continuar")]
+    public async Task<IActionResult> Continuar()
+        => Ok(await _progresso.ContinuarAssistindoAsync());
+
+    /// <summary>Ponto de retomada do filme. 204 se não há nada guardado.</summary>
+    [HttpGet("{id:int}/progresso")]
+    public async Task<IActionResult> ObterProgresso(int id)
+    {
+        var p = await _progresso.ObterAsync(id);
+        return p is null ? NoContent() : Ok(p);
+    }
+
+    /// <summary>Salva onde a reprodução parou. Perto do início/fim, apenas descarta a retomada.</summary>
+    [HttpPut("{id:int}/progresso")]
+    public async Task<IActionResult> SalvarProgresso(int id, [FromBody] ProgressoRequest req)
+    {
+        if (double.IsNaN(req.Posicao) || double.IsInfinity(req.Posicao) || req.Posicao < 0)
+            return BadRequest(new { mensagem = "posicao inválida" });
+
+        var duracao = req.Duracao is > 0 && !double.IsNaN(req.Duracao.Value) && !double.IsInfinity(req.Duracao.Value)
+            ? req.Duracao
+            : null;
+
+        return await _progresso.SalvarAsync(id, req.Posicao, duracao) ? NoContent() : NotFound();
+    }
+
+    /// <summary>Esquece o ponto de retomada ("assistir do começo").</summary>
+    [HttpDelete("{id:int}/progresso")]
+    public async Task<IActionResult> LimparProgresso(int id)
+        => await _progresso.LimparAsync(id) ? NoContent() : NotFound();
 
     /// <summary>Verifica se o vídeo já pode ser tocado direto, via HLS, ou se ainda está preparando.</summary>
     [HttpGet("{id:int}/stream-status")]
