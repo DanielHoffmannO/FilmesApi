@@ -447,35 +447,45 @@ public class HlsTranscodeService
             ?? streams[0].Index;
     }
 
-    private async Task<string?> RunFfprobeAsync(string path, string stream, CancellationToken ct,
-        string showEntries = "stream=codec_name")
+    private async Task<string?> RunFfprobeAsync(string path, string stream, CancellationToken ct)
     {
-        var psi = new ProcessStartInfo(_ffprobePath) { RedirectStandardOutput = true };
-        psi.ArgumentList.Add("-v");
-        psi.ArgumentList.Add("error");
-        psi.ArgumentList.Add("-select_streams");
-        psi.ArgumentList.Add(stream);
-        psi.ArgumentList.Add("-show_entries");
-        psi.ArgumentList.Add(showEntries);
-        psi.ArgumentList.Add("-of");
-        psi.ArgumentList.Add("csv=p=0");
-        psi.ArgumentList.Add(path);
-
-        using var proc = Process.Start(psi);
-        if (proc is null) return null;
-        var saida = await proc.StandardOutput.ReadToEndAsync(ct);
-        await proc.WaitForExitAsync(ct);
-        var valor = saida.Trim().Split('\n')[0].Trim();
+        var saida = await RodarFfprobeAsync(new[]
+        {
+            "-v", "error", "-select_streams", stream,
+            "-show_entries", "stream=codec_name",
+            "-of", "default=noprint_wrappers=1:nokey=1", path,
+        }, ct);
+        var valor = saida.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault();
         return string.IsNullOrWhiteSpace(valor) ? null : valor;
     }
 
-    /// <summary>(largura, altura) do vídeo, ou null se não deu pra ler.</summary>
+    /// <summary>(largura, altura) do vídeo, ou null se não deu pra ler. Pede "um valor por
+    /// linha" (default nokey), mas o parsing tolera qualquer separador — o ffprobe do
+    /// jellyfin devolvia o CSV com uma vírgula sobrando ("3840,1920,") e quebrava tudo.</summary>
     private async Task<(int Largura, int Altura)?> ProbeResolucaoAsync(string path, CancellationToken ct)
     {
-        var raw = await RunFfprobeAsync(path, "v:0", ct, "stream=width,height");  // ex.: "3840,1920"
-        var p = raw?.Split(',');
-        return p is { Length: 2 } && int.TryParse(p[0], out var w) && int.TryParse(p[1], out var h) && w > 0 && h > 0
+        var saida = await RodarFfprobeAsync(new[]
+        {
+            "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=width,height",
+            "-of", "default=noprint_wrappers=1:nokey=1", path,
+        }, ct);
+        var nums = saida.Split(['\n', '\r', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return nums.Length >= 2 && int.TryParse(nums[0], out var w) && int.TryParse(nums[1], out var h) && w > 0 && h > 0
             ? (w, h)
             : null;
+    }
+
+    private async Task<string> RodarFfprobeAsync(string[] args, CancellationToken ct)
+    {
+        var psi = new ProcessStartInfo(_ffprobePath) { RedirectStandardOutput = true };
+        foreach (var arg in args) psi.ArgumentList.Add(arg);
+
+        using var proc = Process.Start(psi);
+        if (proc is null) return "";
+        var saida = await proc.StandardOutput.ReadToEndAsync(ct);
+        await proc.WaitForExitAsync(ct);
+        return saida;
     }
 }
