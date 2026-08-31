@@ -5,6 +5,8 @@ namespace FilmesApi.Controllers;
 
 public record VolumeRequest(double Valor);
 public record SeekRequest(double Delta);
+public record PosicaoRequest(double Pos, double Dur);
+public record SeekAbsRequest(double Pos);
 
 /// <summary>Controle remoto do player da TV: o celular manda comandos, a TV consulta o estado.</summary>
 [ApiController]
@@ -43,6 +45,22 @@ public class PlayerController : ControllerBase
     public IActionResult Seek([FromBody] SeekRequest req)
     {
         _state.Seek(req.Delta);
+        return Ok(_state.Snapshot());
+    }
+
+    /// <summary>A TV reporta a posição atual (a cada ~2s) pra o celular desenhar o progresso.</summary>
+    [HttpPost("posicao")]
+    public IActionResult ReportarPosicao([FromBody] PosicaoRequest req)
+    {
+        _state.ReportarPosicao(req.Pos, req.Dur);
+        return NoContent();
+    }
+
+    /// <summary>Celular arrastou a barra — pula pra posição absoluta.</summary>
+    [HttpPost("seek-abs")]
+    public IActionResult SeekAbsoluto([FromBody] SeekAbsRequest req)
+    {
+        _state.SeekAbsoluto(req.Pos);
         return Ok(_state.Snapshot());
     }
 

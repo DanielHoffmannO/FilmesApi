@@ -6,6 +6,8 @@ public record FilmeResponse(
     bool Assistido, DateTime DataAdicionado,
     double? PosicaoSegundos, double? DuracaoSegundos);
 
+public record ScanResultado(int Importados, int Removidos);
+
 public record ProgressoRequest(double Posicao, double? Duracao);
 public record ProgressoResponse(int FilmeId, double PosicaoSegundos, double? DuracaoSegundos, DateTime AtualizadoEm);
 public record ContinuarAssistindoResponse(
