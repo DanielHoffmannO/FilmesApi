@@ -22,4 +22,7 @@ public class Filme
 
     public bool Assistido { get; set; }
     public DateTime DataAdicionado { get; set; } = DateTime.UtcNow;
+
+    /// <summary>Ponto de retomada da reprodução, se houver (ver <see cref="ProgressoReproducao"/>).</summary>
+    public ProgressoReproducao? Progresso { get; set; }
 }

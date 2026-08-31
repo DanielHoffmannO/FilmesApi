@@ -22,6 +22,49 @@ let estadoAnterior = { filmeId: null, playing: false, volume: 1, seekVersion: 0,
 const video = document.getElementById('video');
 const msg = document.getElementById('msg');
 
+// continuar de onde parou
+let filmeAtual = null, ultimoSalvo = 0, posicaoRetomar = 0, retomarTentativas = 0;
+// video.duration só é confiável no stream direto; no HLS cresce durante o transcode.
+let duracaoConfiavel = false;
+
+// aplicar só no 'loadedmetadata' não cola (o navegador volta pra 0 depois);
+// 'loadeddata'/'canplay'/'seeked' pegam, e re-tenta se o seek for revertido.
+function aplicarRetomada() {
+  if (!(posicaoRetomar > 5)) return;
+  const dur = video.duration;
+  if (duracaoConfiavel && isFinite(dur) && posicaoRetomar >= dur - 5) { posicaoRetomar = 0; return; }
+  if (Math.abs(video.currentTime - posicaoRetomar) <= 1.5) { posicaoRetomar = 0; return; }
+  if (retomarTentativas++ > 4) { posicaoRetomar = 0; return; }
+  try { video.currentTime = posicaoRetomar; } catch { /* ainda não seekável */ }
+}
+video.addEventListener('loadeddata', aplicarRetomada);
+video.addEventListener('canplay', aplicarRetomada);
+video.addEventListener('seeked', aplicarRetomada);
+video.addEventListener('timeupdate', () => {
+  if (filmeAtual == null || video.paused) return;
+  const t = Date.now();
+  if (t - ultimoSalvo < 10000) return;
+  ultimoSalvo = t;
+  salvarProgresso();
+});
+video.addEventListener('pause', salvarProgresso);
+video.addEventListener('ended', () => {
+  if (filmeAtual != null) fetch(`/api/filmes/${filmeAtual}/progresso`, { method: 'DELETE', keepalive: true }).catch(() => {});
+});
+
+function salvarProgresso() {
+  if (filmeAtual == null || !(video.currentTime > 15)) return;
+  fetch(`/api/filmes/${filmeAtual}/progresso`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      posicao: video.currentTime,
+      duracao: duracaoConfiavel && isFinite(video.duration) && video.duration > 0 ? video.duration : null
+    }),
+    keepalive: true
+  }).catch(() => {});
+}
+
 function mostrarMsg(texto) {
   msg.textContent = texto;
   msg.style.display = 'flex';
@@ -48,6 +91,15 @@ function destruirHls() {
 async function carregarFilme(filmeId) {
   mostrarMsg('Preparando vídeo…');
   destruirHls();
+
+  filmeAtual = filmeId;
+  ultimoSalvo = 0;
+  posicaoRetomar = 0;
+  retomarTentativas = 0;
+  duracaoConfiavel = false;
+  const prog = await fetch(`/api/filmes/${filmeId}/progresso`).then(r => r.ok ? r.json() : null).catch(() => null);
+  if (prog && prog.posicaoSegundos) posicaoRetomar = prog.posicaoSegundos;
+
   let status = await checarStatus(filmeId);
   while (status === 'preparando') {
     mostrarMsg('Preparando vídeo…');
@@ -62,6 +114,7 @@ async function carregarFilme(filmeId) {
   video.volume = estadoAnterior.volume;
 
   if (status === 'compativel') {
+    duracaoConfiavel = true;
     video.src = `/api/filmes/${filmeId}/stream`;
     mostrarVideo();
     video.play();
@@ -89,11 +142,14 @@ async function poll() {
     const estado = await res.json();
 
     if (estado.pararVersion !== estadoAnterior.pararVersion && estado.filmeId === null) {
+      salvarProgresso();
+      filmeAtual = null;
       destruirHls();
       video.pause();
       video.removeAttribute('src');
       mostrarMsg('Aguardando seleção pelo controle remoto (celular)…');
     } else if (estado.filmeId !== null && estado.filmeId !== estadoAnterior.filmeId) {
+      salvarProgresso();  // guarda o filme anterior antes de trocar
       await carregarFilme(estado.filmeId);
     } else if (estado.filmeId !== null) {
       if (estado.playing && video.paused) video.play();

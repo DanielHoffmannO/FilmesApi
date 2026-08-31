@@ -17,6 +17,7 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseSqlite(builder.Configuration.GetConnectionString("Default") ?? "Data Source=/data/filmes.db"));
 
 builder.Services.AddScoped<FilmeService>();
+builder.Services.AddScoped<ProgressoService>();
 builder.Services.AddSingleton<RkmppCapabilityService>();
 builder.Services.AddSingleton<HlsTranscodeService>();
 builder.Services.AddSingleton<PlayerStateService>();
@@ -37,6 +38,20 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.EnsureCreated();
+
+    // EnsureCreated() só cria o banco do zero — não altera um /data/filmes.db que já existe.
+    // Enquanto o projeto não migra pra EF Migrations (ver roadmap), garante a tabela nova
+    // de forma idempotente pros bancos antigos. Tipos batem com o que o EF geraria (REAL/TEXT).
+    db.Database.ExecuteSqlRaw("""
+        CREATE TABLE IF NOT EXISTS "Progressos" (
+            "FilmeId" INTEGER NOT NULL CONSTRAINT "PK_Progressos" PRIMARY KEY,
+            "PosicaoSegundos" REAL NOT NULL,
+            "DuracaoSegundos" REAL NULL,
+            "AtualizadoEm" TEXT NOT NULL,
+            CONSTRAINT "FK_Progressos_Filmes_FilmeId" FOREIGN KEY ("FilmeId")
+                REFERENCES "Filmes" ("Id") ON DELETE CASCADE
+        );
+        """);
 }
 
 // ─── Pipeline ───────────────────────────────────────────────────────────
