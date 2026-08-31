@@ -71,9 +71,8 @@ public partial class FilmesController : ControllerBase
         if (double.IsNaN(req.Posicao) || double.IsInfinity(req.Posicao) || req.Posicao < 0)
             return BadRequest(new { mensagem = "posicao inválida" });
 
-        var duracao = req.Duracao is > 0 && !double.IsNaN(req.Duracao.Value) && !double.IsInfinity(req.Duracao.Value)
-            ? req.Duracao
-            : null;
+        // req.Duracao is > 0 já exclui NaN (NaN > 0 é false); +Infinity é que precisa de guarda.
+        var duracao = req.Duracao is > 0 && !double.IsInfinity(req.Duracao.Value) ? req.Duracao : null;
 
         return await _progresso.SalvarAsync(id, req.Posicao, duracao) ? NoContent() : NotFound();
     }
@@ -82,6 +81,11 @@ public partial class FilmesController : ControllerBase
     [HttpDelete("{id:int}/progresso")]
     public async Task<IActionResult> LimparProgresso(int id)
         => await _progresso.LimparAsync(id) ? NoContent() : NotFound();
+
+    /// <summary>Reprodução chegou ao fim: marca assistido e limpa a retomada.</summary>
+    [HttpPost("{id:int}/concluir")]
+    public async Task<IActionResult> Concluir(int id)
+        => await _progresso.ConcluirAsync(id) ? NoContent() : NotFound();
 
     /// <summary>Verifica se o vídeo já pode ser tocado direto, via HLS, ou se ainda está preparando.</summary>
     [HttpGet("{id:int}/stream-status")]
@@ -148,10 +152,10 @@ public partial class FilmesController : ControllerBase
 
     private async Task<(string? Path, IActionResult? Erro)> ResolverCaminhoAsync(int id)
     {
-        var filme = await _service.ObterAsync(id);
-        if (filme?.ArquivoPath is null) return (null, NotFound());
+        var arquivoPath = await _service.ObterArquivoPathAsync(id);
+        if (arquivoPath is null) return (null, NotFound());
 
-        var path = _service.ObterCaminhoAbsoluto(filme.ArquivoPath);
+        var path = _service.ObterCaminhoAbsoluto(arquivoPath);
         return path is null ? (null, NotFound("Arquivo não encontrado no disco.")) : (path, null);
     }
 

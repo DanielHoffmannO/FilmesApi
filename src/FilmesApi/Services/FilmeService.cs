@@ -43,6 +43,11 @@ public class FilmeService
             .FirstOrDefaultAsync();
     }
 
+    /// <summary>Só o ArquivoPath — para o streaming resolver o caminho no disco sem
+    /// arrastar o JOIN em Progressos que o <c>ObterAsync</c> completo faz.</summary>
+    public Task<string?> ObterArquivoPathAsync(int id)
+        => _db.Filmes.AsNoTracking().Where(f => f.Id == id).Select(f => f.ArquivoPath).FirstOrDefaultAsync();
+
     public async Task<FilmeResponse> CriarAsync(FilmeRequest req)
     {
         var filme = new Filme

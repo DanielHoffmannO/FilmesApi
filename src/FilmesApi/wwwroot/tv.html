@@ -26,6 +26,8 @@ const msg = document.getElementById('msg');
 let filmeAtual = null, ultimoSalvo = 0, posicaoRetomar = 0, retomarTentativas = 0;
 // video.duration só é confiável no stream direto; no HLS cresce durante o transcode.
 let duracaoConfiavel = false;
+// depois do 'ended' o /concluir já limpou a retomada — impede um save tardio de recriá-la.
+let reproducaoConcluida = false;
 
 // aplicar só no 'loadedmetadata' não cola (o navegador volta pra 0 depois);
 // 'loadeddata'/'canplay'/'seeked' pegam, e re-tenta se o seek for revertido.
@@ -47,13 +49,15 @@ video.addEventListener('timeupdate', () => {
   ultimoSalvo = t;
   salvarProgresso();
 });
-video.addEventListener('pause', salvarProgresso);
+video.addEventListener('pause', () => salvarProgresso());
 video.addEventListener('ended', () => {
-  if (filmeAtual != null) fetch(`/api/filmes/${filmeAtual}/progresso`, { method: 'DELETE', keepalive: true }).catch(() => {});
+  if (filmeAtual == null) return;
+  reproducaoConcluida = true;
+  fetch(`/api/filmes/${filmeAtual}/concluir`, { method: 'POST', keepalive: true }).catch(() => {});
 });
 
 function salvarProgresso() {
-  if (filmeAtual == null || !(video.currentTime > 15)) return;
+  if (filmeAtual == null || reproducaoConcluida || !(video.currentTime > 15)) return;
   fetch(`/api/filmes/${filmeAtual}/progresso`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -97,6 +101,7 @@ async function carregarFilme(filmeId) {
   posicaoRetomar = 0;
   retomarTentativas = 0;
   duracaoConfiavel = false;
+  reproducaoConcluida = false;
   const prog = await fetch(`/api/filmes/${filmeId}/progresso`).then(r => r.ok ? r.json() : null).catch(() => null);
   if (prog && prog.posicaoSegundos) posicaoRetomar = prog.posicaoSegundos;
 
