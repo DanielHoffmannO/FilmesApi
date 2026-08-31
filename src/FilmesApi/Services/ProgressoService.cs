@@ -75,15 +75,29 @@ public class ProgressoService
         return removidos > 0;
     }
 
+    /// <summary>Reprodução chegou ao fim: marca o filme como assistido e limpa a retomada.
+    /// Usado pelo evento 'ended' do player — inclusive no HLS, onde a regra de "perto do fim"
+    /// não roda porque a duração não é confiável durante o transcode.</summary>
+    public async Task<bool> ConcluirAsync(int filmeId)
+    {
+        var filme = await _db.Filmes.Include(f => f.Progresso).FirstOrDefaultAsync(f => f.Id == filmeId);
+        if (filme is null) return false;
+
+        filme.Assistido = true;
+        if (filme.Progresso is not null) _db.Progressos.Remove(filme.Progresso);
+        await _db.SaveChangesAsync();
+        return true;
+    }
+
     /// <summary>Filmes com reprodução pendente, do mais recente pro mais antigo.</summary>
     public async Task<List<ContinuarAssistindoResponse>> ContinuarAssistindoAsync(int limite = 20)
     {
+        // Toda linha em Progressos já tem PosicaoSegundos >= MinSegundosParaSalvar (SalvarAsync garante).
         return await _db.Progressos.AsNoTracking()
-            .Where(p => p.PosicaoSegundos >= MinSegundosParaSalvar)
             .OrderByDescending(p => p.AtualizadoEm)
             .Take(limite)
             .Select(p => new ContinuarAssistindoResponse(
-                p.FilmeId, p.Filme!.Titulo, p.Filme.ArquivoPath,
+                p.FilmeId, p.Filme!.Titulo,
                 p.PosicaoSegundos, p.DuracaoSegundos, p.AtualizadoEm))
             .ToListAsync();
     }
