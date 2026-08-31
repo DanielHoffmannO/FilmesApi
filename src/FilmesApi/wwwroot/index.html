@@ -149,9 +149,10 @@ async function load() {
 // episódio solto (Breaking Bad S01E01.mkv) virava "filme".
 const RE_SXXEXX = /\bS(\d{1,2})[\s._-]*E(\d{1,3})\b/i;
 const RE_NXNN = /(?:^|[^\dxX])(\d{1,2})x(\d{1,3})(?:[^\dp]|$)/i;
+const RE_EPNUM = /\b(?:epis[oó]dios?|episodes?|cap[ií]tulos?)\.?\s*(\d{1,3})\b/i;  // "Episódio 11", "Capítulo 3"
 const RE_EXTRA = /\b(trailer|sample|amostra|promo|extras?|featurette|bastidores|deleted|nfo|readme)\b/i;
 const nomeArquivo = p => (p || '').replace(/^.*\//, '');
-const ehEpisodio = p => { const n = nomeArquivo(p); return RE_SXXEXX.test(n) || RE_NXNN.test(n); };
+const ehEpisodio = p => { const n = nomeArquivo(p); return RE_SXXEXX.test(n) || RE_NXNN.test(n) || RE_EPNUM.test(n); };
 const ehExtra = p => { const n = nomeArquivo(p); return RE_EXTRA.test(n) || /1xbet/i.test(n); };
 
 function chaveSerie(arquivoPath) {
@@ -160,17 +161,23 @@ function chaveSerie(arquivoPath) {
   const n = nomeArquivo(arquivoPath);
   let i = n.search(RE_SXXEXX);
   if (i < 0) { const j = n.search(RE_NXNN); i = j <= 0 ? j : j + 1; } // RE_NXNN come 1 char antes
+  if (i < 0) i = n.search(RE_EPNUM);
   const prefixo = i > 0 ? n.slice(0, i) : n;
   return prefixo.replace(/[._]+/g, ' ').replace(/[\s-]+$/, '').trim() || n;
 }
 
 function rotuloEpisodio(f) {
-  const n = nomeArquivo(f.arquivoPath);
-  let m = n.match(RE_SXXEXX);
+  const t = f.titulo || '';
+  let m = t.match(RE_SXXEXX);
   if (m) return 'S' + ('0' + m[1]).slice(-2) + 'E' + ('0' + m[2]).slice(-2);
-  m = n.match(RE_NXNN);
+  m = t.match(RE_NXNN);
   if (m) return 'T' + m[1] + ' Ep' + ('0' + m[2]).slice(-2);
-  return f.titulo;
+  m = t.match(RE_EPNUM);
+  if (m) {
+    const resto = t.slice(m.index + m[0].length).replace(/^[\s._·:–—-]+/, '').trim();
+    return 'Ep ' + ('0' + m[1]).slice(-2) + (resto ? ' · ' + resto : '');
+  }
+  return t;
 }
 
 function render() {
