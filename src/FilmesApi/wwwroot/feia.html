@@ -78,36 +78,35 @@ a.grp:focus, a.grp.sel { background: #e50914; border-color: #fff; outline: 0; }
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
   background: #000;
-  text-align: center;
-  font-size: 0;              /* mata o respiro entre elementos inline */
   z-index: 100;
-}
-#player.on:before {          /* truque de centralizacao vertical pre-flexbox */
-  content: '';
-  display: inline-block;
-  height: 100%;
-  vertical-align: middle;
 }
 #list.hide { display: none; }
 body.playing { padding: 0; }
 body.playing > h1, body.playing #list { display: none; }
 video { width: 100%; height: auto; background: #000; }
-/* max-* + width/height:auto = ocupa a tela toda e, quando o formato nao bate
-   (4:3 numa TV widescreen), sobra barra so nas laterais. Sem object-fit de
-   proposito: TV antiga nao suporta e distorceria a imagem. */
+/* Centralizacao com position:absolute + margin:auto: funciona em TV antiga
+   (nao depende de flexbox) e nao mexe no font-size do <video> — se mexer, os
+   controles nativos (play/pause/tela cheia) somem em WebKit velho.
+   max-* + width/height:auto = preenche a tela e sobra barra so nas laterais
+   quando o formato nao bate. Sem object-fit: TV antiga distorceria a imagem. */
 #player.on video {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  margin: auto;
   width: auto; height: auto;
   max-width: 100%; max-height: 100%;
-  vertical-align: middle;
 }
+/* aviso/erro no TOPO — nunca em cima da barra de controle do <video> (que fica embaixo) */
 #pmsg {
   position: absolute;
-  left: 0; right: 0; bottom: 0;
+  top: 0; left: 0; right: 0;
   margin: 0;
   padding: 10px 16px;
   font-size: 22px;
+  text-align: center;
   color: #ddd;
-  background: rgba(0,0,0,.6);
+  background: rgba(0,0,0,.7);
+  z-index: 2;
 }
 #pmsg:empty { display: none; }
 #phint {
@@ -117,6 +116,7 @@ video { width: 100%; height: auto; background: #000; }
   font-size: 18px;
   color: #aaa;
   background: rgba(0,0,0,.5);
+  z-index: 3;
 }
 </style>
 </head>
@@ -164,6 +164,7 @@ video { width: 100%; height: auto; background: #000; }
   var ultimoSalvo = 0;
   var posicaoRetomar = 0;
   var retomarTentativas = 0;
+  var reproducaoConcluida = false;  // apos 'ended', nao deixa um save tardio recriar a retomada
 
   function get(url, cb) {
     var x = new XMLHttpRequest();
@@ -199,6 +200,32 @@ video { width: 100%; height: auto; background: #000; }
     return parts.length > 1 ? parts.slice(0, -1).join('/') : 'Sem pasta';
   }
 
+  // Marcador de episodio no NOME do arquivo (S01E02, 1x02) — sinal confiavel pra
+  // separar serie de filme. Contar arquivos na pasta errava (filme com trailer
+  // virava serie, Breaking Bad S01E01.mkv solto virava filme).
+  var RE_SXXEXX = /\bS(\d{1,2})[\s._-]*E(\d{1,3})\b/i;
+  var RE_NXNN = /(?:^|[^\dxX])(\d{1,2})x(\d{1,3})(?:[^\dp]|$)/i;
+  var RE_EXTRA = /\b(trailer|sample|amostra|promo|extras?|featurette|bastidores|deleted|nfo|readme)\b/i;
+  function nomeArquivo(p) { return (p || '').replace(/^.*\//, ''); }
+  function ehEpisodio(p) { var n = nomeArquivo(p); return RE_SXXEXX.test(n) || RE_NXNN.test(n); }
+  function ehExtra(p) { var n = nomeArquivo(p); return RE_EXTRA.test(n) || /1xbet/i.test(n); }
+  function chaveSerie(arquivoPath) {
+    var pasta = pastaDe(arquivoPath);
+    if (pasta !== 'Sem pasta') return pasta;
+    var n = nomeArquivo(arquivoPath);
+    var i = n.search(RE_SXXEXX);
+    if (i < 0) { var jj = n.search(RE_NXNN); i = jj <= 0 ? jj : jj + 1; }
+    var prefixo = i > 0 ? n.slice(0, i) : n;
+    return prefixo.replace(/[._]+/g, ' ').replace(/[\s-]+$/, '').trim() || n;
+  }
+  function rotuloEpisodio(m) {
+    var n = nomeArquivo(m.arquivoPath), r = n.match(RE_SXXEXX);
+    if (r) return 'S' + ('0' + r[1]).slice(-2) + 'E' + ('0' + r[2]).slice(-2);
+    r = n.match(RE_NXNN);
+    if (r) return 'T' + r[1] + ' Ep' + ('0' + r[2]).slice(-2);
+    return m.titulo;
+  }
+
   function load() {
     document.getElementById('msg').style.display = 'block';
     document.getElementById('msg').innerHTML = 'Carregando...';
@@ -224,25 +251,22 @@ video { width: 100%; height: auto; background: #000; }
   function render() {
     var grid = document.getElementById('grid');
     var msg = document.getElementById('msg');
-    var i, j, k;
+    var i, j;
 
-    // classificacao filme/serie sai da lista COMPLETA: filtrar por "nao assistido"
-    // nao pode rebaixar uma serie com 1 episodio pendente a "filme".
-    var totalPorPasta = {};
+    // nº de arquivos por pasta na lista COMPLETA (pra nao "achatar" pasta ao filtrar)
+    var porPasta = {};
     for (i = 0; i < filmes.length; i++) {
-      var pt = pastaDe(filmes[i].arquivoPath);
-      totalPorPasta[pt] = (totalPorPasta[pt] || 0) + 1;
+      var pp = pastaDe(filmes[i].arquivoPath);
+      porPasta[pp] = (porPasta[pp] || 0) + 1;
     }
-    function pastaEhSerie(p) { return p !== 'Sem pasta' && totalPorPasta[p] > 1; }
-    function ehSerie(m) { return pastaEhSerie(pastaDe(m.arquivoPath)); }
 
     var list = [];
     for (i = 0; i < filmes.length; i++) {
       var f = filmes[i];
       if (filtroVisto === 'sim' && !f.assistido) continue;
       if (filtroVisto === 'nao' && f.assistido) continue;
-      if (filtroTipo === 'filme' && ehSerie(f)) continue;
-      if (filtroTipo === 'serie' && !ehSerie(f)) continue;
+      if (filtroTipo === 'filme' && ehEpisodio(f.arquivoPath)) continue;
+      if (filtroTipo === 'serie' && !ehEpisodio(f.arquivoPath)) continue;
       list.push(f);
     }
     if (!list.length) {
@@ -254,35 +278,54 @@ video { width: 100%; height: auto; background: #000; }
     }
     msg.style.display = 'none';
 
-    // agrupa por pasta (so o que passou no filtro)
-    var grupos = {};
-    var ordem = [];
-    for (i = 0; i < list.length; i++) {
-      var pasta = pastaDe(list[i].arquivoPath);
-      if (!grupos[pasta]) { grupos[pasta] = []; ordem.push(pasta); }
-      grupos[pasta].push(list[i]);
-    }
-    ordem.sort();
-
-    function itemHtml(m) {
+    function itemHtml(m, rotulo) {
       return '<a class="item" href="#" data-id="' + m.id + '">' +
-             esc(m.titulo) +
+             esc(rotulo || m.titulo) +
              (m.anoLancamento ? ' <span class="ano">(' + m.anoLancamento + ')</span>' : '') +
              (m.assistido ? ' <span class="visto">&#10003; assistido</span>' : '') +
              '</a>';
     }
 
+    // episodios (por serie) / filmes soltos / pastas de filme (filme + extras)
     var filmesSoltos = [];
-    var seriesNomes = [];
-    for (i = 0; i < ordem.length; i++) {
-      var nm = ordem[i];
-      if (pastaEhSerie(nm)) seriesNomes.push(nm);
-      else for (k = 0; k < grupos[nm].length; k++) filmesSoltos.push(grupos[nm][k]);
+    var pfMap = {}, pfOrdem = [];
+    var serieMap = {}, serieOrdem = [];
+    for (i = 0; i < list.length; i++) {
+      var m = list[i];
+      if (ehEpisodio(m.arquivoPath)) {
+        var ks = chaveSerie(m.arquivoPath);
+        if (!serieMap[ks]) { serieMap[ks] = []; serieOrdem.push(ks); }
+        serieMap[ks].push(m);
+        continue;
+      }
+      var pa = pastaDe(m.arquivoPath);
+      if (pa !== 'Sem pasta' && porPasta[pa] > 1) {
+        if (!pfMap[pa]) { pfMap[pa] = []; pfOrdem.push(pa); }
+        pfMap[pa].push(m);
+      } else {
+        filmesSoltos.push(m);
+      }
+    }
+    // pasta com 1 filme "de verdade" + so extras -> mostra o filme direto
+    for (i = 0; i < pfOrdem.length; i++) {
+      var arr0 = pfMap[pfOrdem[i]], princ = [];
+      for (j = 0; j < arr0.length; j++) if (!ehExtra(arr0[j].arquivoPath)) princ.push(arr0[j]);
+      if (princ.length === 1) { filmesSoltos.push(princ[0]); delete pfMap[pfOrdem[i]]; pfOrdem.splice(i, 1); i--; }
     }
     filmesSoltos.sort(function (a, b) {
       var x = String(a.titulo).toLowerCase(), y = String(b.titulo).toLowerCase();
       return x < y ? -1 : (x > y ? 1 : 0);
     });
+    serieOrdem.sort(); pfOrdem.sort();
+    for (i = 0; i < serieOrdem.length; i++) {
+      serieMap[serieOrdem[i]].sort(function (a, b) {
+        var x = rotuloEpisodio(a), y = rotuloEpisodio(b);
+        return x < y ? -1 : (x > y ? 1 : 0);
+      });
+    }
+
+    var totalFilmes = filmesSoltos.length;
+    for (i = 0; i < pfOrdem.length; i++) totalFilmes += pfMap[pfOrdem[i]].length;
 
     var html = '';
     if (filtroTipo === 'all' && filtroVisto === 'all' && continuar.length) {
@@ -296,19 +339,31 @@ video { width: 100%; height: auto; background: #000; }
       }
       html += '</div>';
     }
-    if (filmesSoltos.length) {
-      html += '<h2>Filmes (' + filmesSoltos.length + ')</h2><div class="movies">';
-      for (i = 0; i < filmesSoltos.length; i++) html += itemHtml(filmesSoltos[i]);
-      html += '</div>';
+
+    if (totalFilmes) {
+      html += '<h2>Filmes (' + totalFilmes + ')</h2>';
+      if (filmesSoltos.length) {
+        html += '<div class="movies">';
+        for (i = 0; i < filmesSoltos.length; i++) html += itemHtml(filmesSoltos[i]);
+        html += '</div>';
+      }
+      for (i = 0; i < pfOrdem.length; i++) {
+        var parr = pfMap[pfOrdem[i]];
+        var pl = esc(pfOrdem[i]) + ' (' + parr.length + ' arquivos)';
+        html += '<a class="grp" href="#" data-g="F' + i + '" data-label="' + pl + '">&#9656; ' + pl + '</a>';
+        html += '<div class="eps" data-g="F' + i + '" style="display:none">';
+        for (j = 0; j < parr.length; j++) html += itemHtml(parr[j]);
+        html += '</div>';
+      }
     }
-    for (i = 0; i < seriesNomes.length; i++) {
-      var nome = seriesNomes[i];
-      var arr = grupos[nome];
-      if (i === 0) html += '<h2>Series (' + seriesNomes.length + ')</h2>';
-      var label = esc(nome) + ' (' + arr.length + (arr.length === 1 ? ' episodio)' : ' episodios)');
-      html += '<a class="grp" href="#" data-g="' + i + '" data-label="' + label + '">&#9656; ' + label + '</a>';
-      html += '<div class="eps" data-g="' + i + '" style="display:none">';
-      for (j = 0; j < arr.length; j++) html += itemHtml(arr[j]);
+
+    for (i = 0; i < serieOrdem.length; i++) {
+      var sarr = serieMap[serieOrdem[i]];
+      if (i === 0) html += '<h2>Series (' + serieOrdem.length + ')</h2>';
+      var sl = esc(serieOrdem[i]) + ' (' + sarr.length + (sarr.length === 1 ? ' episodio)' : ' episodios)');
+      html += '<a class="grp" href="#" data-g="S' + i + '" data-label="' + sl + '">&#9656; ' + sl + '</a>';
+      html += '<div class="eps" data-g="S' + i + '" style="display:none">';
+      for (j = 0; j < sarr.length; j++) html += itemHtml(sarr[j], rotuloEpisodio(sarr[j]));
       html += '</div>';
     }
     grid.innerHTML = html;
@@ -393,7 +448,6 @@ video { width: 100%; height: auto; background: #000; }
   var pollTimer = null;
 
   function tocar(id) {
-    salvarProgresso();  // se ja estava vendo outro, guarda onde parou
     document.getElementById('list').className = 'hide';
     document.getElementById('player').className = 'on';
     document.body.className = 'playing';
@@ -402,10 +456,16 @@ video { width: 100%; height: auto; background: #000; }
     pmsg.innerHTML = 'Preparando...';
     v.removeAttribute('src');
 
+    // dica "Voltar = lista" so nos primeiros segundos, pra nao ficar sobre o video/controles
+    var phint = document.getElementById('phint');
+    phint.style.display = 'block';
+    setTimeout(function () { phint.style.display = 'none'; }, 5000);
+
     filmeAtual = id;
     ultimoSalvo = 0;
     posicaoRetomar = 0;
     retomarTentativas = 0;
+    reproducaoConcluida = false;
 
     // pega o ponto de retomada ANTES de setar o src (senao o loadedmetadata perde a corrida)
     get(API + '/' + id + '/progresso', function (err, d) {
@@ -413,17 +473,19 @@ video { width: 100%; height: auto; background: #000; }
 
       checar(id, function (status) {
         if (status === 'erro') { pmsg.innerHTML = 'Falha ao converter o video.'; return; }
+        pmsg.innerHTML = '';
         if (status === 'compativel') {
           v.src = API + '/' + id + '/stream';
         } else {
           // TV antiga nao roda HLS: serve o arquivo original e torce.
           v.src = API + '/' + id + '/original';
-          pmsg.innerHTML = 'Enviando arquivo original (pode nao rodar em TV muito antiga). ' +
-                           'Se travar, use o app do celular pra mandar pra TV.';
+          pmsg.innerHTML = 'Arquivo original (pode nao rodar em TV muito antiga).';
+          setTimeout(function () {
+            if (pmsg.innerHTML.indexOf('original') !== -1) pmsg.innerHTML = '';
+          }, 8000);
         }
         try { v.load(); v.play(); } catch (e) {}
-        if (status === 'compativel') pmsg.innerHTML = '';
-        // "assistido" fica por conta do backend quando a reproducao chega perto do fim.
+        // "assistido" fica por conta do backend (perto do fim) ou do evento 'ended'.
       });
     });
   }
@@ -452,18 +514,25 @@ video { width: 100%; height: auto; background: #000; }
       ultimoSalvo = t;
       salvarProgresso();
     };
-    v.onpause = salvarProgresso;
+    v.onpause = function () { salvarProgresso(); };
     v.onended = function () {
-      if (filmeAtual != null) send('DELETE', API + '/' + filmeAtual + '/progresso');
+      if (filmeAtual == null) return;
+      reproducaoConcluida = true;
+      send('POST', API + '/' + filmeAtual + '/concluir');
     };
   }
 
-  function salvarProgresso() {
+  // cb (opcional) roda quando o PUT termina — usado pelo fecharPlayer pra so
+  // recarregar a lista depois que o progresso ja foi gravado.
+  function salvarProgresso(cb) {
     var v = document.getElementById('video');
-    if (filmeAtual == null || !(v.currentTime > 15)) return;
+    if (filmeAtual == null || reproducaoConcluida || !(v.currentTime > 15)) { if (typeof cb === 'function') cb(); return; }
     var x = new XMLHttpRequest();
     x.open('PUT', API + '/' + filmeAtual + '/progresso', true);
     x.setRequestHeader('Content-Type', 'application/json');
+    if (typeof cb === 'function') {
+      x.onreadystatechange = function () { if (x.readyState === 4) cb(); };
+    }
     x.send(JSON.stringify({
       posicao: v.currentTime,
       duracao: (isFinite(v.duration) && v.duration > 0) ? v.duration : null
@@ -484,7 +553,9 @@ video { width: 100%; height: auto; background: #000; }
   }
 
   function fecharPlayer() {
-    salvarProgresso();
+    // grava o progresso e so entao recarrega a lista, senao o "continuar
+    // assistindo" volta antes do PUT e fica desatualizado.
+    salvarProgresso(function () { load(); });
     if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
     var v = document.getElementById('video');
     try { v.pause(); } catch (e) {}
@@ -494,7 +565,6 @@ video { width: 100%; height: auto; background: #000; }
     document.getElementById('player').className = '';
     document.getElementById('list').className = '';
     document.body.className = '';
-    load();
   }
 
   // ---- teclado / controle remoto ----
