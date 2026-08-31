@@ -37,6 +37,8 @@ main{padding:24px}
 .player-overlay.active{display:flex}
 .player-overlay video{max-width:100vw;max-height:100vh;width:auto;height:auto}
 .player-close{position:absolute;top:16px;right:24px;font-size:28px;color:#fff;cursor:pointer;z-index:101}
+.player-btn{position:absolute;top:18px;left:16px;z-index:101;background:rgba(0,0,0,.55);color:#fff;border:1px solid #555;border-radius:20px;padding:8px 14px;font-size:14px;cursor:pointer}
+.player-btn:hover{background:rgba(0,0,0,.85)}
 .converting{display:none;color:#ccc;font-size:14px;margin-top:16px;white-space:pre-line;text-align:center}
 #loadbar{position:fixed;top:0;left:0;height:3px;width:0;background:#e50914;z-index:200;opacity:0;transition:width .3s ease}
 #loadbar.on{opacity:1;width:75%}
@@ -95,6 +97,7 @@ main{padding:24px}
 
 <div class="player-overlay" id="player">
   <span class="player-close" onclick="closePlayer()">✕</span>
+  <button class="player-btn" onclick="voltar15()" title="Voltar 15 segundos">« 15s</button>
   <video id="video" controls autoplay></video>
   <div class="converting" id="converting">Convertendo vídeo para reprodução, aguarde...</div>
 </div>
@@ -477,12 +480,30 @@ function aplicarRetomada() {
   try { video.currentTime = posicaoParaRetomar; } catch { /* ainda não seekável */ }
 }
 
+function voltar15() {
+  const video = document.getElementById('video');
+  if (isFinite(video.currentTime)) video.currentTime = Math.max(0, video.currentTime - 15);
+}
+
 function configurarProgresso() {
   const video = document.getElementById('video');
 
   video.addEventListener('loadeddata', aplicarRetomada);
   video.addEventListener('canplay', aplicarRetomada);
   video.addEventListener('seeked', aplicarRetomada);
+
+  // Clicar em qualquer lugar do player pausa/despausa: na imagem (fora da faixa
+  // de baixo, que é a barra de controle nativa) ou nas bordas pretas em volta.
+  const alternarPausa = () => { if (video.paused) video.play().catch(() => {}); else video.pause(); };
+  video.addEventListener('click', e => {
+    const r = video.getBoundingClientRect();
+    // ignora a faixa de baixo (barra de controle nativa, ~48-64px)
+    if (r.height > 0 && e.clientY > r.bottom - 64) return;
+    alternarPausa();
+  });
+  document.getElementById('player').addEventListener('click', e => {
+    if (e.target.id === 'player') alternarPausa();  // bordas pretas em volta do vídeo
+  });
 
   video.addEventListener('timeupdate', () => {
     if (filmeAtual == null || video.paused) return;
