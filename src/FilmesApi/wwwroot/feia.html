@@ -145,7 +145,7 @@ video { width: 100%; height: auto; background: #000; }
 <div id="player">
   <video id="video" controls autoplay></video>
   <div id="pmsg"></div>
-  <div id="phint">Voltar = volta pra lista</div>
+  <div id="phint">&#8592; &#8594; 15s &middot; OK pausa &middot; Voltar = lista</div>
 </div>
 
 <script>
@@ -466,10 +466,10 @@ video { width: 100%; height: auto; background: #000; }
     pmsg.innerHTML = 'Preparando...';
     v.removeAttribute('src');
 
-    // dica "Voltar = lista" so nos primeiros segundos, pra nao ficar sobre o video/controles
+    // dica dos controles so nos primeiros segundos, pra nao ficar sobre o video
     var phint = document.getElementById('phint');
     phint.style.display = 'block';
-    setTimeout(function () { phint.style.display = 'none'; }, 5000);
+    setTimeout(function () { phint.style.display = 'none'; }, 7000);
 
     filmeAtual = id;
     ultimoSalvo = 0;
@@ -586,14 +586,40 @@ video { width: 100%; height: auto; background: #000; }
   document.onkeydown = function (e) {
     e = e || window.event;
     var k = e.keyCode;
-    var noPlayer = document.getElementById('player').className === 'on';
+    var playerAtivo = document.getElementById('player').className === 'on';
 
     // Voltar (varia por fabricante: 8, 27, 461, 10009, 166)
     if (k === 8 || k === 27 || k === 461 || k === 10009 || k === 166) {
-      if (noPlayer) { fecharPlayer(); if (e.preventDefault) e.preventDefault(); return false; }
+      if (playerAtivo) { fecharPlayer(); if (e.preventDefault) e.preventDefault(); return false; }
       return true;
     }
-    if (noPlayer) return true; // no player deixa o controle nativo do <video> agir
+
+    if (playerAtivo) {
+      // Nesta TV a navegacao e por seta — durante o filme: <- -> pulam 15s, OK pausa.
+      // Cima/baixo (volume) ficam com o controle nativo do <video>.
+      var v = document.getElementById('video');
+      if (k === 37) {
+        v.currentTime = Math.max(0, v.currentTime - 15);
+        if (e.preventDefault) e.preventDefault(); return false;
+      }
+      if (k === 39) {
+        var d = v.duration;
+        v.currentTime = isFinite(d) ? Math.min(d - 1, v.currentTime + 15) : v.currentTime + 15;
+        if (e.preventDefault) e.preventDefault(); return false;
+      }
+      if (k === 13 || k === 32) {
+        // decide o alvo agora e aplica depois de um tiquinho, corrigindo caso o
+        // controle nativo do <video> tambem responda ao OK e fique de briga.
+        var querPausar = !v.paused;
+        if (e.preventDefault) e.preventDefault();
+        setTimeout(function () {
+          if (querPausar && !v.paused) v.pause();
+          if (!querPausar && v.paused) { try { v.play(); } catch (er) {} }
+        }, 80);
+        return false;
+      }
+      return true;
+    }
 
     if (k === 38 || k === 37) { focar(idx - 1); if (e.preventDefault) e.preventDefault(); return false; } // cima / esquerda
     if (k === 40 || k === 39) { focar(idx + 1); if (e.preventDefault) e.preventDefault(); return false; } // baixo / direita
