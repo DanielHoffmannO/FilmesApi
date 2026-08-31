@@ -8,7 +8,7 @@
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;background:#000;overflow:hidden}
 video{width:100%;height:100%;object-fit:contain}
-.msg{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#ccc;font:20px system-ui,sans-serif;text-align:center;padding:24px}
+.msg{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#ccc;font:20px system-ui,sans-serif;text-align:center;padding:24px;white-space:pre-line}
 </style>
 </head>
 <body>
@@ -18,9 +18,18 @@ video{width:100%;height:100%;object-fit:contain}
 <script src="/vendor/hls.min.js"></script>
 <script>
 const API = '';
-let estadoAnterior = { filmeId: null, playing: false, volume: 1, seekVersion: 0, pararVersion: 0 };
+let estadoAnterior = { filmeId: null, playing: false, volume: 1, seekVersion: 0, pararVersion: 0, seekAbsVersion: 0 };
 const video = document.getElementById('video');
 const msg = document.getElementById('msg');
+
+// Reporta a posição pro celular desenhar a barra de progresso do controle remoto.
+setInterval(() => {
+  if (filmeAtual == null || !isFinite(video.currentTime)) return;
+  fetch('/api/player/posicao', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pos: video.currentTime, dur: isFinite(video.duration) ? video.duration : 0 })
+  }).catch(() => {});
+}, 2000);
 
 // continuar de onde parou
 let filmeAtual = null, ultimoSalvo = 0, posicaoRetomar = 0, retomarTentativas = 0;
@@ -105,22 +114,28 @@ async function carregarFilme(filmeId) {
   const prog = await fetch(`/api/filmes/${filmeId}/progresso`).then(r => r.ok ? r.json() : null).catch(() => null);
   if (prog && prog.posicaoSegundos) posicaoRetomar = prog.posicaoSegundos;
 
+  const inicioPrep = Date.now();
+  const prepTimer = setInterval(() => {
+    const s = Math.round((Date.now() - inicioPrep) / 1000);
+    mostrarMsg(`Preparando vídeo… ${s}s` + (s > 45 ? '\n(a primeira vez demora mais)' : ''));
+  }, 1000);
   let status = await checarStatus(filmeId);
   while (status === 'preparando') {
-    mostrarMsg('Preparando vídeo…');
     await new Promise(r => setTimeout(r, 1500));
     status = await checarStatus(filmeId);
   }
+  clearInterval(prepTimer);
   if (status === 'erro') {
     mostrarMsg('Falha ao converter o vídeo.');
     return;
   }
 
   video.volume = estadoAnterior.volume;
+  const t = posicaoRetomar > 5 ? Math.floor(posicaoRetomar) : 0;  // retoma sem pulo
 
   if (status === 'compativel') {
     duracaoConfiavel = true;
-    video.src = `/api/filmes/${filmeId}/stream`;
+    video.src = `/api/filmes/${filmeId}/stream${t ? `#t=${t}` : ''}`;
     mostrarVideo();
     video.play();
     return;
@@ -128,12 +143,12 @@ async function carregarFilme(filmeId) {
 
   const playlistUrl = `/api/filmes/${filmeId}/hls/playlist.m3u8`;
   if (window.Hls && Hls.isSupported()) {
-    hls = new Hls();
+    hls = new Hls(t ? { startPosition: t } : {});
     hls.loadSource(playlistUrl);
     hls.attachMedia(video);
     hls.on(Hls.Events.MANIFEST_PARSED, () => { mostrarVideo(); video.play(); });
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-    video.src = playlistUrl;
+    video.src = t ? `${playlistUrl}#t=${t}` : playlistUrl;
     mostrarVideo();
     video.play();
   } else {
@@ -165,6 +180,9 @@ async function poll() {
 
     if (estado.seekVersion !== estadoAnterior.seekVersion) {
       video.currentTime = Math.max(0, video.currentTime + estado.seekDelta);
+    }
+    if (estado.seekAbsVersion !== estadoAnterior.seekAbsVersion) {
+      try { video.currentTime = Math.max(0, estado.seekAbsPos); } catch { /* ainda não seekável */ }
     }
 
     estadoAnterior = estado;

@@ -8,13 +8,18 @@ public class FilmeService
 {
     private readonly AppDbContext _db;
     private readonly HlsTranscodeService _transcode;
+    private readonly ILogger<FilmeService> _logger;
     private readonly string _mediaPath;
     private static readonly string[] VideoExtensions = [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm"];
 
-    public FilmeService(AppDbContext db, HlsTranscodeService transcode, IConfiguration config)
+    // Dois POST /scan concorrentes leriam "não existe" pro mesmo arquivo e ambos inseririam.
+    private static readonly SemaphoreSlim _scanLock = new(1, 1);
+
+    public FilmeService(AppDbContext db, HlsTranscodeService transcode, IConfiguration config, ILogger<FilmeService> logger)
     {
         _db = db;
         _transcode = transcode;
+        _logger = logger;
         _mediaPath = config.GetValue<string>("MediaPath") ?? "/media";
     }
 
@@ -87,35 +92,60 @@ public class FilmeService
     }
 
     /// <summary>
-    /// Escaneia a pasta de mídia e adiciona filmes que ainda não estão no banco.
+    /// Sincroniza o catálogo com a pasta de mídia: importa vídeos novos e remove entradas
+    /// cujo arquivo sumiu do disco. Idempotente — rodar de novo não muda nada.
     /// </summary>
-    public async Task<int> ScanMediaAsync()
+    public async Task<ScanResultado> ScanMediaAsync()
     {
-        if (!Directory.Exists(_mediaPath)) return 0;
+        if (!Directory.Exists(_mediaPath)) return new ScanResultado(0, 0);
 
-        var arquivos = EnumerarArquivosDeVideo(_mediaPath);
-
-        var existentes = (await _db.Filmes.AsNoTracking().Select(f => f.ArquivoPath).ToListAsync())
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var novos = 0;
-
-        foreach (var arquivo in arquivos)
+        await _scanLock.WaitAsync();
+        try
         {
-            var relativo = Path.GetRelativePath(_mediaPath, arquivo).Replace('\\', '/');
-            if (existentes.Contains(relativo)) continue;
+            // EnumerarArquivosDeVideo (não Directory.EnumerateFiles direto) porque pula
+            // diretórios sem permissão (ex: /media/lost+found) em vez de abortar a varredura
+            // inteira no primeiro UnauthorizedAccessException.
+            var noDisco = EnumerarArquivosDeVideo(_mediaPath)
+                .Select(f => Path.GetRelativePath(_mediaPath, f).Replace('\\', '/'))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            var titulo = Path.GetFileNameWithoutExtension(arquivo)
-                .Replace('.', ' ').Replace('_', ' ').Replace('-', ' ');
+            var noBanco = await _db.Filmes.Where(f => f.ArquivoPath != null).ToListAsync();
+            var existentes = noBanco.Select(f => f.ArquivoPath!).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            _db.Filmes.Add(new Filme { Titulo = titulo, ArquivoPath = relativo });
-            // Marca já aqui (não só depois do SaveChangesAsync) pra não inserir o mesmo
-            // ArquivoPath duas vezes caso ele apareça mais de uma vez nesta mesma varredura.
-            existentes.Add(relativo);
-            novos++;
+            // Remove órfãos (arquivo sumiu — ex.: pasta reorganizada). Só quando o disco
+            // respondeu com ALGO: se veio vazio, o mount provavelmente caiu — não zerar o catálogo.
+            var removidos = 0;
+            if (noDisco.Count > 0)
+            {
+                var orfaos = noBanco.Where(f => !noDisco.Contains(f.ArquivoPath!)).ToList();
+                foreach (var orfao in orfaos)
+                {
+                    await _db.Progressos.Where(p => p.FilmeId == orfao.Id).ExecuteDeleteAsync();
+                    _db.Filmes.Remove(orfao);
+                    _transcode.LimparCache(orfao.Id);
+                    _logger.LogInformation("Scan: removendo órfão {Id} ({Path}) — arquivo não está mais no disco.",
+                        orfao.Id, orfao.ArquivoPath);
+                }
+                removidos = orfaos.Count;
+            }
+
+            var novos = 0;
+            foreach (var relativo in noDisco)
+            {
+                if (existentes.Contains(relativo)) continue;
+                var titulo = Path.GetFileNameWithoutExtension(relativo)
+                    .Replace('.', ' ').Replace('_', ' ').Replace('-', ' ');
+                _db.Filmes.Add(new Filme { Titulo = titulo, ArquivoPath = relativo });
+                novos++;
+            }
+
+            if (novos > 0 || removidos > 0) await _db.SaveChangesAsync();
+            return new ScanResultado(novos, removidos);
         }
-
-        if (novos > 0) await _db.SaveChangesAsync();
-        return novos;
+        finally
+        {
+            _scanLock.Release();
+        }
     }
 
     /// <summary>
