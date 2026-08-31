@@ -70,10 +70,51 @@ a.grp:focus, a.grp.sel { background: #e50914; border-color: #fff; outline: 0; }
 
 /* player */
 #player { display: none; }
-#player.on { display: block; }
+#player.on {
+  display: block;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: #000;
+  text-align: center;
+  font-size: 0;              /* mata o respiro entre elementos inline */
+  z-index: 100;
+}
+#player.on:before {          /* truque de centralizacao vertical pre-flexbox */
+  content: '';
+  display: inline-block;
+  height: 100%;
+  vertical-align: middle;
+}
 #list.hide { display: none; }
+body.playing { padding: 0; }
+body.playing > h1, body.playing #list { display: none; }
 video { width: 100%; height: auto; background: #000; }
-#pmsg { color: #bbb; margin-top: 16px; }
+/* max-* + width/height:auto = ocupa a tela toda e, quando o formato nao bate
+   (4:3 numa TV widescreen), sobra barra so nas laterais. Sem object-fit de
+   proposito: TV antiga nao suporta e distorceria a imagem. */
+#player.on video {
+  width: auto; height: auto;
+  max-width: 100%; max-height: 100%;
+  vertical-align: middle;
+}
+#pmsg {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  margin: 0;
+  padding: 10px 16px;
+  font-size: 22px;
+  color: #ddd;
+  background: rgba(0,0,0,.6);
+}
+#pmsg:empty { display: none; }
+#phint {
+  position: absolute;
+  top: 0; right: 0;
+  padding: 6px 12px;
+  font-size: 18px;
+  color: #aaa;
+  background: rgba(0,0,0,.5);
+}
 </style>
 </head>
 <body>
@@ -94,7 +135,7 @@ video { width: 100%; height: auto; background: #000; }
 <div id="player">
   <video id="video" controls autoplay></video>
   <div id="pmsg"></div>
-  <p style="margin-top:16px;color:#bbb">Botao Voltar do controle retorna a lista.</p>
+  <div id="phint">Voltar = volta pra lista</div>
 </div>
 
 <script>
@@ -291,6 +332,7 @@ video { width: 100%; height: auto; background: #000; }
   function tocar(id) {
     document.getElementById('list').className = 'hide';
     document.getElementById('player').className = 'on';
+    document.body.className = 'playing';
     var v = document.getElementById('video');
     var pmsg = document.getElementById('pmsg');
     pmsg.innerHTML = 'Preparando...';
@@ -334,6 +376,7 @@ video { width: 100%; height: auto; background: #000; }
     try { v.load(); } catch (e) {}
     document.getElementById('player').className = '';
     document.getElementById('list').className = '';
+    document.body.className = '';
     load();
   }
 
