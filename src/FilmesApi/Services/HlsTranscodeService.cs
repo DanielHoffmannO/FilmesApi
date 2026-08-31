@@ -32,6 +32,7 @@ public class HlsTranscodeService
     private readonly TimeSpan _jobTimeout;
     private readonly TimeSpan _stallTimeout;
     private readonly long _cacheMaxBytes;
+    private readonly int _alturaMaxReencode;
     private readonly SemaphoreSlim _slotEncoder;
     private readonly RkmppCapabilityService _rkmpp;
     private readonly ILogger<HlsTranscodeService> _logger;
@@ -52,6 +53,7 @@ public class HlsTranscodeService
         _stallTimeout = TimeSpan.FromMinutes(config.GetValue<double?>("HlsStallTimeoutMinutes") ?? 8);
         var maxGb = config.GetValue<double?>("HlsCacheMaxGB") ?? 20;
         _cacheMaxBytes = maxGb > 0 ? (long)(maxGb * 1024 * 1024 * 1024) : long.MaxValue;
+        _alturaMaxReencode = config.GetValue<int?>("HlsMaxAlturaReencode") ?? 1080;  // 0 = sem downscale
         _slotEncoder = new SemaphoreSlim(maxJobs, maxJobs);
         _rkmpp = rkmpp;
         _logger = logger;
@@ -239,10 +241,28 @@ public class HlsTranscodeService
             // (que ProbeCodecsAsync também traria), então evita o segundo processo ffprobe.
             var videoCodec = await RunFfprobeAsync(origem, "v:0", CancellationToken.None);
             var videoCompativel = videoCodec is not null && VideoCodecsCompativeis.Contains(videoCodec);
+
+            // 4K/UHD decodificado + encodado em software trava o Radxa por minutos e esquenta
+            // a placa. Se vamos reencodar e a entrada passa do teto, reduz a resolução no
+            // filtro do ffmpeg — corta o custo de encode (e a chance de cair no fallback
+            // libx264) drasticamente. Perde-se resolução, ganha-se estabilidade.
+            int? downscalePara = null;
+            if (!videoCompativel && _alturaMaxReencode > 0)
+            {
+                var res = await ProbeResolucaoAsync(origem, CancellationToken.None);
+                if (res is { } r && r.Altura > _alturaMaxReencode)
+                {
+                    downscalePara = _alturaMaxReencode;
+                    _logger.LogWarning(
+                        "Filme {Id}: entrada {W}x{H} — reencode com downscale pra {Alvo}p (4K+ em software sobrecarrega o servidor).",
+                        filmeId, r.Largura, r.Altura, _alturaMaxReencode);
+                }
+            }
+
             var usarRkmpp = !videoCompativel && await _rkmpp.DisponivelAsync();
             var audioStreamIndex = await EscolherStreamAudioAsync(origem, CancellationToken.None);
 
-            var (exitCode, stderr) = await RunFfmpegHlsAsync(origem, dir, videoCompativel, usarRkmpp, audioStreamIndex);
+            var (exitCode, stderr) = await RunFfmpegHlsAsync(origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara);
 
             if (usarRkmpp)
             {
@@ -260,7 +280,7 @@ public class HlsTranscodeService
                         Directory.Delete(dir, recursive: true);
                         Directory.CreateDirectory(dir);
                     }
-                    (exitCode, stderr) = await RunFfmpegHlsAsync(origem, dir, videoCompativel, usarRkmpp: false, audioStreamIndex);
+                    (exitCode, stderr) = await RunFfmpegHlsAsync(origem, dir, videoCompativel, usarRkmpp: false, audioStreamIndex, downscalePara);
                 }
             }
 
@@ -291,7 +311,7 @@ public class HlsTranscodeService
     }
 
     private async Task<(int ExitCode, string Stderr)> RunFfmpegHlsAsync(
-        string origem, string dir, bool videoCompativel, bool usarRkmpp, int? audioStreamIndex)
+        string origem, string dir, bool videoCompativel, bool usarRkmpp, int? audioStreamIndex, int? downscalePara)
     {
         // -map explícito: sem isso o ffmpeg escolhe sozinho, por heurística de codec/canais,
         // qual stream de cada tipo entra no output — e essa heurística ignora idioma e pode
@@ -310,9 +330,20 @@ public class HlsTranscodeService
         else
         {
             if (usarRkmpp)
-                args.AddRange(["-init_hw_device", "rkmpp=rk", "-filter_hw_device", "rk", "-vf", "format=nv12,hwupload", "-c:v", "h264_rkmpp"]);
+            {
+                // scale roda em CPU antes do hwupload; format=nv12 força 8-bit 4:2:0 (mata HDR/10-bit,
+                // mas é o que a maioria dos players aqui aguenta).
+                var filtro = downscalePara is int alt
+                    ? $"scale=-2:{alt},format=nv12,hwupload"
+                    : "format=nv12,hwupload";
+                args.AddRange(["-init_hw_device", "rkmpp=rk", "-filter_hw_device", "rk", "-vf", filtro, "-c:v", "h264_rkmpp"]);
+            }
             else
-                args.AddRange(["-c:v", "libx264", "-preset", "veryfast", "-crf", "23"]);
+            {
+                // -pix_fmt yuv420p: nunca deixa passar 10-bit (High 10) pro output — navegador não toca.
+                args.AddRange(["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p"]);
+                if (downscalePara is int alt2) args.AddRange(["-vf", $"scale=-2:{alt2}"]);
+            }
 
             // Segmentação previsível mesmo com fps/keyframes irregulares da fonte — vale
             // pros dois encoders de reencode, só não faz sentido no remux acima (-c:v copy
@@ -416,7 +447,8 @@ public class HlsTranscodeService
             ?? streams[0].Index;
     }
 
-    private async Task<string?> RunFfprobeAsync(string path, string stream, CancellationToken ct)
+    private async Task<string?> RunFfprobeAsync(string path, string stream, CancellationToken ct,
+        string showEntries = "stream=codec_name")
     {
         var psi = new ProcessStartInfo(_ffprobePath) { RedirectStandardOutput = true };
         psi.ArgumentList.Add("-v");
@@ -424,7 +456,7 @@ public class HlsTranscodeService
         psi.ArgumentList.Add("-select_streams");
         psi.ArgumentList.Add(stream);
         psi.ArgumentList.Add("-show_entries");
-        psi.ArgumentList.Add("stream=codec_name");
+        psi.ArgumentList.Add(showEntries);
         psi.ArgumentList.Add("-of");
         psi.ArgumentList.Add("csv=p=0");
         psi.ArgumentList.Add(path);
@@ -433,7 +465,17 @@ public class HlsTranscodeService
         if (proc is null) return null;
         var saida = await proc.StandardOutput.ReadToEndAsync(ct);
         await proc.WaitForExitAsync(ct);
-        var codec = saida.Trim().Split('\n')[0].Trim();
-        return string.IsNullOrWhiteSpace(codec) ? null : codec;
+        var valor = saida.Trim().Split('\n')[0].Trim();
+        return string.IsNullOrWhiteSpace(valor) ? null : valor;
+    }
+
+    /// <summary>(largura, altura) do vídeo, ou null se não deu pra ler.</summary>
+    private async Task<(int Largura, int Altura)?> ProbeResolucaoAsync(string path, CancellationToken ct)
+    {
+        var raw = await RunFfprobeAsync(path, "v:0", ct, "stream=width,height");  // ex.: "3840,1920"
+        var p = raw?.Split(',');
+        return p is { Length: 2 } && int.TryParse(p[0], out var w) && int.TryParse(p[1], out var h) && w > 0 && h > 0
+            ? (w, h)
+            : null;
     }
 }
