@@ -52,6 +52,21 @@ using (var scope = app.Services.CreateScope())
                 REFERENCES "Filmes" ("Id") ON DELETE CASCADE
         );
         """);
+
+    // Bancos antigos podem ter ArquivoPath duplicado (scan rodado 2x antes do índice único).
+    // Remove as duplicatas (mantém o menor Id; o FK em cascata leva o progresso junto) e
+    // então cria o índice — mesmo nome/definição que o EnsureCreated de um banco novo gera.
+    db.Database.ExecuteSqlRaw("""
+        DELETE FROM "Filmes"
+        WHERE "ArquivoPath" IS NOT NULL AND "Id" NOT IN (
+            SELECT MIN("Id") FROM "Filmes" WHERE "ArquivoPath" IS NOT NULL GROUP BY "ArquivoPath"
+        );
+        """);
+    db.Database.ExecuteSqlRaw(
+        """CREATE UNIQUE INDEX IF NOT EXISTS "IX_Filmes_ArquivoPath" ON "Filmes" ("ArquivoPath");""");
+
+    // Poda o cache HLS que passou do teto (ex.: acumulado por versões sem eviction).
+    scope.ServiceProvider.GetRequiredService<HlsTranscodeService>().LimparCacheExcedente();
 }
 
 // ─── Pipeline ───────────────────────────────────────────────────────────

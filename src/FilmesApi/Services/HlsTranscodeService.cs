@@ -21,11 +21,17 @@ public class HlsTranscodeService
     private static readonly string[] AudioCodecsCompativeis = ["aac", "mp3", "opus"];
     private static readonly string[] IdiomasAudioPreferidos = ["por", "pt", "pob"];
 
+    /// <summary>Nome do marcador que sinaliza "esse cache é só remux stream-copy" — pura
+    /// duplicata do original, sem ganho de compressão, então é o primeiro a ser despejado.</summary>
+    private const string MarcadorRemux = ".remux";
+
     private readonly string _cachePath;
     private readonly string _ffmpegPath;
     private readonly string _ffprobePath;
     private readonly string _cachePathLegado;
     private readonly TimeSpan _jobTimeout;
+    private readonly TimeSpan _stallTimeout;
+    private readonly long _cacheMaxBytes;
     private readonly SemaphoreSlim _slotEncoder;
     private readonly RkmppCapabilityService _rkmpp;
     private readonly ILogger<HlsTranscodeService> _logger;
@@ -43,6 +49,9 @@ public class HlsTranscodeService
         _cachePathLegado = config.GetValue<string>("TranscodeCachePath") ?? "/data/transcoded";
         var maxJobs = config.GetValue<int?>("MaxConcurrentTranscodeJobs") ?? 1;
         _jobTimeout = TimeSpan.FromHours(config.GetValue<double?>("TranscodeJobTimeoutHours") ?? 6);
+        _stallTimeout = TimeSpan.FromMinutes(config.GetValue<double?>("HlsStallTimeoutMinutes") ?? 8);
+        var maxGb = config.GetValue<double?>("HlsCacheMaxGB") ?? 20;
+        _cacheMaxBytes = maxGb > 0 ? (long)(maxGb * 1024 * 1024 * 1024) : long.MaxValue;
         _slotEncoder = new SemaphoreSlim(maxJobs, maxJobs);
         _rkmpp = rkmpp;
         _logger = logger;
@@ -71,6 +80,90 @@ public class HlsTranscodeService
         catch (UnauthorizedAccessException) { /* best-effort: não bloqueia a exclusão do filme */ }
     }
 
+    /// <summary>Marca "assistido agora" tocando o mtime do playlist — sinal de LRU pra
+    /// eviction (sobrevive a restart, ao contrário de um dicionário em memória).
+    /// Throttle: só escreve se o mtime já está velho, pra não martelar disco no poll de status.</summary>
+    private static void RegistrarAcesso(string playlist)
+    {
+        try
+        {
+            if (!File.Exists(playlist)) return;
+            if (DateTime.UtcNow - File.GetLastWriteTimeUtc(playlist) > TimeSpan.FromMinutes(2))
+                File.SetLastWriteTimeUtc(playlist, DateTime.UtcNow);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
+    /// <summary>
+    /// Se o cache HLS total passou do teto (<c>HlsCacheMaxGB</c>), despeja diretórios até
+    /// voltar pra ~90% do teto. Ordem de despejo: primeiro os remux stream-copy (pura
+    /// duplicata do original), depois por acesso mais antigo (LRU). Nunca despeja um cache
+    /// com job vivo nem um acessado nos últimos 30 min (alguém provavelmente assistindo).
+    /// </summary>
+    public void LimparCacheExcedente()
+    {
+        if (_cacheMaxBytes == long.MaxValue) return;
+
+        try
+        {
+            if (!Directory.Exists(_cachePath)) return;
+
+            var caches = new List<(int Id, string Dir, long Bytes, DateTime Acesso, bool Remux)>();
+            long total = 0;
+            foreach (var dir in Directory.EnumerateDirectories(_cachePath))
+            {
+                if (!int.TryParse(Path.GetFileName(dir), out var id)) continue;
+                long bytes = 0;
+                DateTime acesso = Directory.GetLastWriteTimeUtc(dir);
+                foreach (var arq in Directory.EnumerateFiles(dir))
+                {
+                    var fi = new FileInfo(arq);
+                    bytes += fi.Length;
+                    if (fi.Name == "playlist.m3u8") acesso = fi.LastWriteTimeUtc;
+                }
+                total += bytes;
+                caches.Add((id, dir, bytes, acesso, File.Exists(Path.Combine(dir, MarcadorRemux))));
+            }
+
+            if (total <= _cacheMaxBytes) return;
+
+            var alvo = (long)(_cacheMaxBytes * 0.9);
+            var corte = DateTime.UtcNow - TimeSpan.FromMinutes(30);
+            var candidatos = caches
+                .Where(c => c.Acesso < corte && !_jobs.ContainsKey(c.Id))
+                .OrderByDescending(c => c.Remux)     // remux (duplicata) sai primeiro
+                .ThenBy(c => c.Acesso)               // depois, menos recentemente assistido
+                .ToList();
+
+            foreach (var c in candidatos)
+            {
+                if (total <= alvo) break;
+                lock (_decisaoLock)
+                {
+                    if (_jobs.ContainsKey(c.Id)) continue;
+                    try { Directory.Delete(c.Dir, recursive: true); }
+                    catch (IOException) { continue; }
+                    catch (UnauthorizedAccessException) { continue; }
+                    _completos.TryRemove(c.Id, out _);
+                    _falhas.TryRemove(c.Id, out _);
+                }
+                total -= c.Bytes;
+                _logger.LogInformation(
+                    "Cache HLS acima do teto: despejando filme {Id} ({Mb} MB, {Tipo}, último acesso {Acesso:u}).",
+                    c.Id, c.Bytes / 1024 / 1024, c.Remux ? "remux" : "reencode", c.Acesso);
+            }
+
+            if (total > _cacheMaxBytes)
+                _logger.LogWarning("Cache HLS ainda acima do teto ({Mb} MB) — todos os caches restantes " +
+                    "estão em uso ou foram acessados há pouco. Nada despejado.", total / 1024 / 1024);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Falha ao avaliar/despejar cache HLS excedente.");
+        }
+    }
+
     /// <summary>Retorna o status atual e, quando aplicável, o caminho pronto para servir
     /// (arquivo original se compatível, ou playlist.m3u8 se HLS já tem algo pronto).</summary>
     public async Task<(StreamStatus Status, string? Path)> ObterStatusAsync(int filmeId, string arquivoOriginal, CancellationToken ct)
@@ -95,17 +188,22 @@ public class HlsTranscodeService
             // inteiro do disco (que cresce com o número de segments) em toda chamada futura,
             // inclusive nas próximas vezes que alguém reabrir o mesmo filme já cacheado.
             if (_completos.ContainsKey(filmeId))
+            {
+                RegistrarAcesso(playlist);
                 return (StreamStatus.Disponivel, playlist);
+            }
 
             if (File.Exists(playlist) && File.ReadAllText(playlist).Contains("#EXT-X-ENDLIST"))
             {
                 _completos[filmeId] = true;
+                RegistrarAcesso(playlist);
                 return (StreamStatus.Disponivel, playlist);
             }
 
             if (_jobs.ContainsKey(filmeId))
             {
                 var temSegmento = TemSegmento(dir);
+                if (temSegmento) RegistrarAcesso(playlist);
                 return (temSegmento ? StreamStatus.Disponivel : StreamStatus.Preparando, temSegmento ? playlist : null);
             }
 
@@ -168,6 +266,11 @@ public class HlsTranscodeService
 
             if (exitCode != 0)
                 throw new InvalidOperationException($"ffmpeg saiu com código {exitCode}: {stderr}");
+
+            // Remux stream-copy = cópia quase idêntica do original (sem ganho). Marca pra
+            // eviction preferir despejar esse tipo primeiro quando o cache passar do teto.
+            if (videoCompativel)
+                try { File.WriteAllText(Path.Combine(dir, MarcadorRemux), ""); } catch (IOException) { }
         }
         catch (Exception ex)
         {
@@ -183,6 +286,8 @@ public class HlsTranscodeService
             lock (_decisaoLock) { _jobs.TryRemove(filmeId, out _); }
             _slotEncoder.Release();
         }
+
+        LimparCacheExcedente();
     }
 
     private async Task<(int ExitCode, string Stderr)> RunFfmpegHlsAsync(
@@ -231,7 +336,21 @@ public class HlsTranscodeService
         var psi = new ProcessStartInfo(_ffmpegPath) { WorkingDirectory = dir };
         foreach (var arg in args) psi.ArgumentList.Add(arg);
 
-        return await ProcessRunner.ExecutarComTimeoutAsync(psi, _jobTimeout);
+        // Detector de travamento: se a contagem de segments não muda por _stallTimeout, o
+        // ffmpeg está pendurado (já aconteceu com alguns arquivos). Mata cedo em vez de
+        // segurar o slot de encode pelo _jobTimeout inteiro (6h).
+        var ultimaContagem = -1;
+        var ultimoProgresso = DateTime.UtcNow;
+        bool Travou()
+        {
+            int n;
+            try { n = Directory.EnumerateFiles(dir, "seg_*.ts").Count(); }
+            catch { return false; }
+            if (n != ultimaContagem) { ultimaContagem = n; ultimoProgresso = DateTime.UtcNow; return false; }
+            return DateTime.UtcNow - ultimoProgresso > _stallTimeout;
+        }
+
+        return await ProcessRunner.ExecutarComTimeoutAsync(psi, _jobTimeout, Travou);
     }
 
     private async Task<bool> EhCompativelAsync(string path, CancellationToken ct)
