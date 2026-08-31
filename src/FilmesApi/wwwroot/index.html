@@ -117,25 +117,44 @@ async function load() {
   render();
 }
 
+// Marcador de episódio no NOME do arquivo — sinal confiável pra separar série de
+// filme. Contar arquivos na pasta erra: filme com trailer virava "série" e
+// episódio solto (Breaking Bad S01E01.mkv) virava "filme".
+const RE_SXXEXX = /\bS(\d{1,2})[\s._-]*E(\d{1,3})\b/i;
+const RE_NXNN = /(?:^|[^\dxX])(\d{1,2})x(\d{1,3})(?:[^\dp]|$)/i;
+const RE_EXTRA = /\b(trailer|sample|amostra|promo|extras?|featurette|bastidores|deleted|nfo|readme)\b/i;
+const nomeArquivo = p => (p || '').replace(/^.*\//, '');
+const ehEpisodio = p => { const n = nomeArquivo(p); return RE_SXXEXX.test(n) || RE_NXNN.test(n); };
+const ehExtra = p => { const n = nomeArquivo(p); return RE_EXTRA.test(n) || /1xbet/i.test(n); };
+
+function chaveSerie(arquivoPath) {
+  const pasta = pastaDe(arquivoPath);
+  if (pasta !== 'Sem pasta') return pasta;            // pasta manda como nome da série
+  const n = nomeArquivo(arquivoPath);
+  let i = n.search(RE_SXXEXX);
+  if (i < 0) { const j = n.search(RE_NXNN); i = j <= 0 ? j : j + 1; } // RE_NXNN come 1 char antes
+  const prefixo = i > 0 ? n.slice(0, i) : n;
+  return prefixo.replace(/[._]+/g, ' ').replace(/[\s-]+$/, '').trim() || n;
+}
+
+function rotuloEpisodio(f) {
+  const n = nomeArquivo(f.arquivoPath);
+  let m = n.match(RE_SXXEXX);
+  if (m) return 'S' + ('0' + m[1]).slice(-2) + 'E' + ('0' + m[2]).slice(-2);
+  m = n.match(RE_NXNN);
+  if (m) return 'T' + m[1] + ' Ep' + ('0' + m[2]).slice(-2);
+  return f.titulo;
+}
+
 function render() {
   const grid = document.getElementById('grid');
   const empty = document.getElementById('empty');
 
-  // classificação filme/série vem da lista COMPLETA — filtrar por "não assistido"
-  // não pode transformar uma série de 1 episódio pendente num "filme".
-  const totalPorPasta = new Map();
-  for (const f of filmes) {
-    const p = pastaDe(f.arquivoPath);
-    totalPorPasta.set(p, (totalPorPasta.get(p) || 0) + 1);
-  }
-  const ehSeriePasta = p => p !== 'Sem pasta' && totalPorPasta.get(p) > 1;
-  const ehSerieFilme = f => ehSeriePasta(pastaDe(f.arquivoPath));
-
   const filtered = filmes.filter(f => {
     if (filtroVisto === 'assistido' && !f.assistido) return false;
     if (filtroVisto === 'nao-assistido' && f.assistido) return false;
-    if (filtroTipo === 'filme' && ehSerieFilme(f)) return false;
-    if (filtroTipo === 'serie' && !ehSerieFilme(f)) return false;
+    if (filtroTipo === 'filme' && ehEpisodio(f.arquivoPath)) return false;
+    if (filtroTipo === 'serie' && !ehEpisodio(f.arquivoPath)) return false;
     return true;
   });
 
@@ -149,19 +168,38 @@ function render() {
   }
   empty.style.display = 'none';
 
-  const grupos = new Map();
-  for (const f of filtered) {
-    const pasta = pastaDe(f.arquivoPath);
-    if (!grupos.has(pasta)) grupos.set(pasta, []);
-    grupos.get(pasta).push(f);
+  // nº de arquivos por pasta na lista COMPLETA (pra não "achatar" pasta ao filtrar)
+  const porPasta = new Map();
+  for (const f of filmes) {
+    const p = pastaDe(f.arquivoPath);
+    porPasta.set(p, (porPasta.get(p) || 0) + 1);
   }
 
-  const pastas = [...grupos.keys()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const filmesSoltos = [];        // filme sem pasta ou sozinho na pasta
+  const pastasFilme = new Map();  // pasta -> [filmes]  (2+ arquivos, sem episódios: filme + extras)
+  const seriesMap = new Map();    // nome da série -> [episódios]
+  const push = (map, k, v) => { (map.get(k) || map.set(k, []).get(k)).push(v); };
 
-  const filmesSoltos = [];
-  for (const pasta of pastas) if (!ehSeriePasta(pasta)) filmesSoltos.push(...grupos.get(pasta));
+  for (const f of filtered) {
+    if (ehEpisodio(f.arquivoPath)) { push(seriesMap, chaveSerie(f.arquivoPath), f); continue; }
+    const p = pastaDe(f.arquivoPath);
+    if (p !== 'Sem pasta' && porPasta.get(p) > 1) push(pastasFilme, p, f);
+    else filmesSoltos.push(f);
+  }
+  // pasta com 1 filme "de verdade" + só extras (trailer/sample) → mostra o filme direto
+  for (const [pasta, itens] of pastasFilme) {
+    const principais = itens.filter(f => !ehExtra(f.arquivoPath));
+    if (principais.length === 1) { filmesSoltos.push(principais[0]); pastasFilme.delete(pasta); }
+  }
   filmesSoltos.sort((a, b) => a.titulo.localeCompare(b.titulo, 'pt-BR'));
-  const seriesPastas = pastas.filter(ehSeriePasta);
+  for (const arr of seriesMap.values())
+    arr.sort((a, b) => rotuloEpisodio(a).localeCompare(rotuloEpisodio(b), 'pt-BR', { numeric: true }));
+
+  const dobravel = (titulo, cards) => `
+      <div class="folder serie collapsed">
+        <div class="folder-title" onclick="toggleFolder(this)"><span class="caret">▸</span> ${titulo}</div>
+        <div class="grid">${cards}</div>
+      </div>`;
 
   let html = '';
   if (filtroTipo === 'all' && filtroVisto === 'all' && continuar.length) {
@@ -171,26 +209,28 @@ function render() {
       <div class="grid">${continuar.map(continuarCardHtml).join('')}</div>
     </div>`;
   }
-  if (filmesSoltos.length) {
-    html += `
-    <div class="secao">
-      <div class="secao-title">🎬 Filmes <span class="count">(${filmesSoltos.length})</span></div>
-      <div class="grid">${filmesSoltos.map(cardHtml).join('')}</div>
-    </div>`;
+
+  const totalFilmes = filmesSoltos.length + [...pastasFilme.values()].reduce((s, a) => s + a.length, 0);
+  if (totalFilmes) {
+    html += `<div class="secao"><div class="secao-title">🎬 Filmes <span class="count">(${totalFilmes})</span></div>`;
+    if (filmesSoltos.length) html += `<div class="grid">${filmesSoltos.map(f => cardHtml(f)).join('')}</div>`;
+    html += [...pastasFilme.keys()].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(pasta => {
+      const itens = pastasFilme.get(pasta);
+      return dobravel(`📁 ${pasta} <span class="count">(${itens.length} arquivos)</span>`,
+        itens.map(f => cardHtml(f)).join(''));
+    }).join('');
+    html += `</div>`;
   }
-  if (seriesPastas.length) {
-    html += `
-    <div class="secao">
-      <div class="secao-title">📺 Séries <span class="count">(${seriesPastas.length})</span></div>
-      ${seriesPastas.map(pasta => {
-        const itens = grupos.get(pasta);
-        return `
-      <div class="folder serie collapsed">
-        <div class="folder-title" onclick="toggleFolder(this)"><span class="caret">▸</span> ${pasta} <span class="count">(${itens.length} ${itens.length === 1 ? 'episódio' : 'episódios'})</span></div>
-        <div class="grid">${itens.map(cardHtml).join('')}</div>
-      </div>`;
-      }).join('')}
-    </div>`;
+
+  const seriesNomes = [...seriesMap.keys()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  if (seriesNomes.length) {
+    html += `<div class="secao"><div class="secao-title">📺 Séries <span class="count">(${seriesNomes.length})</span></div>`;
+    html += seriesNomes.map(nome => {
+      const itens = seriesMap.get(nome);
+      return dobravel(`${nome} <span class="count">(${itens.length} ${itens.length === 1 ? 'episódio' : 'episódios'})</span>`,
+        itens.map(f => cardHtml(f, true)).join(''));
+    }).join('');
+    html += `</div>`;
   }
   grid.innerHTML = html;
 }
@@ -224,15 +264,16 @@ function formatarTempo(seg) {
   return h ? `${h}h ${m}min` : `${m}min`;
 }
 
-function cardHtml(f) {
+function cardHtml(f, episodio) {
   const retomar = f.posicaoSegundos
     ? `<span class="resume">▶ ${formatarTempo(f.posicaoSegundos)}</span>`
     : '';
+  const rotulo = episodio ? rotuloEpisodio(f) : f.titulo;
   return `
     <div class="card ${f.assistido ? 'assistido' : ''}" onclick="play(${f.id})">
       <div class="card-body">
         <div class="card-top">
-          <div class="card-title" title="${f.titulo}">${f.titulo}</div>
+          <div class="card-title" title="${f.titulo}">${rotulo}</div>
           <button class="cast-btn" title="Enviar para a TV" onclick="event.stopPropagation(); enviarParaTv(${f.id})">📺</button>
         </div>
         <div class="card-meta">
@@ -293,7 +334,6 @@ function iniciarHls(video, url) {
 async function play(id) {
   const video = document.getElementById('video');
   const converting = document.getElementById('converting');
-  salvarProgresso();  // se já estava vendo outro filme, guarda onde parou
   video.removeAttribute('src');
   destruirHls();
   converting.style.display = 'none';
@@ -304,6 +344,7 @@ async function play(id) {
   posicaoParaRetomar = 0;
   retomarTentativas = 0;
   duracaoConfiavel = false;
+  reproducaoConcluida = false;
   const prog = await fetch(`${API}/${id}/progresso`).then(r => r.ok ? r.json() : null).catch(() => null);
   if (prog && prog.posicaoSegundos) posicaoParaRetomar = prog.posicaoSegundos;
 
@@ -340,8 +381,9 @@ async function checarStatus(id) {
   return data.status;
 }
 
-function closePlayer() {
-  salvarProgresso();
+async function closePlayer() {
+  const id = filmeAtual;
+  await salvarProgresso();  // grava ANTES de rebuscar, senão a lista volta desatualizada
   const video = document.getElementById('video');
   destruirHls();
   video.pause();
@@ -349,7 +391,22 @@ function closePlayer() {
   filmeAtual = null;
   document.getElementById('player').classList.remove('active');
   document.getElementById('converting').style.display = 'none';
-  load();  // recarrega pra atualizar "continuar assistindo" e as barras de progresso
+  await atualizarAposReproducao(id);
+}
+
+// Refaz só o "continuar assistindo" e o filme que acabou de rodar — sem rebuscar
+// o catálogo inteiro só pra atualizar uma barra de progresso.
+async function atualizarAposReproducao(id) {
+  const [cont, filme] = await Promise.all([
+    fetch(`${API}/continuar`).then(r => r.ok ? r.json() : null).catch(() => null),
+    id != null ? fetch(`${API}/${id}`).then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null)
+  ]);
+  if (cont) continuar = cont;
+  if (filme) {
+    const f = filmes.find(x => x.id === id);
+    if (f) Object.assign(f, filme);
+  }
+  render();
 }
 
 // ─── Continuar de onde parou ────────────────────────────────────────────
@@ -360,6 +417,8 @@ let retomarTentativas = 0;
 // video.duration só é confiável no stream direto; no HLS ele cresce enquanto
 // transcodifica, então nem mandamos pro backend nem usamos pra decidir o "fim".
 let duracaoConfiavel = false;
+// depois do 'ended' o /concluir já limpou a retomada — impede um save tardio de recriá-la.
+let reproducaoConcluida = false;
 
 // Aplicar a retomada só no 'loadedmetadata' não cola: o Chromium volta o
 // currentTime pra 0 logo depois. 'loadeddata'/'canplay'/'seeked' já pegam, e
@@ -389,19 +448,21 @@ function configurarProgresso() {
     salvarProgresso();
   });
 
-  video.addEventListener('pause', salvarProgresso);
-  window.addEventListener('pagehide', salvarProgresso);
+  video.addEventListener('pause', () => salvarProgresso());
+  window.addEventListener('pagehide', () => salvarProgresso());
   video.addEventListener('ended', () => {
-    if (filmeAtual != null) {
-      fetch(`${API}/${filmeAtual}/progresso`, { method: 'DELETE', keepalive: true }).catch(() => {});
-    }
+    // fim da reprodução: marca assistido + limpa a retomada (funciona também no
+    // HLS, onde a regra de "perto do fim" do backend não roda).
+    if (filmeAtual == null) return;
+    reproducaoConcluida = true;
+    fetch(`${API}/${filmeAtual}/concluir`, { method: 'POST', keepalive: true }).catch(() => {});
   });
 }
 
 function salvarProgresso() {
   const video = document.getElementById('video');
-  if (filmeAtual == null || !(video.currentTime > 15)) return;
-  fetch(`${API}/${filmeAtual}/progresso`, {
+  if (filmeAtual == null || reproducaoConcluida || !(video.currentTime > 15)) return Promise.resolve();
+  return fetch(`${API}/${filmeAtual}/progresso`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

@@ -9,5 +9,5 @@ public record FilmeResponse(
 public record ProgressoRequest(double Posicao, double? Duracao);
 public record ProgressoResponse(int FilmeId, double PosicaoSegundos, double? DuracaoSegundos, DateTime AtualizadoEm);
 public record ContinuarAssistindoResponse(
-    int Id, string Titulo, string? ArquivoPath,
+    int Id, string Titulo,
     double PosicaoSegundos, double? DuracaoSegundos, DateTime AtualizadoEm);
