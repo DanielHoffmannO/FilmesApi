@@ -34,13 +34,16 @@ dotnet run --project src/FilmesApi
 
 | Metodo | Rota | O que faz |
 |--------|------|-----------|
-| `GET` | `/api/filmes` | Lista (filtros: `?genero=Acao&assistido=false`) |
+| `GET` | `/api/filmes` | Lista (filtro: `?assistido=false`); traz o ponto de retomada de cada filme |
 | `GET` | `/api/filmes/{id}` | Detalhes |
 | `POST` | `/api/filmes` | Adiciona manualmente |
-| `PUT` | `/api/filmes/{id}/assistido` | Marca como assistido |
+| `PUT` | `/api/filmes/{id}/assistido` | Alterna "assistido" |
 | `DELETE` | `/api/filmes/{id}` | Remove |
 | `POST` | `/api/filmes/scan` | Importa videos da pasta de midia |
-| `GET` | `/api/filmes/{id}/stream` | Stream do video |
+| `GET` | `/api/filmes/{id}/stream` | Stream direto (codec compativel com o navegador) |
+| `GET` | `/api/filmes/{id}/hls/playlist.m3u8` | Stream via HLS (transcodifica sob demanda) |
+| `GET` | `/api/filmes/continuar` | Filmes com reproducao pendente ("continuar assistindo") |
+| `GET` `PUT` `DELETE` | `/api/filmes/{id}/progresso` | Le / salva / esquece onde a reproducao parou |
 
 ## {/} Arquitetura
 
