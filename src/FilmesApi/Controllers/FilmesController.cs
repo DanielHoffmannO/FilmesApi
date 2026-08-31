@@ -43,12 +43,12 @@ public partial class FilmesController : ControllerBase
     public async Task<IActionResult> Deletar(int id)
         => await _service.DeletarAsync(id) ? NoContent() : NotFound();
 
-    /// <summary>Escaneia pasta de mídia e importa vídeos novos.</summary>
+    /// <summary>Sincroniza o catálogo com a pasta de mídia (importa novos, remove órfãos).</summary>
     [HttpPost("scan")]
     public async Task<IActionResult> ScanMedia()
     {
-        var novos = await _service.ScanMediaAsync();
-        return Ok(new { importados = novos });
+        var r = await _service.ScanMediaAsync();
+        return Ok(new { importados = r.Importados, removidos = r.Removidos });
     }
 
     /// <summary>Filmes com reprodução pendente ("continuar assistindo"), mais recentes primeiro.</summary>

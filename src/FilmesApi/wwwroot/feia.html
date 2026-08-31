@@ -158,6 +158,7 @@ video { width: 100%; height: auto; background: #000; }
   var filtroVisto = 'all';  // all | sim | nao
   var links = [];      // itens navegaveis atuais
   var idx = 0;
+  var gruposAbertos = {};  // series/pastas expandidas — sobrevive ao re-render
 
   // continuar de onde parou
   var filmeAtual = null;
@@ -165,6 +166,7 @@ video { width: 100%; height: auto; background: #000; }
   var posicaoRetomar = 0;
   var retomarTentativas = 0;
   var reproducaoConcluida = false;  // apos 'ended', nao deixa um save tardio recriar a retomada
+  var prepInicio = 0;               // pra mostrar "Preparando... Ns"
 
   function get(url, cb) {
     var x = new XMLHttpRequest();
@@ -348,26 +350,30 @@ video { width: 100%; height: auto; background: #000; }
         html += '</div>';
       }
       for (i = 0; i < pfOrdem.length; i++) {
-        var parr = pfMap[pfOrdem[i]];
-        var pl = esc(pfOrdem[i]) + ' (' + parr.length + ' arquivos)';
-        html += '<a class="grp" href="#" data-g="F' + i + '" data-label="' + pl + '">&#9656; ' + pl + '</a>';
-        html += '<div class="eps" data-g="F' + i + '" style="display:none">';
-        for (j = 0; j < parr.length; j++) html += itemHtml(parr[j]);
-        html += '</div>';
+        var parr = pfMap[pfOrdem[i]], peps = '';
+        for (j = 0; j < parr.length; j++) peps += itemHtml(parr[j]);
+        html += grpHtml('f:' + pfOrdem[i], esc(pfOrdem[i]) + ' (' + parr.length + ' arquivos)', peps);
       }
     }
 
     for (i = 0; i < serieOrdem.length; i++) {
-      var sarr = serieMap[serieOrdem[i]];
+      var sarr = serieMap[serieOrdem[i]], seps = '';
       if (i === 0) html += '<h2>Series (' + serieOrdem.length + ')</h2>';
-      var sl = esc(serieOrdem[i]) + ' (' + sarr.length + (sarr.length === 1 ? ' episodio)' : ' episodios)');
-      html += '<a class="grp" href="#" data-g="S' + i + '" data-label="' + sl + '">&#9656; ' + sl + '</a>';
-      html += '<div class="eps" data-g="S' + i + '" style="display:none">';
-      for (j = 0; j < sarr.length; j++) html += itemHtml(sarr[j], rotuloEpisodio(sarr[j]));
-      html += '</div>';
+      for (j = 0; j < sarr.length; j++) seps += itemHtml(sarr[j], rotuloEpisodio(sarr[j]));
+      html += grpHtml('s:' + serieOrdem[i],
+        esc(serieOrdem[i]) + ' (' + sarr.length + (sarr.length === 1 ? ' episodio)' : ' episodios)'), seps);
     }
     grid.innerHTML = html;
     buildNav();
+  }
+
+  // cabecalho dobravel (.grp) + itens (.eps) — respeita gruposAbertos
+  function grpHtml(chave, label, itensHtml) {
+    var aberto = !!gruposAbertos[chave];
+    return '<a class="grp" href="#" data-g="' + esc(chave) + '" data-label="' + label + '">' +
+           (aberto ? '▾ ' : '▸ ') + label + '</a>' +
+           '<div class="eps" data-g="' + esc(chave) + '" style="display:' + (aberto ? 'block' : 'none') + '">' +
+           itensHtml + '</div>';
   }
 
   function buildNav() {
@@ -406,10 +412,14 @@ video { width: 100%; height: auto; background: #000; }
       if (boxes[i].getAttribute('data-g') === g) {
         var aberto = boxes[i].style.display !== 'none';
         boxes[i].style.display = aberto ? 'none' : 'block';
+        if (aberto) delete gruposAbertos[g]; else gruposAbertos[g] = 1;
         el.innerHTML = (aberto ? '▸ ' : '▾ ') + el.getAttribute('data-label');
       }
     }
     buildNav();
+    // mantem o foco no proprio cabecalho — assim o proximo "baixo" entra no 1o episodio
+    var n = links.indexOf(el);
+    if (n >= 0) focar(n);
   }
 
   function focar(n) {
@@ -471,14 +481,17 @@ video { width: 100%; height: auto; background: #000; }
     get(API + '/' + id + '/progresso', function (err, d) {
       if (!err && d && d.posicaoSegundos) posicaoRetomar = d.posicaoSegundos;
 
+      prepInicio = (new Date()).getTime();
       checar(id, function (status) {
         if (status === 'erro') { pmsg.innerHTML = 'Falha ao converter o video.'; return; }
         pmsg.innerHTML = '';
+        // fragmento #t= = comeca ja na retomada, sem o pulo do frame 0
+        var frag = posicaoRetomar > 5 ? ('#t=' + Math.floor(posicaoRetomar)) : '';
         if (status === 'compativel') {
-          v.src = API + '/' + id + '/stream';
+          v.src = API + '/' + id + '/stream' + frag;
         } else {
           // TV antiga nao roda HLS: serve o arquivo original e torce.
-          v.src = API + '/' + id + '/original';
+          v.src = API + '/' + id + '/original' + frag;
           pmsg.innerHTML = 'Arquivo original (pode nao rodar em TV muito antiga).';
           setTimeout(function () {
             if (pmsg.innerHTML.indexOf('original') !== -1) pmsg.innerHTML = '';
@@ -544,7 +557,9 @@ video { width: 100%; height: auto; background: #000; }
       if (err) { cb('erro'); return; }
       var s = d && d.status;
       if (s === 'preparando') {
-        document.getElementById('pmsg').innerHTML = 'Preparando video, aguarde...';
+        var seg = Math.round(((new Date()).getTime() - prepInicio) / 1000);
+        document.getElementById('pmsg').innerHTML = 'Preparando video... ' + seg + 's' +
+          (seg > 45 ? ' (a primeira vez demora mais)' : '');
         pollTimer = setTimeout(function () { checar(id, cb); }, 2000);
         return;
       }

@@ -16,6 +16,10 @@ public class AppDbContext : DbContext
         {
             e.HasKey(f => f.Id);
             e.Property(f => f.Titulo).IsRequired().HasMaxLength(200);
+            // Um ArquivoPath = no máximo um Filme, pra scan repetido nunca duplicar.
+            // (No SQLite vários NULL são permitidos num índice único — entradas manuais sem
+            // arquivo não colidem.)
+            e.HasIndex(f => f.ArquivoPath).IsUnique();
         });
 
         modelBuilder.Entity<ProgressoReproducao>(e =>
