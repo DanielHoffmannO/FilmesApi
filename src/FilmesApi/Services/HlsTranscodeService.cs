@@ -33,6 +33,7 @@ public class HlsTranscodeService
     private readonly TimeSpan _stallTimeout;
     private readonly long _cacheMaxBytes;
     private readonly int _alturaMaxReencode;
+    private readonly bool _rkmppDecodeHw;
     private readonly SemaphoreSlim _slotEncoder;
     private readonly RkmppCapabilityService _rkmpp;
     private readonly ILogger<HlsTranscodeService> _logger;
@@ -54,6 +55,10 @@ public class HlsTranscodeService
         var maxGb = config.GetValue<double?>("HlsCacheMaxGB") ?? 20;
         _cacheMaxBytes = maxGb > 0 ? (long)(maxGb * 1024 * 1024 * 1024) : long.MaxValue;
         _alturaMaxReencode = config.GetValue<int?>("HlsMaxAlturaReencode") ?? 1080;  // 0 = sem downscale
+        // Decode via VPU no caminho rkmpp (só pros 4K com downscale). Off por padrão:
+        // depende de scale_rkrga estar no ffmpeg e de o device aceitar drm_prime — o
+        // agente do servidor liga isso só depois de validar por linha de comando.
+        _rkmppDecodeHw = config.GetValue<bool?>("HlsRkmppDecodeHw") ?? false;
         _slotEncoder = new SemaphoreSlim(maxJobs, maxJobs);
         _rkmpp = rkmpp;
         _logger = logger;
@@ -262,7 +267,20 @@ public class HlsTranscodeService
             var usarRkmpp = !videoCompativel && await _rkmpp.DisponivelAsync();
             var audioStreamIndex = await EscolherStreamAudioAsync(origem, CancellationToken.None);
 
-            var (exitCode, stderr) = await RunFfmpegHlsAsync(origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara);
+            // Decode por hardware só faz diferença (e só vale o risco) no 4K com downscale —
+            // 1080p decodifica barato em software. Fallback em cascata: hw-decode+hw-encode →
+            // sw-decode+hw-encode → libx264. Cada nível apaga e recria o dir antes de tentar.
+            var decodeHw = usarRkmpp && _rkmppDecodeHw && downscalePara is not null;
+
+            var (exitCode, stderr) = await RunFfmpegHlsAsync(origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw);
+
+            if (decodeHw && exitCode != 0)
+            {
+                _logger.LogWarning("rkmpp com hwaccel de decode falhou pro filme {Id} (exit {Code}): {Stderr}. Tentando rkmpp só no encode.",
+                    filmeId, exitCode, stderr);
+                LimparDir(dir);
+                (exitCode, stderr) = await RunFfmpegHlsAsync(origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw: false);
+            }
 
             if (usarRkmpp)
             {
@@ -271,16 +289,8 @@ public class HlsTranscodeService
                 {
                     _logger.LogWarning("Encode via rkmpp falhou pro filme {Id} (exit {Code}): {Stderr}. Tentando de novo com libx264.",
                         filmeId, exitCode, stderr);
-                    // Segments já gerados pelo rkmpp podem já ter sido servidos a quem estava
-                    // assistindo — apagar/recriar precisa do mesmo lock que protege as
-                    // leituras de ObterStatusAsync, senão uma checagem concorrente pode ler o
-                    // diretório no meio da troca.
-                    lock (_decisaoLock)
-                    {
-                        Directory.Delete(dir, recursive: true);
-                        Directory.CreateDirectory(dir);
-                    }
-                    (exitCode, stderr) = await RunFfmpegHlsAsync(origem, dir, videoCompativel, usarRkmpp: false, audioStreamIndex, downscalePara);
+                    LimparDir(dir);
+                    (exitCode, stderr) = await RunFfmpegHlsAsync(origem, dir, videoCompativel, usarRkmpp: false, audioStreamIndex, downscalePara, decodeHw: false);
                 }
             }
 
@@ -310,9 +320,30 @@ public class HlsTranscodeService
         LimparCacheExcedente();
     }
 
-    private async Task<(int ExitCode, string Stderr)> RunFfmpegHlsAsync(
-        string origem, string dir, bool videoCompativel, bool usarRkmpp, int? audioStreamIndex, int? downscalePara)
+    /// <summary>Zera o dir de cache antes de uma nova tentativa de encode. Sob o mesmo lock
+    /// que protege as leituras de ObterStatusAsync — senão uma checagem concorrente pode ler
+    /// o diretório no meio da troca (segments parciais já podem ter sido servidos).</summary>
+    private void LimparDir(string dir)
     {
+        lock (_decisaoLock)
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+            Directory.CreateDirectory(dir);
+        }
+    }
+
+    private async Task<(int ExitCode, string Stderr)> RunFfmpegHlsAsync(
+        string origem, string dir, bool videoCompativel, bool usarRkmpp, int? audioStreamIndex, int? downscalePara, bool decodeHw)
+    {
+        List<string> args = ["-y"];
+
+        // -hwaccel/-hwaccel_output_format são opções de INPUT — têm que vir ANTES do -i
+        // (diferente do -init_hw_device do caminho sem hw-decode, que prepara o device pro
+        // filtro/output e fica depois). decodeHw só é true no 4K+downscale via rkmpp.
+        if (decodeHw)
+            args.AddRange(["-init_hw_device", "rkmpp=rk", "-filter_hw_device", "rk",
+                           "-hwaccel", "rkmpp", "-hwaccel_output_format", "drm_prime"]);
+
         // -map explícito: sem isso o ffmpeg escolhe sozinho, por heurística de codec/canais,
         // qual stream de cada tipo entra no output — e essa heurística ignora idioma e pode
         // até ignorar a flag "default" do arquivo. Em filme dual-áudio (ex.: português +
@@ -320,7 +351,7 @@ public class HlsTranscodeService
         // default. Mapear video+áudio manualmente também impede que uma legenda embutida
         // incompatível (ex.: PGS/bitmap) entre sozinha no output e quebre o encode — a API
         // não serve legenda nenhuma, então nem faz sentido incluir.
-        List<string> args = ["-y", "-i", origem, "-map", "0:v:0"];
+        args.AddRange(["-i", origem, "-map", "0:v:0"]);
         if (audioStreamIndex is int audioIdx) args.AddRange(["-map", $"0:{audioIdx}"]);
 
         if (videoCompativel)
@@ -329,10 +360,16 @@ public class HlsTranscodeService
         }
         else
         {
-            if (usarRkmpp)
+            if (usarRkmpp && decodeHw && downscalePara is int altHw)
             {
-                // scale roda em CPU antes do hwupload; format=nv12 força 8-bit 4:2:0 (mata HDR/10-bit,
-                // mas é o que a maioria dos players aqui aguenta).
+                // Frames já vêm decodificados em memória de VPU (drm_prime). O RGA escala e
+                // converte pra nv12 (8-bit) sem round-trip pela CPU; h264_rkmpp consome direto.
+                args.AddRange(["-vf", $"scale_rkrga=w=-2:h={altHw}:format=nv12", "-c:v", "h264_rkmpp"]);
+            }
+            else if (usarRkmpp)
+            {
+                // Decode em software; scale/format em CPU e sobe pro VPU só pra encodar.
+                // format=nv12 força 8-bit 4:2:0 (mata HDR/10-bit, mas é o que os players aqui aguentam).
                 var filtro = downscalePara is int alt
                     ? $"scale=-2:{alt},format=nv12,hwupload"
                     : "format=nv12,hwupload";
