@@ -17,6 +17,8 @@ public class PlayerStateService
     private double _duracaoSegundos;
     private int _seekAbsVersion;
     private double _seekAbsPos;
+    private int _legendaIdx = -1;   // -1 = legenda desligada
+    private int _legendaVersion;
 
     public object Snapshot()
     {
@@ -33,14 +35,22 @@ public class PlayerStateService
                 posSegundos = _posSegundos,
                 duracaoSegundos = _duracaoSegundos,
                 seekAbsVersion = _seekAbsVersion,
-                seekAbsPos = _seekAbsPos
+                seekAbsPos = _seekAbsPos,
+                legendaIdx = _legendaIdx,
+                legendaVersion = _legendaVersion
             };
         }
     }
 
     public void Selecionar(int filmeId)
     {
-        lock (_lock) { _filmeId = filmeId; _playing = true; _posSegundos = 0; _duracaoSegundos = 0; }
+        lock (_lock) { _filmeId = filmeId; _playing = true; _posSegundos = 0; _duracaoSegundos = 0; _legendaIdx = -1; }
+    }
+
+    /// <summary>Celular escolheu uma faixa de legenda (-1 = desligar). A TV aplica no próximo poll.</summary>
+    public void SetLegenda(int idx)
+    {
+        lock (_lock) { _legendaVersion++; _legendaIdx = idx; }
     }
 
     /// <summary>A TV informa onde está — o celular usa isso pra desenhar a barra de progresso.</summary>
@@ -81,6 +91,6 @@ public class PlayerStateService
 
     public void Parar()
     {
-        lock (_lock) { _filmeId = null; _playing = false; _pararVersion++; _posSegundos = 0; _duracaoSegundos = 0; }
+        lock (_lock) { _filmeId = null; _playing = false; _pararVersion++; _posSegundos = 0; _duracaoSegundos = 0; _legendaIdx = -1; }
     }
 }

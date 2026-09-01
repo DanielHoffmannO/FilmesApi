@@ -18,17 +18,19 @@ video{width:100%;height:100%;object-fit:contain}
 <script src="/vendor/hls.min.js"></script>
 <script>
 const API = '';
-let estadoAnterior = { filmeId: null, playing: false, volume: 1, seekVersion: 0, pararVersion: 0, seekAbsVersion: 0 };
+let estadoAnterior = { filmeId: null, playing: false, volume: 1, seekVersion: 0, pararVersion: 0, seekAbsVersion: 0, legendaVersion: 0, legendaIdx: -1 };
 const video = document.getElementById('video');
 const msg = document.getElementById('msg');
 
-// Reporta a posição pro celular desenhar a barra de progresso do controle remoto.
+// Reporta a posição pro celular desenhar a barra de progresso do controle remoto,
+// e serve de keepalive (senão o transcode em andamento é abortado por inatividade).
 setInterval(() => {
   if (filmeAtual == null || !isFinite(video.currentTime)) return;
   fetch('/api/player/posicao', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ pos: video.currentTime, dur: isFinite(video.duration) ? video.duration : 0 })
   }).catch(() => {});
+  fetch(`/api/filmes/${filmeAtual}/assistindo`, { method: 'POST' }).catch(() => {});
 }, 2000);
 
 // continuar de onde parou
@@ -62,8 +64,61 @@ video.addEventListener('pause', () => salvarProgresso());
 video.addEventListener('ended', () => {
   if (filmeAtual == null) return;
   reproducaoConcluida = true;
-  fetch(`/api/filmes/${filmeAtual}/concluir`, { method: 'POST', keepalive: true }).catch(() => {});
+  const id = filmeAtual;
+  fetch(`/api/filmes/${id}/concluir`, { method: 'POST', keepalive: true }).catch(() => {});
+  ofereceProximo(id);
 });
+
+// ─── Próximo episódio ────────────────────────────────────────────────
+let proximoTimer = null;
+function cancelarProximo() { if (proximoTimer) { clearTimeout(proximoTimer); proximoTimer = null; } }
+async function ofereceProximo(id) {
+  let prox;
+  try {
+    const r = await fetch(`/api/filmes/${id}/proximo`);
+    if (r.status !== 200) return;
+    prox = await r.json();
+  } catch { return; }
+  if (filmeAtual !== id || !prox) return;
+
+  cancelarProximo();
+  let resta = 8;
+  const tick = () => {
+    mostrarMsg(`Próximo: ${prox.titulo}\nem ${resta}s`);
+    if (resta-- <= 0) {
+      cancelarProximo();
+      fetch(`/api/player/selecionar/${prox.id}`, { method: 'POST' }).catch(() => {});
+    } else {
+      proximoTimer = setTimeout(tick, 1000);
+    }
+  };
+  tick();
+}
+
+// ─── Legendas (faixa escolhida pelo celular via player state) ─────────
+function removerLegendas() {
+  video.querySelectorAll('track').forEach(t => t.remove());
+}
+async function carregarLegendas(filmeId) {
+  let faixas;
+  try { faixas = await fetch(`/api/filmes/${filmeId}/legendas`).then(r => r.ok ? r.json() : []); }
+  catch { return; }
+  if (filmeAtual !== filmeId) return;
+  removerLegendas();
+  faixas.filter(x => x.convertivel).forEach(x => {
+    const tr = document.createElement('track');
+    tr.kind = 'subtitles';
+    tr.src = `/api/filmes/${filmeId}/legenda/${x.idx}`;
+    tr.srclang = x.idioma || 'und';
+    tr.label = x.titulo || x.idioma || `Legenda ${x.idx + 1}`;
+    video.appendChild(tr);
+  });
+  aplicarLegenda(estadoAnterior.legendaIdx);
+}
+function aplicarLegenda(idx) {
+  const tt = video.textTracks;
+  for (let i = 0; i < tt.length; i++) tt[i].mode = (i === idx) ? 'showing' : 'disabled';
+}
 
 function salvarProgresso() {
   if (filmeAtual == null || reproducaoConcluida || !(video.currentTime > 15)) return;
@@ -104,6 +159,8 @@ function destruirHls() {
 async function carregarFilme(filmeId) {
   mostrarMsg('Preparando vídeo…');
   destruirHls();
+  cancelarProximo();
+  removerLegendas();
 
   filmeAtual = filmeId;
   ultimoSalvo = 0;
@@ -132,6 +189,7 @@ async function carregarFilme(filmeId) {
 
   video.volume = estadoAnterior.volume;
   const t = posicaoRetomar > 5 ? Math.floor(posicaoRetomar) : 0;  // retoma sem pulo
+  carregarLegendas(filmeId);
 
   if (status === 'compativel') {
     duracaoConfiavel = true;
@@ -163,6 +221,8 @@ async function poll() {
 
     if (estado.pararVersion !== estadoAnterior.pararVersion && estado.filmeId === null) {
       salvarProgresso();
+      cancelarProximo();
+      removerLegendas();
       filmeAtual = null;
       destruirHls();
       video.pause();
@@ -177,6 +237,7 @@ async function poll() {
     }
 
     if (estado.volume !== estadoAnterior.volume) video.volume = estado.volume;
+    if (estado.legendaVersion !== estadoAnterior.legendaVersion) aplicarLegenda(estado.legendaIdx);
 
     if (estado.seekVersion !== estadoAnterior.seekVersion) {
       video.currentTime = Math.max(0, video.currentTime + estado.seekDelta);

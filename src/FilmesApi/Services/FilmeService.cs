@@ -28,7 +28,8 @@ public class FilmeService
         f => new FilmeResponse(
             f.Id, f.Titulo, f.AnoLancamento, f.Diretor, f.ArquivoPath, f.Assistido, f.DataAdicionado,
             f.Progresso != null ? f.Progresso.PosicaoSegundos : (double?)null,
-            f.Progresso != null ? f.Progresso.DuracaoSegundos : null);
+            f.Progresso != null ? f.Progresso.DuracaoSegundos : null,
+            f.PosterUrl, f.Sinopse, f.TituloOriginal);
 
     public async Task<List<FilmeResponse>> ListarAsync(bool? assistido = null)
     {
