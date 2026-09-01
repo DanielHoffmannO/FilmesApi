@@ -34,22 +34,29 @@ public class HlsTranscodeService
     private readonly long _cacheMaxBytes;
     private readonly int _alturaMaxReencode;
     private readonly bool _rkmppDecodeHw;
+    private readonly TimeSpan _orphanTimeout;
+    private readonly int _maxJobs;
     private readonly SemaphoreSlim _slotEncoder;
     private readonly RkmppCapabilityService _rkmpp;
+    private readonly ThermalService _thermal;
     private readonly ILogger<HlsTranscodeService> _logger;
 
     private readonly ConcurrentDictionary<int, Task> _jobs = new();
     private readonly ConcurrentDictionary<int, bool> _falhas = new();
     private readonly ConcurrentDictionary<int, bool> _completos = new();
+    /// <summary>Último instante em que alguém pediu status/segmento/keepalive deste filme.
+    /// Se ninguém pede há <c>HlsOrphanTimeoutSeconds</c>, o transcode em andamento é abortado
+    /// (o caso clássico: abriu um 4K, viu "Preparando", desistiu — e o ffmpeg segue 1h à toa).</summary>
+    private readonly ConcurrentDictionary<int, DateTime> _ultimoAcesso = new();
     private readonly object _decisaoLock = new();
 
-    public HlsTranscodeService(IConfiguration config, RkmppCapabilityService rkmpp, ILogger<HlsTranscodeService> logger)
+    public HlsTranscodeService(IConfiguration config, RkmppCapabilityService rkmpp, ThermalService thermal, ILogger<HlsTranscodeService> logger)
     {
         _cachePath = config.GetValue<string>("HlsCachePath") ?? "/data/hls";
         _ffmpegPath = config.GetValue<string>("FfmpegPath") ?? "ffmpeg";
         _ffprobePath = config.GetValue<string>("FfprobePath") ?? "ffprobe";
         _cachePathLegado = config.GetValue<string>("TranscodeCachePath") ?? "/data/transcoded";
-        var maxJobs = config.GetValue<int?>("MaxConcurrentTranscodeJobs") ?? 1;
+        _maxJobs = config.GetValue<int?>("MaxConcurrentTranscodeJobs") ?? 1;
         _jobTimeout = TimeSpan.FromHours(config.GetValue<double?>("TranscodeJobTimeoutHours") ?? 6);
         _stallTimeout = TimeSpan.FromMinutes(config.GetValue<double?>("HlsStallTimeoutMinutes") ?? 8);
         var maxGb = config.GetValue<double?>("HlsCacheMaxGB") ?? 20;
@@ -59,8 +66,10 @@ public class HlsTranscodeService
         // depende de scale_rkrga estar no ffmpeg e de o device aceitar drm_prime — o
         // agente do servidor liga isso só depois de validar por linha de comando.
         _rkmppDecodeHw = config.GetValue<bool?>("HlsRkmppDecodeHw") ?? false;
-        _slotEncoder = new SemaphoreSlim(maxJobs, maxJobs);
+        _orphanTimeout = TimeSpan.FromSeconds(config.GetValue<double?>("HlsOrphanTimeoutSeconds") ?? 90);  // 0 = nunca aborta
+        _slotEncoder = new SemaphoreSlim(_maxJobs, _maxJobs);
         _rkmpp = rkmpp;
+        _thermal = thermal;
         _logger = logger;
         Directory.CreateDirectory(_cachePath);
     }
@@ -68,10 +77,20 @@ public class HlsTranscodeService
     public string DiretorioCache(int filmeId) => Path.Combine(_cachePath, filmeId.ToString());
     public string CaminhoPlaylist(int filmeId) => Path.Combine(DiretorioCache(filmeId), "playlist.m3u8");
 
+    /// <summary>"Ainda tem gente interessada neste filme" — chamado pelo poll de status, por
+    /// cada request de segmento e pelo keepalive do player. Zera o relógio de órfão.</summary>
+    public void RegistrarInteresse(int filmeId) => _ultimoAcesso[filmeId] = DateTime.UtcNow;
+
+    /// <summary>Só responde "dá pra tocar direto?" sem disparar transcode nenhum — a
+    /// <c>feia.html</c> usa isso pra decidir entre /stream e /original sem esperar HLS.</summary>
+    public Task<bool> PodeStreamDiretoAsync(string arquivoOriginal, CancellationToken ct)
+        => EhCompativelAsync(arquivoOriginal, ct);
+
     /// <summary>Apaga best-effort qualquer cache de transcode do filme (HLS atual e .mp4
     /// legado de uma geração anterior) — usado ao deletar o filme do catálogo.</summary>
     public void LimparCache(int filmeId)
     {
+        _ultimoAcesso.TryRemove(filmeId, out _);
         try
         {
             lock (_decisaoLock)
@@ -178,6 +197,7 @@ public class HlsTranscodeService
         if (await EhCompativelAsync(arquivoOriginal, ct))
             return (StreamStatus.Compativel, arquivoOriginal);
 
+        RegistrarInteresse(filmeId);
         var dir = DiretorioCache(filmeId);
         var playlist = CaminhoPlaylist(filmeId);
 
@@ -242,6 +262,10 @@ public class HlsTranscodeService
         await _slotEncoder.WaitAsync(CancellationToken.None);
         try
         {
+            // Placa quente? Segura aqui — o slot de encode já é nosso, então isso enfileira
+            // naturalmente os próximos jobs e dá tempo de a placa esfriar entre um 4K e outro.
+            await _thermal.AguardarResfriamentoAsync(CancellationToken.None);
+
             // Só o codec de vídeo decide o caminho de encode aqui — não precisa do de áudio
             // (que ProbeCodecsAsync também traria), então evita o segundo processo ffprobe.
             var videoCodec = await RunFfprobeAsync(origem, "v:0", CancellationToken.None);
@@ -272,17 +296,17 @@ public class HlsTranscodeService
             // sw-decode+hw-encode → libx264. Cada nível apaga e recria o dir antes de tentar.
             var decodeHw = usarRkmpp && _rkmppDecodeHw && downscalePara is not null;
 
-            var (exitCode, stderr) = await RunFfmpegHlsAsync(origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw);
+            var (exitCode, stderr, orfao) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw);
 
-            if (decodeHw && exitCode != 0)
+            if (!orfao && decodeHw && exitCode != 0)
             {
                 _logger.LogWarning("rkmpp com hwaccel de decode falhou pro filme {Id} (exit {Code}): {Stderr}. Tentando rkmpp só no encode.",
                     filmeId, exitCode, stderr);
                 LimparDir(dir);
-                (exitCode, stderr) = await RunFfmpegHlsAsync(origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw: false);
+                (exitCode, stderr, orfao) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw: false);
             }
 
-            if (usarRkmpp)
+            if (!orfao && usarRkmpp)
             {
                 _rkmpp.RegistrarResultado(exitCode == 0);
                 if (exitCode != 0)
@@ -290,8 +314,19 @@ public class HlsTranscodeService
                     _logger.LogWarning("Encode via rkmpp falhou pro filme {Id} (exit {Code}): {Stderr}. Tentando de novo com libx264.",
                         filmeId, exitCode, stderr);
                     LimparDir(dir);
-                    (exitCode, stderr) = await RunFfmpegHlsAsync(origem, dir, videoCompativel, usarRkmpp: false, audioStreamIndex, downscalePara, decodeHw: false);
+                    (exitCode, stderr, orfao) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp: false, audioStreamIndex, downscalePara, decodeHw: false);
                 }
+            }
+
+            if (orfao)
+            {
+                // Ninguém mais assistindo — aborta sem marcar _falhas, pra ficar retentável
+                // quando/se abrirem de novo. LimparCacheExcedente() no fim é pulado de propósito.
+                _logger.LogInformation("Transcode do filme {Id} abortado: ninguém pediu status/segmento há mais de {Seg}s.",
+                    filmeId, _orphanTimeout.TotalSeconds);
+                LimparDir(dir);
+                _ultimoAcesso.TryRemove(filmeId, out _);
+                return;
             }
 
             if (exitCode != 0)
@@ -332,8 +367,8 @@ public class HlsTranscodeService
         }
     }
 
-    private async Task<(int ExitCode, string Stderr)> RunFfmpegHlsAsync(
-        string origem, string dir, bool videoCompativel, bool usarRkmpp, int? audioStreamIndex, int? downscalePara, bool decodeHw)
+    private async Task<(int ExitCode, string Stderr, bool Orfao)> RunFfmpegHlsAsync(
+        int filmeId, string origem, string dir, bool videoCompativel, bool usarRkmpp, int? audioStreamIndex, int? downscalePara, bool decodeHw)
     {
         List<string> args = ["-y"];
 
@@ -409,8 +444,19 @@ public class HlsTranscodeService
         // segurar o slot de encode pelo _jobTimeout inteiro (6h).
         var ultimaContagem = -1;
         var ultimoProgresso = DateTime.UtcNow;
+        var orfao = false;
         bool Travou()
         {
+            // Ninguém pede status/segmento deste filme há muito tempo — quem pediu desistiu.
+            // Aborta pra não fritar a placa 1h transcodificando um 4K que ninguém vai ver.
+            if (_orphanTimeout > TimeSpan.Zero
+                && _ultimoAcesso.TryGetValue(filmeId, out var visto)
+                && DateTime.UtcNow - visto > _orphanTimeout)
+            {
+                orfao = true;
+                return true;
+            }
+
             int n;
             try { n = Directory.EnumerateFiles(dir, "seg_*.ts").Count(); }
             catch { return false; }
@@ -418,7 +464,8 @@ public class HlsTranscodeService
             return DateTime.UtcNow - ultimoProgresso > _stallTimeout;
         }
 
-        return await ProcessRunner.ExecutarComTimeoutAsync(psi, _jobTimeout, Travou);
+        var (exitCode, stderr) = await ProcessRunner.ExecutarComTimeoutAsync(psi, _jobTimeout, Travou);
+        return (exitCode, stderr, orfao);
     }
 
     private async Task<bool> EhCompativelAsync(string path, CancellationToken ct)
@@ -524,5 +571,45 @@ public class HlsTranscodeService
         var saida = await proc.StandardOutput.ReadToEndAsync(ct);
         await proc.WaitForExitAsync(ct);
         return saida;
+    }
+
+    private (long Bytes, int Itens, DateTime Quando) _cacheStats = (0, 0, DateTime.MinValue);
+
+    /// <summary>Retrato do estado do transcode pra página de status. O tamanho do cache em
+    /// disco é varrido no máximo a cada 20 s (a página é refresh manual, não vale o I/O).</summary>
+    public Models.HlsStatusSnapshot ObterSnapshot()
+    {
+        var jobs = _jobs.Keys.OrderBy(x => x).ToArray();
+        var encodando = Math.Max(0, _maxJobs - _slotEncoder.CurrentCount);
+
+        if (DateTime.UtcNow - _cacheStats.Quando > TimeSpan.FromSeconds(20))
+        {
+            long total = 0;
+            var itens = 0;
+            try
+            {
+                if (Directory.Exists(_cachePath))
+                    foreach (var dir in Directory.EnumerateDirectories(_cachePath))
+                    {
+                        itens++;
+                        foreach (var arq in Directory.EnumerateFiles(dir))
+                            try { total += new FileInfo(arq).Length; } catch (IOException) { }
+                    }
+            }
+            catch (IOException) { }
+            _cacheStats = (total, itens, DateTime.UtcNow);
+        }
+
+        return new Models.HlsStatusSnapshot(
+            JobsAtivos: jobs.Length,
+            Encodando: encodando,
+            NaFila: Math.Max(0, jobs.Length - encodando),
+            Completos: _completos.Count,
+            Falhas: _falhas.Count,
+            FilmesEmJob: jobs,
+            FilmesComFalha: _falhas.Keys.OrderBy(x => x).ToArray(),
+            CacheBytes: _cacheStats.Bytes,
+            CacheMaxBytes: _cacheMaxBytes == long.MaxValue ? 0 : _cacheMaxBytes,
+            CacheItens: _cacheStats.Itens);
     }
 }

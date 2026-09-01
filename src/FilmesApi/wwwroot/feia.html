@@ -145,7 +145,7 @@ video { width: 100%; height: auto; background: #000; }
 <div id="player">
   <video id="video" controls autoplay></video>
   <div id="pmsg"></div>
-  <div id="phint">&#8592; &#8594; 15s &middot; OK pausa &middot; Voltar = lista</div>
+  <div id="phint">&#8592; &#8594; 15s &middot; OK pausa &middot; Vermelho = legenda &middot; Voltar = lista</div>
 </div>
 
 <script>
@@ -166,7 +166,8 @@ video { width: 100%; height: auto; background: #000; }
   var posicaoRetomar = 0;
   var retomarTentativas = 0;
   var reproducaoConcluida = false;  // apos 'ended', nao deixa um save tardio recriar a retomada
-  var prepInicio = 0;               // pra mostrar "Preparando... Ns"
+  var proximoPendente = null;       // proximo episodio oferecido apos o 'ended'
+  var proximoTimer = null;
 
   function get(url, cb) {
     var x = new XMLHttpRequest();
@@ -463,9 +464,60 @@ video { width: 100%; height: auto; background: #000; }
   }
 
   // ---- player ----
-  var pollTimer = null;
+  function removerLegendas() {
+    var v = document.getElementById('video');
+    var tr = v.getElementsByTagName('track');
+    while (tr.length) v.removeChild(tr[0]);
+  }
+
+  // Legenda embutida (as de texto) como <track>. Em TV muito velha pode nao renderizar
+  // — mas nao atrapalha. Botao VERMELHO liga/desliga durante o filme.
+  function carregarLegendas(id) {
+    get(API + '/' + id + '/legendas', function (err, faixas) {
+      if (err || !faixas || filmeAtual !== id) return;
+      var v = document.getElementById('video');
+      removerLegendas();
+      for (var i = 0; i < faixas.length; i++) {
+        if (!faixas[i].convertivel) continue;
+        var t = document.createElement('track');
+        t.kind = 'subtitles';
+        t.setAttribute('src', API + '/' + id + '/legenda/' + faixas[i].idx);
+        t.setAttribute('srclang', faixas[i].idioma || 'und');
+        t.setAttribute('label', faixas[i].titulo || faixas[i].idioma || ('Legenda ' + (faixas[i].idx + 1)));
+        v.appendChild(t);
+      }
+    });
+  }
+
+  function cancelarProximo() {
+    if (proximoTimer) { clearInterval(proximoTimer); proximoTimer = null; }
+    proximoPendente = null;
+  }
+
+  function ofereceProximo(id) {
+    get(API + '/' + id + '/proximo', function (err, prox) {
+      if (err || !prox || filmeAtual !== id) return;
+      proximoPendente = prox;
+      var pmsg = document.getElementById('pmsg');
+      var resta = 12;
+      function tick() {
+        pmsg.innerHTML = 'Proximo: ' + esc(rotuloEpisodio(prox)) + ' &mdash; OK assiste, Voltar cancela  (' + resta + 's)';
+        if (resta-- <= 0) irProximo();
+      }
+      tick();
+      proximoTimer = setInterval(tick, 1000);
+    });
+  }
+
+  function irProximo() {
+    var p = proximoPendente;
+    cancelarProximo();
+    if (p) tocar(p.id);
+  }
 
   function tocar(id) {
+    cancelarProximo();
+    removerLegendas();
     document.getElementById('list').className = 'hide';
     document.getElementById('player').className = 'on';
     document.body.className = 'playing';
@@ -489,16 +541,14 @@ video { width: 100%; height: auto; background: #000; }
     get(API + '/' + id + '/progresso', function (err, d) {
       if (!err && d && d.posicaoSegundos) posicaoRetomar = d.posicaoSegundos;
 
-      prepInicio = (new Date()).getTime();
-      checar(id, function (status) {
-        if (status === 'erro') { pmsg.innerHTML = 'Falha ao converter o video.'; return; }
+      // TV antiga nao roda HLS de qualquer jeito: so pergunta se da pra tocar direto
+      // (sem disparar transcode), senao serve o arquivo original.
+      get(API + '/' + id + '/pode-direto', function (e2, pd) {
         pmsg.innerHTML = '';
-        // fragmento #t= = comeca ja na retomada, sem o pulo do frame 0
         var frag = posicaoRetomar > 5 ? ('#t=' + Math.floor(posicaoRetomar)) : '';
-        if (status === 'compativel') {
+        if (!e2 && pd && pd.compativel) {
           v.src = API + '/' + id + '/stream' + frag;
         } else {
-          // TV antiga nao roda HLS: serve o arquivo original e torce.
           v.src = API + '/' + id + '/original' + frag;
           pmsg.innerHTML = 'Arquivo original (pode nao rodar em TV muito antiga).';
           setTimeout(function () {
@@ -506,6 +556,7 @@ video { width: 100%; height: auto; background: #000; }
           }, 8000);
         }
         try { v.load(); v.play(); } catch (e) {}
+        carregarLegendas(id);
         // "assistido" fica por conta do backend (perto do fim) ou do evento 'ended'.
       });
     });
@@ -539,7 +590,9 @@ video { width: 100%; height: auto; background: #000; }
     v.onended = function () {
       if (filmeAtual == null) return;
       reproducaoConcluida = true;
-      send('POST', API + '/' + filmeAtual + '/concluir');
+      var idFim = filmeAtual;
+      send('POST', API + '/' + idFim + '/concluir');
+      ofereceProximo(idFim);
     };
   }
 
@@ -560,26 +613,11 @@ video { width: 100%; height: auto; background: #000; }
     }));
   }
 
-  function checar(id, cb) {
-    get(API + '/' + id + '/stream-status', function (err, d) {
-      if (err) { cb('erro'); return; }
-      var s = d && d.status;
-      if (s === 'preparando') {
-        var seg = Math.round(((new Date()).getTime() - prepInicio) / 1000);
-        document.getElementById('pmsg').innerHTML = 'Preparando video... ' + seg + 's' +
-          (seg > 45 ? ' (a primeira vez demora mais)' : '');
-        pollTimer = setTimeout(function () { checar(id, cb); }, 2000);
-        return;
-      }
-      cb(s);
-    });
-  }
-
   function fecharPlayer() {
+    cancelarProximo();
     // grava o progresso e so entao recarrega a lista, senao o "continuar
     // assistindo" volta antes do PUT e fica desatualizado.
     salvarProgresso(function () { load(); });
-    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
     var v = document.getElementById('video');
     try { v.pause(); } catch (e) {}
     v.removeAttribute('src');
@@ -606,6 +644,29 @@ video { width: 100%; height: auto; background: #000; }
       // Nesta TV a navegacao e por seta — durante o filme: <- -> pulam 15s, OK pausa.
       // Cima/baixo (volume) ficam com o controle nativo do <video>.
       var v = document.getElementById('video');
+
+      // Oferta de proximo episodio na tela: OK assiste agora, resto ignora
+      // (Voltar ja foi tratado acima -> fecharPlayer -> cancelarProximo).
+      if (proximoPendente) {
+        if (k === 13 || k === 32) { if (e.preventDefault) e.preventDefault(); irProximo(); return false; }
+        return true;
+      }
+
+      // botao VERMELHO (403 na maioria dos controles): liga/desliga legenda
+      if (k === 403) {
+        var tt = v.textTracks, algum = false, xi;
+        if (tt) {
+          for (xi = 0; xi < tt.length; xi++) if (tt[xi].mode === 'showing') algum = true;
+          for (xi = 0; xi < tt.length; xi++) tt[xi].mode = 'disabled';
+          if (!algum && tt.length) tt[0].mode = 'showing';
+          var pm = document.getElementById('pmsg');
+          pm.innerHTML = 'Legenda: ' + (algum ? 'off' : (tt.length ? (tt[0].label || 'on') : 'nenhuma'));
+          setTimeout(function () { var p = document.getElementById('pmsg'); if (p.innerHTML.indexOf('Legenda:') === 0) p.innerHTML = ''; }, 3000);
+        }
+        if (e.preventDefault) e.preventDefault();
+        return false;
+      }
+
       if (k === 37) {
         v.currentTime = Math.max(0, v.currentTime - 15);
         if (e.preventDefault) e.preventDefault(); return false;

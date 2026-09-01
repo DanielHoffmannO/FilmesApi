@@ -12,12 +12,14 @@ public partial class FilmesController : ControllerBase
     private readonly FilmeService _service;
     private readonly HlsTranscodeService _transcode;
     private readonly ProgressoService _progresso;
+    private readonly SubtitleService _legendas;
 
-    public FilmesController(FilmeService service, HlsTranscodeService transcode, ProgressoService progresso)
+    public FilmesController(FilmeService service, HlsTranscodeService transcode, ProgressoService progresso, SubtitleService legendas)
     {
         _service = service;
         _transcode = transcode;
         _progresso = progresso;
+        _legendas = legendas;
     }
 
     [HttpGet]
@@ -87,6 +89,53 @@ public partial class FilmesController : ControllerBase
     public async Task<IActionResult> Concluir(int id)
         => await _progresso.ConcluirAsync(id) ? NoContent() : NotFound();
 
+    /// <summary>Próximo episódio da mesma série (ordem S/E), ou 204 se este não é episódio
+    /// ou é o último. Série/episódio é derivado do nome do arquivo (<see cref="MediaNomeParser"/>).</summary>
+    [HttpGet("{id:int}/proximo")]
+    public async Task<IActionResult> ProximoEpisodio(int id)
+    {
+        var atual = await _service.ObterAsync(id);
+        if (atual is null) return NotFound();
+        if (!MediaNomeParser.EhEpisodio(atual.ArquivoPath)) return NoContent();
+
+        var chave = MediaNomeParser.ChaveSerie(atual.ArquivoPath);
+        var todos = await _service.ListarAsync();
+
+        var episodios = todos
+            .Where(f => MediaNomeParser.EhEpisodio(f.ArquivoPath)
+                        && !MediaNomeParser.EhExtra(f.ArquivoPath)
+                        && MediaNomeParser.ChaveSerie(f.ArquivoPath) == chave)
+            .Select(f => new { Filme = f, Ordem = MediaNomeParser.OrdemEpisodio(f.Titulo) })
+            .OrderBy(x => x.Ordem?.Temporada ?? 0)
+            .ThenBy(x => x.Ordem?.Episodio ?? 0)
+            .ThenBy(x => x.Filme.Titulo, StringComparer.OrdinalIgnoreCase)
+            .Select(x => x.Filme)
+            .ToList();
+
+        var i = episodios.FindIndex(f => f.Id == id);
+        if (i < 0 || i + 1 >= episodios.Count) return NoContent();
+        return Ok(episodios[i + 1]);
+    }
+
+    /// <summary>Keepalive do player: "ainda tem alguém assistindo este filme". Sem isso, o
+    /// transcode em andamento é abortado depois de <c>HlsOrphanTimeoutSeconds</c> sem sinal.</summary>
+    [HttpPost("{id:int}/assistindo")]
+    public IActionResult Assistindo(int id)
+    {
+        _transcode.RegistrarInteresse(id);
+        return NoContent();
+    }
+
+    /// <summary>"Dá pra tocar o arquivo direto?" — sem disparar transcode. A feia.html
+    /// (TV antiga, que não roda HLS) usa isso pra escolher entre /stream e /original.</summary>
+    [HttpGet("{id:int}/pode-direto")]
+    public async Task<IActionResult> PodeDireto(int id, CancellationToken ct)
+    {
+        var (path, erro) = await ResolverCaminhoAsync(id);
+        if (erro is not null) return erro;
+        return Ok(new { compativel = await _transcode.PodeStreamDiretoAsync(path!, ct) });
+    }
+
     /// <summary>Verifica se o vídeo já pode ser tocado direto, via HLS, ou se ainda está preparando.</summary>
     [HttpGet("{id:int}/stream-status")]
     public async Task<IActionResult> ObterStreamStatus(int id, CancellationToken ct)
@@ -132,6 +181,7 @@ public partial class FilmesController : ControllerBase
     {
         if (!SegmentoValido().IsMatch(arquivo)) return NotFound();
 
+        _transcode.RegistrarInteresse(id);
         var caminho = Path.Combine(_transcode.DiretorioCache(id), arquivo);
         if (!System.IO.File.Exists(caminho)) return NotFound();
 
@@ -148,6 +198,30 @@ public partial class FilmesController : ControllerBase
     {
         var (path, erro) = await ResolverCaminhoAsync(id);
         return erro ?? ServirComRange(path!);
+    }
+
+    /// <summary>Faixas de legenda embutidas no arquivo (as de texto viram .vtt via o endpoint abaixo).</summary>
+    [HttpGet("{id:int}/legendas")]
+    public async Task<IActionResult> Legendas(int id, CancellationToken ct)
+    {
+        var (path, erro) = await ResolverCaminhoAsync(id);
+        if (erro is not null) return erro;
+        return Ok(await _legendas.ListarAsync(path!, ct));
+    }
+
+    /// <summary>Uma faixa de legenda de texto convertida pra WebVTT. 404 se o índice não
+    /// existe ou a faixa é bitmap (PGS/VobSub — não dá pra converter em texto).</summary>
+    [HttpGet("{id:int}/legenda/{idx:int}")]
+    public async Task<IActionResult> Legenda(int id, int idx, CancellationToken ct)
+    {
+        var (path, erro) = await ResolverCaminhoAsync(id);
+        if (erro is not null) return erro;
+
+        var vtt = await _legendas.ObterVttAsync(id, path!, idx, ct);
+        if (vtt is null) return NotFound();
+
+        Response.Headers.CacheControl = "public, max-age=86400";
+        return PhysicalFile(vtt, "text/vtt; charset=utf-8");
     }
 
     private async Task<(string? Path, IActionResult? Erro)> ResolverCaminhoAsync(int id)
