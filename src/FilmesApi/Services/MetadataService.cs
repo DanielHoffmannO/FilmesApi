@@ -32,17 +32,22 @@ public class MetadataService : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            int processados;
-            try { processados = await ProcessarLoteAsync(stoppingToken); }
+            TimeSpan pausa;
+            try
+            {
+                var processados = await ProcessarLoteAsync(stoppingToken);
+                // Processou algo → segue logo pro próximo lote. Nada pendente → dorme bastante
+                // (novos arquivos só aparecem no próximo scan).
+                pausa = processados > 0 ? TimeSpan.FromSeconds(5) : TimeSpan.FromHours(6);
+            }
             catch (OperationCanceledException) { return; }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Enriquecimento de metadados: lote falhou.");
-                processados = 0;
+                // Falha de rede/DB/schema — tenta de novo em 10 min, não daqui a 6h.
+                _logger.LogWarning(ex, "Enriquecimento de metadados: lote falhou, nova tentativa em 10 min.");
+                pausa = TimeSpan.FromMinutes(10);
             }
 
-            // Nada pendente → dorme bastante (novos arquivos aparecem no próximo scan).
-            var pausa = processados > 0 ? TimeSpan.FromSeconds(5) : TimeSpan.FromHours(6);
             try { await Task.Delay(pausa, stoppingToken); }
             catch (OperationCanceledException) { return; }
         }
@@ -82,9 +87,17 @@ public class MetadataService : BackgroundService
             filme.PosterUrl = res?.PosterUrl;
             filme.Sinopse = res?.Sinopse;
             filme.MetadadosEm = DateTime.UtcNow;
+
+            // Salva um por um: se um /scan concorrente apagou este filme no meio do lote,
+            // o erro fica isolado neste filme e não descarta o trabalho (e a cota TMDB) dos outros.
+            try { await db.SaveChangesAsync(ct); }
+            catch (DbUpdateException)
+            {
+                db.Entry(filme).State = EntityState.Detached;
+                _logger.LogInformation("Metadados: filme {Id} sumiu do banco durante o enriquecimento — ignorado.", filme.Id);
+            }
         }
 
-        await db.SaveChangesAsync(ct);
         var achados = pendentes.Count(f => f.TmdbId != null);
         _logger.LogInformation("Metadados: {N} filmes processados, {Achados} com match no TMDB.", pendentes.Count, achados);
         return pendentes.Count;

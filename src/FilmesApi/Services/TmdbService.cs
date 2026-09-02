@@ -51,12 +51,14 @@ public class TmdbService
             }
 
             using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
-            if (!doc.RootElement.TryGetProperty("results", out var results) || results.GetArrayLength() == 0)
+            if (!doc.RootElement.TryGetProperty("results", out var results)
+                || results.ValueKind != JsonValueKind.Array || results.GetArrayLength() == 0)
                 return null;
 
             var r = results[0];
-            var id = r.TryGetProperty("id", out var idEl) ? idEl.GetInt32() : 0;
-            if (id == 0) return null;
+            if (!r.TryGetProperty("id", out var idEl) || idEl.ValueKind != JsonValueKind.Number
+                || !idEl.TryGetInt32(out var id) || id == 0)
+                return null;
 
             string? original = serie
                 ? Str(r, "original_name") : Str(r, "original_title");

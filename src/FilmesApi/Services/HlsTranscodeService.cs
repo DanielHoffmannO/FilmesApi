@@ -78,13 +78,25 @@ public class HlsTranscodeService
     public string CaminhoPlaylist(int filmeId) => Path.Combine(DiretorioCache(filmeId), "playlist.m3u8");
 
     /// <summary>"Ainda tem gente interessada neste filme" — chamado pelo poll de status, por
-    /// cada request de segmento e pelo keepalive do player. Zera o relógio de órfão.</summary>
-    public void RegistrarInteresse(int filmeId) => _ultimoAcesso[filmeId] = DateTime.UtcNow;
+    /// cada request de segmento e pelo keepalive do player. Zera o relógio de órfão.
+    /// Só registra se existe job vivo ou cache pra este id: assim POST /assistindo com id
+    /// aleatório (endpoint sem auth) não consegue inflar o dicionário sem limite.</summary>
+    public void RegistrarInteresse(int filmeId)
+    {
+        if (_jobs.ContainsKey(filmeId) || _completos.ContainsKey(filmeId) || Directory.Exists(DiretorioCache(filmeId)))
+            _ultimoAcesso[filmeId] = DateTime.UtcNow;
+    }
 
     /// <summary>Só responde "dá pra tocar direto?" sem disparar transcode nenhum — a
     /// <c>feia.html</c> usa isso pra decidir entre /stream e /original sem esperar HLS.</summary>
     public Task<bool> PodeStreamDiretoAsync(string arquivoOriginal, CancellationToken ct)
         => EhCompativelAsync(arquivoOriginal, ct);
+
+    /// <summary>Tem algum job de transcode vivo (encodando ou na fila)? Barato — sem I/O.</summary>
+    public bool TemJobAtivo() => !_jobs.IsEmpty;
+
+    /// <summary>Este filme tem job de transcode vivo? Barato — sem I/O.</summary>
+    public bool TemJobDoFilme(int filmeId) => _jobs.ContainsKey(filmeId);
 
     /// <summary>Apaga best-effort qualquer cache de transcode do filme (HLS atual e .mp4
     /// legado de uma geração anterior) — usado ao deletar o filme do catálogo.</summary>
@@ -240,6 +252,7 @@ public class HlsTranscodeService
             if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
             Directory.CreateDirectory(dir);
             _jobs[filmeId] = Task.Run(() => TranscodificarHlsAsync(filmeId, arquivoOriginal), CancellationToken.None);
+            _ultimoAcesso[filmeId] = DateTime.UtcNow;  // já conta como interesse — o job acabou de nascer
             return (StreamStatus.Preparando, null);
         }
     }

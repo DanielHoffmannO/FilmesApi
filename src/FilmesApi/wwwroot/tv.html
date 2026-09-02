@@ -34,7 +34,7 @@ setInterval(() => {
 }, 2000);
 
 // continuar de onde parou
-let filmeAtual = null, ultimoSalvo = 0, posicaoRetomar = 0, retomarTentativas = 0;
+let filmeAtual = null, ultimoSalvo = 0, posicaoRetomar = 0, retomarTentativas = 0, hlsRetries = 0;
 // video.duration só é confiável no stream direto; no HLS cresce durante o transcode.
 let duracaoConfiavel = false;
 // depois do 'ended' o /concluir já limpou a retomada — impede um save tardio de recriá-la.
@@ -70,8 +70,11 @@ video.addEventListener('ended', () => {
 });
 
 // ─── Próximo episódio ────────────────────────────────────────────────
-let proximoTimer = null;
-function cancelarProximo() { if (proximoTimer) { clearTimeout(proximoTimer); proximoTimer = null; } }
+let proximoTimer = null, aguardandoProximo = false;
+function cancelarProximo() {
+  if (proximoTimer) { clearTimeout(proximoTimer); proximoTimer = null; }
+  aguardandoProximo = false;
+}
 async function ofereceProximo(id) {
   let prox;
   try {
@@ -82,6 +85,8 @@ async function ofereceProximo(id) {
   if (filmeAtual !== id || !prox) return;
 
   cancelarProximo();
+  aguardandoProximo = true;  // o poll não deve dar play() no episódio que já acabou
+  try { video.pause(); } catch {}
   let resta = 8;
   const tick = () => {
     mostrarMsg(`Próximo: ${prox.titulo}\nem ${resta}s`);
@@ -113,7 +118,9 @@ async function carregarLegendas(filmeId) {
     tr.label = x.titulo || x.idioma || `Legenda ${x.idx + 1}`;
     video.appendChild(tr);
   });
-  aplicarLegenda(estadoAnterior.legendaIdx);
+  // Filme novo sempre começa sem legenda (o servidor zera _legendaIdx=-1 em Selecionar);
+  // se o celular pedir CC depois, o canal legendaVersion aplica no poll.
+  aplicarLegenda(-1);
 }
 function aplicarLegenda(idx) {
   const tt = video.textTracks;
@@ -166,6 +173,7 @@ async function carregarFilme(filmeId) {
   ultimoSalvo = 0;
   posicaoRetomar = 0;
   retomarTentativas = 0;
+  hlsRetries = 0;
   duracaoConfiavel = false;
   reproducaoConcluida = false;
   const prog = await fetch(`/api/filmes/${filmeId}/progresso`).then(r => r.ok ? r.json() : null).catch(() => null);
@@ -205,6 +213,13 @@ async function carregarFilme(filmeId) {
     hls.loadSource(playlistUrl);
     hls.attachMedia(video);
     hls.on(Hls.Events.MANIFEST_PARSED, () => { mostrarVideo(); video.play(); });
+    hls.on(Hls.Events.ERROR, (_e, data) => {
+      if (!data.fatal) return;
+      if (data.type === Hls.ErrorTypes.MEDIA_ERROR) { hls.recoverMediaError(); return; }
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR && filmeAtual === filmeId && hlsRetries++ < 3) {
+        setTimeout(() => { if (filmeAtual === filmeId) carregarFilme(filmeId); }, 1500);
+      }
+    });
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
     video.src = t ? `${playlistUrl}#t=${t}` : playlistUrl;
     mostrarVideo();
@@ -231,7 +246,7 @@ async function poll() {
     } else if (estado.filmeId !== null && estado.filmeId !== estadoAnterior.filmeId) {
       salvarProgresso();  // guarda o filme anterior antes de trocar
       await carregarFilme(estado.filmeId);
-    } else if (estado.filmeId !== null) {
+    } else if (estado.filmeId !== null && !aguardandoProximo) {
       if (estado.playing && video.paused) video.play();
       if (!estado.playing && !video.paused) video.pause();
     }

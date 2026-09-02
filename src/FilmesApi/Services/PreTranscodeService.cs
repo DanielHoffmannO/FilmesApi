@@ -45,7 +45,7 @@ public class PreTranscodeService : BackgroundService
 
             var agora = DateTime.UtcNow;
             if (agora.Hour != _horaUtc || _ultimaPassada.Date == agora.Date) continue;
-            if (_transcode.ObterSnapshot().JobsAtivos > 0) continue;  // tem gente assistindo — deixa pra lá
+            if (_transcode.TemJobAtivo()) continue;  // tem gente assistindo — deixa pra lá
 
             _ultimaPassada = agora.Date;
             try { await RodarPassadaAsync(stoppingToken); }
@@ -100,7 +100,7 @@ public class PreTranscodeService : BackgroundService
             _logger.LogInformation("Pré-transcode: preparando {Titulo} (#{Id})…", titulo, id);
             // Segura o job vivo (senão o abortador de órfão o mata em 90s por falta de acesso)
             // e serializa: espera este sair da fila antes de chamar o próximo.
-            while (!ct.IsCancellationRequested && _transcode.ObterSnapshot().FilmesEmJob.Contains(id))
+            while (!ct.IsCancellationRequested && _transcode.TemJobDoFilme(id))
             {
                 _transcode.RegistrarInteresse(id);
                 try { await Task.Delay(TimeSpan.FromSeconds(5), ct); }

@@ -223,16 +223,17 @@ video { width: 100%; height: auto; background: #000; }
     var prefixo = i > 0 ? n.slice(0, i) : n;
     return prefixo.replace(/[._]+/g, ' ').replace(/[\s-]+$/, '').trim() || n;
   }
+  function pad2(n) { n = String(n); return n.length >= 2 ? n : ('0' + n); }  // ES5, nao trunca 3 digitos
   function rotuloEpisodio(m) {
     var t = m.titulo || '', r = t.match(RE_SXXEXX);
-    if (r) return 'S' + ('0' + r[1]).slice(-2) + 'E' + ('0' + r[2]).slice(-2);
+    if (r) return 'S' + pad2(r[1]) + 'E' + pad2(r[2]);
     r = t.match(RE_NXNN);
-    if (r) return 'T' + r[1] + ' Ep' + ('0' + r[2]).slice(-2);
+    if (r) return 'T' + r[1] + ' Ep' + pad2(r[2]);
     r = t.match(RE_EPNUM);
     if (r) {
       var resto = t.slice(r.index + r[0].length).replace(/^[\s._·:–—-]+/, '');
       resto = resto.replace(/\s+$/, '');
-      return 'Ep ' + ('0' + r[1]).slice(-2) + (resto ? ' · ' + resto : '');
+      return 'Ep ' + pad2(r[1]) + (resto ? ' · ' + resto : '');
     }
     return t;
   }
@@ -615,6 +616,7 @@ video { width: 100%; height: auto; background: #000; }
 
   function fecharPlayer() {
     cancelarProximo();
+    removerLegendas();
     // grava o progresso e so entao recarrega a lista, senao o "continuar
     // assistindo" volta antes do PUT e fica desatualizado.
     salvarProgresso(function () { load(); });

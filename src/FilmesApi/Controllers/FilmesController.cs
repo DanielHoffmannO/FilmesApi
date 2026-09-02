@@ -89,8 +89,9 @@ public partial class FilmesController : ControllerBase
     public async Task<IActionResult> Concluir(int id)
         => await _progresso.ConcluirAsync(id) ? NoContent() : NotFound();
 
-    /// <summary>Próximo episódio da mesma série (ordem S/E), ou 204 se este não é episódio
-    /// ou é o último. Série/episódio é derivado do nome do arquivo (<see cref="MediaNomeParser"/>).</summary>
+    /// <summary>Próximo episódio da mesma série (ordem S/E). 204 quando não há próximo:
+    /// este não é episódio, é o último, ou é um "extra" (deleted scene/trailer) que não
+    /// entra na sequência. Série/episódio vem do nome do arquivo (<see cref="MediaNomeParser"/>).</summary>
     [HttpGet("{id:int}/proximo")]
     public async Task<IActionResult> ProximoEpisodio(int id)
     {

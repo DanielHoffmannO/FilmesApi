@@ -109,19 +109,24 @@ public static partial class MediaNomeParser
 
         n = RePontos().Replace(n, " ");
 
-        int? ano = null;
-        var anoMatch = Regex.Match(n, @"\b(19[0-9]{2}|20[0-9]{2})\b");
-        if (anoMatch.Success)
-        {
-            ano = ParseInt(anoMatch.Value);
-            n = n[..anoMatch.Index];  // tudo depois do ano costuma ser release info
-        }
+        // corta no marcador de episódio primeiro (antes do ano) — "Serie S03E01 2160p" não
+        // deve virar título "Serie S03E01". ReNxNN "come 1 char antes", igual em ChaveSerie.
+        var iSxx = IndiceOuMenos1(ReSxxExx(), n);
+        if (iSxx > 0) n = n[..iSxx];
+        var iNxx = IndiceOuMenos1(ReNxNN(), n);
+        if (iNxx > 0) n = n[..(iNxx + 1)];
+        var iEp = IndiceOuMenos1(ReEpNum(), n);
+        if (iEp > 0) n = n[..iEp];
 
-        // corta no marcador de episódio, se houver
-        foreach (var re in new[] { ReSxxExx(), ReNxNN(), ReEpNum() })
+        int? ano = null;
+        // Último ano da string (não o primeiro): "Blade Runner 2049 2017 1080p" -> 2017,
+        // não 2049. E nunca aceita ano no começo ("1917 2019" -> ano 2019, título "1917").
+        var anos = Regex.Matches(n, @"\b(19[0-9]{2}|20[0-9]{2})\b").Where(m => m.Index > 0).ToList();
+        if (anos.Count > 0)
         {
-            var i = IndiceOuMenos1(re, n);
-            if (i > 0) n = n[..i];
+            var ultimo = anos[^1];
+            ano = ParseInt(ultimo.Value);
+            n = n[..ultimo.Index];  // tudo depois do ano costuma ser release info
         }
 
         n = ReRuido().Replace(n, " ");
