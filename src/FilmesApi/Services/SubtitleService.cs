@@ -26,10 +26,10 @@ public class SubtitleService
     private readonly ILogger<SubtitleService> _logger;
     private readonly SemaphoreSlim _extracao = new(1, 1);
 
-    public SubtitleService(IConfiguration config, ILogger<SubtitleService> logger)
+    public SubtitleService(FfmpegOptions ffmpeg, IConfiguration config, ILogger<SubtitleService> logger)
     {
-        _ffmpegPath = config.GetValue<string>("FfmpegPath") ?? "ffmpeg";
-        _ffprobePath = config.GetValue<string>("FfprobePath") ?? "ffprobe";
+        _ffmpegPath = ffmpeg.Ffmpeg;
+        _ffprobePath = ffmpeg.Ffprobe;
         // Cache próprio, longe do churn do HLS (LimparDir a cada fallback de encode, poda por
         // teto, limpeza pós-restart) — senão o .vtt some e é re-extraído toda hora.
         _cachePath = config.GetValue<string>("SubtitleCachePath") ?? "/data/subs";
