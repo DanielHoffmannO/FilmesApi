@@ -52,11 +52,15 @@ public class HlsTranscodeService
     private readonly ConcurrentDictionary<int, DateTime> _ultimoAcesso = new();
     private readonly object _decisaoLock = new();
 
-    public HlsTranscodeService(IConfiguration config, RkmppCapabilityService rkmpp, ThermalService thermal, ILogger<HlsTranscodeService> logger)
+    /// <summary>(bytes, itens, quando) do cache HLS em disco — varrido no máx. a cada 20 s
+    /// (a página de status é refresh manual, não vale o I/O). Ver <see cref="ObterSnapshot"/>.</summary>
+    private (long Bytes, int Itens, DateTime Quando) _cacheStats = (0, 0, DateTime.MinValue);
+
+    public HlsTranscodeService(FfmpegOptions ffmpeg, IConfiguration config, RkmppCapabilityService rkmpp, ThermalService thermal, ILogger<HlsTranscodeService> logger)
     {
         _cachePath = config.GetValue<string>("HlsCachePath") ?? "/data/hls";
-        _ffmpegPath = config.GetValue<string>("FfmpegPath") ?? "ffmpeg";
-        _ffprobePath = config.GetValue<string>("FfprobePath") ?? "ffprobe";
+        _ffmpegPath = ffmpeg.Ffmpeg;
+        _ffprobePath = ffmpeg.Ffprobe;
         _cachePathLegado = config.GetValue<string>("TranscodeCachePath") ?? "/data/transcoded";
         _maxJobs = config.GetValue<int?>("MaxConcurrentTranscodeJobs") ?? 1;
         _jobTimeout = TimeSpan.FromHours(config.GetValue<double?>("TranscodeJobTimeoutHours") ?? 6);
@@ -595,10 +599,7 @@ public class HlsTranscodeService
         return saida;
     }
 
-    private (long Bytes, int Itens, DateTime Quando) _cacheStats = (0, 0, DateTime.MinValue);
-
-    /// <summary>Retrato do estado do transcode pra página de status. O tamanho do cache em
-    /// disco é varrido no máximo a cada 20 s (a página é refresh manual, não vale o I/O).</summary>
+    /// <summary>Retrato do estado do transcode pra página de status.</summary>
     public Models.HlsStatusSnapshot ObterSnapshot()
     {
         var jobs = _jobs.Keys.OrderBy(x => x).ToArray();

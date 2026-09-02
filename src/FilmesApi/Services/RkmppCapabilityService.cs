@@ -20,9 +20,9 @@ public class RkmppCapabilityService
     private int _falhasConsecutivas;
     private volatile bool _desabilitadoPorFalhas;
 
-    public RkmppCapabilityService(IConfiguration config, ILogger<RkmppCapabilityService> logger)
+    public RkmppCapabilityService(FfmpegOptions ffmpeg, IConfiguration config, ILogger<RkmppCapabilityService> logger)
     {
-        _ffmpegPath = config.GetValue<string>("FfmpegPath") ?? "ffmpeg";
+        _ffmpegPath = ffmpeg.Ffmpeg;
         _forcarSoftware = config.GetValue<bool>("ForceSoftwareEncoder");
         _logger = logger;
         _disponivel = new Lazy<Task<bool>>(ProbeAsync);
