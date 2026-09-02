@@ -23,6 +23,7 @@ main{padding:24px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px}
 .card{background:#181818;border-radius:8px;overflow:hidden;cursor:pointer;transition:transform .15s,box-shadow .15s;position:relative}
 .card:hover{transform:scale(1.03);box-shadow:0 8px 24px rgba(0,0,0,.5)}
+.card-poster{width:100%;aspect-ratio:2/3;object-fit:cover;display:block;background:#222}
 .card-body{padding:12px}
 .progressbar{height:4px;background:#333}
 .progressbar-fill{height:100%;background:#e50914}
@@ -38,6 +39,12 @@ main{padding:24px}
 .player-overlay video{max-width:100vw;max-height:100vh;width:auto;height:auto}
 .player-close{position:absolute;top:16px;right:24px;font-size:28px;color:#fff;cursor:pointer;z-index:101}
 .converting{display:none;color:#ccc;font-size:14px;margin-top:16px;white-space:pre-line;text-align:center}
+#proximoBox{display:none;position:absolute;right:24px;bottom:80px;background:#181818;border:1px solid #333;border-radius:8px;padding:14px 16px;max-width:320px;z-index:102}
+#proximoBox.on{display:block}
+#proximoBox .lbl{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px}
+#proximoBox .tit{font-size:14px;margin:4px 0 10px;color:#fff}
+#proximoBox button{margin-right:8px}
+#proximoBox .go{background:#e50914;border-color:#e50914;color:#fff}
 #loadbar{position:fixed;top:0;left:0;height:3px;width:0;background:#e50914;z-index:200;opacity:0;transition:width .3s ease}
 #loadbar.on{opacity:1;width:75%}
 #loadbar.done{opacity:0;width:100%;transition:width .2s ease,opacity .4s ease .2s}
@@ -97,6 +104,12 @@ main{padding:24px}
   <span class="player-close" onclick="closePlayer()">✕</span>
   <video id="video" controls autoplay></video>
   <div class="converting" id="converting">Convertendo vídeo para reprodução, aguarde...</div>
+  <div id="proximoBox">
+    <div class="lbl">Próximo episódio <span id="proximoSeg"></span></div>
+    <div class="tit" id="proximoTit"></div>
+    <button class="go" onclick="irProximo()">▶ Assistir agora</button>
+    <button onclick="cancelarProximo()">Cancelar</button>
+  </div>
 </div>
 
 <div class="scan-msg" id="scanMsg"></div>
@@ -113,6 +126,7 @@ main{padding:24px}
     <button onclick="remoteSeek(-10)">« 10s</button>
     <button onclick="remotePlayPause()" id="remotePlayPauseBtn">⏸</button>
     <button onclick="remoteSeek(10)">10s »</button>
+    <button onclick="remoteCC()" id="remoteCCBtn" style="display:none">CC</button>
     <input type="range" id="remoteVolume" min="0" max="1" step="0.05" oninput="remoteVolume(this.value)">
     <button onclick="remoteParar()">⏹ Parar</button>
   </div>
@@ -166,16 +180,19 @@ function chaveSerie(arquivoPath) {
   return prefixo.replace(/[._]+/g, ' ').replace(/[\s-]+$/, '').trim() || n;
 }
 
+const pad2 = n => String(n).padStart(2, '0');  // "9"->"09", "100"->"100" (não trunca)
+// escapa pra uso dentro de atributo entre aspas duplas
+const attr = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 function rotuloEpisodio(f) {
   const t = f.titulo || '';
   let m = t.match(RE_SXXEXX);
-  if (m) return 'S' + ('0' + m[1]).slice(-2) + 'E' + ('0' + m[2]).slice(-2);
+  if (m) return 'S' + pad2(m[1]) + 'E' + pad2(m[2]);
   m = t.match(RE_NXNN);
-  if (m) return 'T' + m[1] + ' Ep' + ('0' + m[2]).slice(-2);
+  if (m) return 'T' + m[1] + ' Ep' + pad2(m[2]);
   m = t.match(RE_EPNUM);
   if (m) {
     const resto = t.slice(m.index + m[0].length).replace(/^[\s._·:–—-]+/, '').trim();
-    return 'Ep ' + ('0' + m[1]).slice(-2) + (resto ? ' · ' + resto : '');
+    return 'Ep ' + pad2(m[1]) + (resto ? ' · ' + resto : '');
   }
   return t;
 }
@@ -311,8 +328,10 @@ function cardHtml(f, episodio) {
     ? `<span class="resume">▶ ${formatarTempo(f.posicaoSegundos)}</span>`
     : '';
   const rotulo = episodio ? rotuloEpisodio(f) : f.titulo;
+  const poster = f.posterUrl ? `<img class="card-poster" loading="lazy" src="${attr(f.posterUrl)}" alt="">` : '';
   return `
-    <div class="card ${f.assistido ? 'assistido' : ''}" onclick="play(${f.id})">
+    <div class="card ${f.assistido ? 'assistido' : ''}" onclick="play(${f.id})" title="${attr(f.sinopse)}">
+      ${poster}
       <div class="card-body">
         <div class="card-top">
           <div class="card-title" title="${f.titulo}">${rotulo}</div>
@@ -332,8 +351,11 @@ function continuarCardHtml(c) {
   const info = c.duracaoSegundos
     ? `${pctProgresso(c)}% · faltam ${formatarTempo(c.duracaoSegundos - c.posicaoSegundos)}`
     : `${formatarTempo(c.posicaoSegundos)} assistidos`;
+  const f = filmes.find(x => x.id === c.id);
+  const poster = f && f.posterUrl ? `<img class="card-poster" loading="lazy" src="${attr(f.posterUrl)}" alt="">` : '';
   return `
     <div class="card" onclick="play(${c.id})">
+      ${poster}
       <div class="card-body">
         <div class="card-top">
           <div class="card-title" title="${c.titulo}">${c.titulo}</div>
@@ -358,14 +380,27 @@ function destruirHls() {
   if (hls) { hls.destroy(); hls = null; }
 }
 
+let hlsRetries = 0;
 function iniciarHls(video, url, inicio) {
   destruirHls();
   const t = inicio > 5 ? Math.floor(inicio) : 0;
+  const idAlvo = filmeAtual;
   if (window.Hls && Hls.isSupported()) {
     hls = new Hls(t ? { startPosition: t } : {});  // começa já na retomada, sem pulo
     hls.loadSource(url);
     hls.attachMedia(video);
     hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
+    hls.on(Hls.Events.ERROR, (_e, data) => {
+      if (!data.fatal) return;
+      if (data.type === Hls.ErrorTypes.MEDIA_ERROR) { hls.recoverMediaError(); return; }
+      // erro fatal de rede: normalmente o transcode reiniciou e um segmento sumiu.
+      // Reabre o filme (retoma perto de onde estava) em vez de deixar o player travado.
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR && filmeAtual === idAlvo && hlsRetries++ < 3) {
+        setTimeout(() => { if (filmeAtual === idAlvo) play(idAlvo); }, 1500);
+      } else {
+        destruirHls();
+      }
+    });
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
     video.src = t ? `${url}#t=${t}` : url;
     video.play();
@@ -377,6 +412,8 @@ function iniciarHls(video, url, inicio) {
 async function play(id) {
   const video = document.getElementById('video');
   const converting = document.getElementById('converting');
+  cancelarProximo();
+  removerLegendas();
   video.removeAttribute('src');
   destruirHls();
   converting.style.display = 'none';
@@ -386,6 +423,7 @@ async function play(id) {
   ultimoSalvo = 0;
   posicaoParaRetomar = 0;
   retomarTentativas = 0;
+  hlsRetries = 0;
   duracaoConfiavel = false;
   reproducaoConcluida = false;
   const prog = await fetch(`${API}/${id}/progresso`).then(r => r.ok ? r.json() : null).catch(() => null);
@@ -421,6 +459,7 @@ async function play(id) {
   } else {
     iniciarHls(video, `${API}/${id}/hls/playlist.m3u8`, posicaoParaRetomar);
   }
+  carregarLegendas(id);
   // "assistido" agora é decidido pelo backend quando a reprodução chega perto do fim
   // (só no stream direto, onde a duração é confiável), ou manualmente no badge —
   // não mais ao simplesmente abrir.
@@ -432,10 +471,78 @@ async function checarStatus(id) {
   return data.status;
 }
 
+// ─── Legendas embutidas ───────────────────────────────────────────────
+// Cada faixa de texto vira um <track> apontando pro endpoint .vtt; o menu "CC"
+// nativo do <video controls> cuida da troca. Funciona no stream direto e no HLS.
+const LANG_BCP = { por: 'pt', pob: 'pt', pt: 'pt', eng: 'en', spa: 'es', fre: 'fr', fra: 'fr', ger: 'de', deu: 'de', ita: 'it', jpn: 'ja' };
+
+function removerLegendas() {
+  document.querySelectorAll('#video track').forEach(t => t.remove());
+}
+
+async function carregarLegendas(id) {
+  let faixas;
+  try { faixas = await fetch(`${API}/${id}/legendas`).then(r => r.ok ? r.json() : []); }
+  catch { return; }
+  if (filmeAtual !== id) return;  // trocou de filme enquanto buscava
+
+  const video = document.getElementById('video');
+  removerLegendas();
+  faixas.filter(x => x.convertivel).forEach(x => {
+    const tr = document.createElement('track');
+    tr.kind = 'subtitles';
+    tr.src = `${API}/${id}/legenda/${x.idx}`;
+    tr.srclang = LANG_BCP[(x.idioma || '').toLowerCase()] || x.idioma || 'und';
+    tr.label = x.titulo || x.idioma || `Legenda ${x.idx + 1}`;
+    if (x.forced && (x.idioma === 'por' || x.idioma === 'pob')) tr.default = true;
+    video.appendChild(tr);
+  });
+}
+
+// ─── Próximo episódio ─────────────────────────────────────────────────
+let proximoInfo = null, proximoTimer = null, proximoInterval = null;
+
+function cancelarProximo() {
+  if (proximoTimer) { clearTimeout(proximoTimer); proximoTimer = null; }
+  if (proximoInterval) { clearInterval(proximoInterval); proximoInterval = null; }
+  proximoInfo = null;
+  document.getElementById('proximoBox').classList.remove('on');
+}
+
+async function ofereceProximo(id) {
+  let prox;
+  try {
+    const r = await fetch(`${API}/${id}/proximo`);
+    if (r.status !== 200) return;
+    prox = await r.json();
+  } catch { return; }
+  if (filmeAtual !== id || !prox) return;
+
+  proximoInfo = prox;
+  document.getElementById('proximoTit').textContent = rotuloEpisodio(prox) + ' — ' + prox.titulo;
+  document.getElementById('proximoBox').classList.add('on');
+
+  let resta = 12;
+  const tick = () => {
+    document.getElementById('proximoSeg').textContent = `em ${resta}s`;
+    if (resta-- <= 0) irProximo();
+  };
+  tick();
+  proximoInterval = setInterval(tick, 1000);
+}
+
+function irProximo() {
+  const prox = proximoInfo;
+  cancelarProximo();
+  if (prox) play(prox.id);
+}
+
 async function closePlayer() {
   const id = filmeAtual;
+  cancelarProximo();
   await salvarProgresso();  // grava ANTES de rebuscar, senão a lista volta desatualizada
   const video = document.getElementById('video');
+  removerLegendas();
   destruirHls();
   video.pause();
   video.src = '';
@@ -519,8 +626,16 @@ function configurarProgresso() {
     // HLS, onde a regra de "perto do fim" do backend não roda).
     if (filmeAtual == null) return;
     reproducaoConcluida = true;
-    fetch(`${API}/${filmeAtual}/concluir`, { method: 'POST', keepalive: true }).catch(() => {});
+    const id = filmeAtual;
+    fetch(`${API}/${id}/concluir`, { method: 'POST', keepalive: true }).catch(() => {});
+    ofereceProximo(id);
   });
+
+  // Keepalive: avisa o backend que ainda tem alguém aqui, senão o transcode em
+  // andamento é abortado por inatividade (HlsOrphanTimeoutSeconds).
+  setInterval(() => {
+    if (filmeAtual != null) fetch(`${API}/${filmeAtual}/assistindo`, { method: 'POST' }).catch(() => {});
+  }, 20000);
 }
 
 function salvarProgresso() {
@@ -623,6 +738,27 @@ async function remoteParar() {
   pollRemote();
 }
 
+// CC: cicla entre desligado → faixa 0 → faixa 1 → … → desligado, mandando pra TV.
+let remoteLegendas = [], remoteLegendasDe = null;
+async function remoteCarregarLegendas(id) {
+  if (remoteLegendasDe === id) return;
+  remoteLegendasDe = id;
+  try { remoteLegendas = (await fetch(`${API}/${id}/legendas`).then(r => r.json())).filter(x => x.convertivel); }
+  catch { remoteLegendas = []; }
+  document.getElementById('remoteCCBtn').style.display = remoteLegendas.length ? '' : 'none';
+}
+async function remoteCC() {
+  if (!remoteLegendas.length) return;
+  const atual = (ultimoEstadoRemoto && ultimoEstadoRemoto.legendaIdx);
+  const idxAtual = remoteLegendas.findIndex(x => x.idx === atual);
+  const prox = idxAtual + 1 >= remoteLegendas.length ? -1 : remoteLegendas[idxAtual + 1].idx;
+  await fetch(`${PLAYER_API}/legenda`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ idx: prox })
+  });
+  pollRemote();
+}
+
 async function pollRemote() {
   if (remoteTimer) { clearTimeout(remoteTimer); remoteTimer = null; }
   try {
@@ -633,8 +769,11 @@ async function pollRemote() {
     const bar = document.getElementById('remote');
     if (estado.filmeId === null) {
       bar.classList.remove('active');
+      remoteLegendasDe = null;
+      document.getElementById('remoteCCBtn').style.display = 'none';
     } else {
       bar.classList.add('active');
+      remoteCarregarLegendas(estado.filmeId);
       const f = filmes.find(x => x.id === estado.filmeId);
       document.getElementById('remoteTitulo').textContent = f ? `📺 ${f.titulo}` : '📺 Reproduzindo…';
       document.getElementById('remotePlayPauseBtn').textContent = estado.playing ? '⏸' : '▶';
