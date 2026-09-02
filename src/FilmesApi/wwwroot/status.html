@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FilmesApi — status</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0d0d0d;color:#eee;font:15px/1.5 system-ui,sans-serif;padding:20px;max-width:760px;margin:0 auto}
+h1{font-size:19px;margin-bottom:4px}
+.sub{color:#888;font-size:13px;margin-bottom:20px}
+.card{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:16px;margin-bottom:14px}
+.card h2{font-size:14px;text-transform:uppercase;letter-spacing:.5px;color:#aaa;margin-bottom:12px}
+.row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #222}
+.row:last-child{border:0}
+.row .k{color:#bbb}
+.row .v{font-weight:600}
+.big{font-size:30px;font-weight:700}
+.muted{color:#777}
+.ok{color:#2ecc40}.warn{color:#ffb700}.bad{color:#e50914}
+.bar{height:8px;background:#2a2a2a;border-radius:4px;overflow:hidden;margin-top:8px}
+.bar>div{height:100%;background:#e50914;transition:width .3s}
+.pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;background:#2a2a2a}
+.pill.on{background:#14421e;color:#2ecc40}
+.pill.off{background:#3a1414;color:#ff6b6b}
+code{background:#2a2a2a;padding:1px 5px;border-radius:3px;font-size:13px}
+</style>
+</head>
+<body>
+<h1>FilmesApi — status do servidor</h1>
+<div class="sub" id="sub">carregando…</div>
+
+<div class="card">
+  <h2>Temperatura da placa</h2>
+  <div class="big" id="temp">—</div>
+  <div class="muted" id="tempInfo"></div>
+</div>
+
+<div class="card">
+  <h2>Transcode HLS</h2>
+  <div class="row"><span class="k">Encodando agora</span><span class="v" id="encodando">—</span></div>
+  <div class="row"><span class="k">Na fila</span><span class="v" id="fila">—</span></div>
+  <div class="row"><span class="k">Caches completos</span><span class="v" id="completos">—</span></div>
+  <div class="row"><span class="k">Falhas</span><span class="v" id="falhas">—</span></div>
+  <div class="row"><span class="k">Filmes em job</span><span class="v" id="jobs">—</span></div>
+</div>
+
+<div class="card">
+  <h2>Cache HLS em disco</h2>
+  <div class="row"><span class="k">Uso</span><span class="v" id="cacheUso">—</span></div>
+  <div class="bar"><div id="cacheBar" style="width:0"></div></div>
+  <div class="muted" id="cacheInfo" style="margin-top:6px"></div>
+</div>
+
+<div class="card">
+  <h2>Aceleração por hardware (rkmpp)</h2>
+  <div class="row"><span class="k">Encoder de vídeo</span><span class="v" id="rkmpp">—</span></div>
+  <div class="muted" id="rkmppInfo" style="margin-top:6px"></div>
+</div>
+
+<script>
+function mb(b){ return b >= 1073741824 ? (b/1073741824).toFixed(2)+' GB' : (b/1048576).toFixed(0)+' MB'; }
+function txt(id,v){ document.getElementById(id).textContent = v; }
+
+async function tick(){
+  let d;
+  try { d = await (await fetch('/api/status')).json(); }
+  catch { txt('sub','sem resposta do servidor — tentando de novo…'); return; }
+
+  txt('sub','atualizado ' + new Date().toLocaleTimeString('pt-BR'));
+
+  // temperatura
+  const t = d.termico;
+  const tEl = document.getElementById('temp');
+  if (t.temperaturaC == null) {
+    tEl.textContent = 'n/d'; tEl.className = 'big muted';
+    txt('tempInfo', t.habilitado ? 'governador ligado, mas nenhuma zona térmica legível' : 'sensor não exposto neste host');
+  } else {
+    const c = t.temperaturaC;
+    tEl.textContent = c.toFixed(1) + ' °C';
+    tEl.className = 'big ' + (c >= 70 ? 'bad' : c >= 58 ? 'warn' : 'ok');
+    txt('tempInfo',
+      (t.habilitado ? 'governador térmico LIGADO' : 'governador térmico desligado (ThermalPauseCelsius=0)')
+      + (t.throttlingAgora ? ' — SEGURANDO transcode agora' : ''));
+  }
+
+  // transcode
+  const x = d.transcode;
+  txt('encodando', x.encodando);
+  txt('fila', x.naFila);
+  txt('completos', x.completos);
+  const fEl = document.getElementById('falhas');
+  fEl.textContent = x.falhas + (x.filmesComFalha.length ? ' (#' + x.filmesComFalha.join(', #') + ')' : '');
+  fEl.className = 'v ' + (x.falhas ? 'bad' : '');
+  txt('jobs', x.filmesEmJob.length ? '#' + x.filmesEmJob.join(', #') : '—');
+
+  // cache
+  if (x.cacheMaxBytes > 0) {
+    const pct = Math.min(100, 100 * x.cacheBytes / x.cacheMaxBytes);
+    txt('cacheUso', mb(x.cacheBytes) + ' / ' + mb(x.cacheMaxBytes) + '  (' + pct.toFixed(0) + '%)');
+    document.getElementById('cacheBar').style.width = pct + '%';
+  } else {
+    txt('cacheUso', mb(x.cacheBytes) + ' (sem teto)');
+  }
+  txt('cacheInfo', x.cacheItens + ' filme(s) no cache');
+
+  // rkmpp
+  const r = d.rkmpp;
+  const rEl = document.getElementById('rkmpp');
+  if (!r.probeConcluido) { rEl.textContent = 'testando…'; rEl.className = 'v muted'; }
+  else if (r.disponivel) { rEl.textContent = 'ATIVO'; rEl.className = 'v ok'; }
+  else { rEl.textContent = 'libx264 (software)'; rEl.className = 'v warn'; }
+  txt('rkmppInfo',
+    (r.forcadoSoftware ? 'forçado a software por config. ' : '')
+    + (r.desabilitadoPorFalhas ? 'desabilitado após falhas em runtime. ' : '')
+    + (r.falhasConsecutivas ? r.falhasConsecutivas + ' falha(s) consecutiva(s).' : ''));
+}
+tick();
+setInterval(tick, 3000);
+</script>
+</body>
+</html>

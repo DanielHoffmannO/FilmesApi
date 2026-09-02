@@ -7,6 +7,7 @@ public record VolumeRequest(double Valor);
 public record SeekRequest(double Delta);
 public record PosicaoRequest(double Pos, double Dur);
 public record SeekAbsRequest(double Pos);
+public record LegendaRequest(int Idx);
 
 /// <summary>Controle remoto do player da TV: o celular manda comandos, a TV consulta o estado.</summary>
 [ApiController]
@@ -61,6 +62,14 @@ public class PlayerController : ControllerBase
     public IActionResult SeekAbsoluto([FromBody] SeekAbsRequest req)
     {
         _state.SeekAbsoluto(req.Pos);
+        return Ok(_state.Snapshot());
+    }
+
+    /// <summary>Celular escolheu a faixa de legenda da TV (-1 = desligar).</summary>
+    [HttpPost("legenda")]
+    public IActionResult SetLegenda([FromBody] LegendaRequest req)
+    {
+        _state.SetLegenda(req.Idx);
         return Ok(_state.Snapshot());
     }
 

@@ -19,8 +19,14 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
 builder.Services.AddScoped<FilmeService>();
 builder.Services.AddScoped<ProgressoService>();
 builder.Services.AddSingleton<RkmppCapabilityService>();
+builder.Services.AddSingleton<ThermalService>();
 builder.Services.AddSingleton<HlsTranscodeService>();
+builder.Services.AddSingleton<SubtitleService>();
 builder.Services.AddSingleton<PlayerStateService>();
+builder.Services.AddHttpClient();
+builder.Services.AddSingleton<TmdbService>();
+builder.Services.AddHostedService<PreTranscodeService>();
+builder.Services.AddHostedService<MetadataService>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
@@ -64,6 +70,20 @@ using (var scope = app.Services.CreateScope())
         """);
     db.Database.ExecuteSqlRaw(
         """CREATE UNIQUE INDEX IF NOT EXISTS "IX_Filmes_ArquivoPath" ON "Filmes" ("ArquivoPath");""");
+
+    // Colunas de metadados do TMDB — SQLite não tem "ADD COLUMN IF NOT EXISTS", então
+    // checa o pragma e adiciona só as que faltam (bancos antigos não têm nenhuma).
+    var colunasFilmes = db.Database
+        .SqlQueryRaw<string>("""SELECT name AS "Value" FROM pragma_table_info('Filmes');""").ToList();
+    foreach (var (nome, ddl) in new (string, string)[]
+    {
+        ("TmdbId", """ALTER TABLE "Filmes" ADD COLUMN "TmdbId" INTEGER NULL;"""),
+        ("TituloOriginal", """ALTER TABLE "Filmes" ADD COLUMN "TituloOriginal" TEXT NULL;"""),
+        ("PosterUrl", """ALTER TABLE "Filmes" ADD COLUMN "PosterUrl" TEXT NULL;"""),
+        ("Sinopse", """ALTER TABLE "Filmes" ADD COLUMN "Sinopse" TEXT NULL;"""),
+        ("MetadadosEm", """ALTER TABLE "Filmes" ADD COLUMN "MetadadosEm" TEXT NULL;"""),
+    })
+        if (!colunasFilmes.Contains(nome)) db.Database.ExecuteSqlRaw(ddl);
 
     // Poda o cache HLS que passou do teto (ex.: acumulado por versões sem eviction).
     scope.ServiceProvider.GetRequiredService<HlsTranscodeService>().LimparCacheExcedente();

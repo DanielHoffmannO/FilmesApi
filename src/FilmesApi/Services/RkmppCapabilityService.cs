@@ -35,6 +35,17 @@ public class RkmppCapabilityService
         return await _disponivel.Value;
     }
 
+    /// <summary>Retrato do estado da VPU pra página de status (sem disparar o probe).</summary>
+    public object Snapshot() => new
+    {
+        forcadoSoftware = _forcarSoftware,
+        desabilitadoPorFalhas = _desabilitadoPorFalhas,
+        falhasConsecutivas = _falhasConsecutivas,
+        probeConcluido = _disponivel.IsValueCreated && _disponivel.Value.IsCompleted,
+        disponivel = !_forcarSoftware && !_desabilitadoPorFalhas
+            && _disponivel.IsValueCreated && _disponivel.Value is { IsCompletedSuccessfully: true, Result: true },
+    };
+
     /// <summary>
     /// Chamar após cada tentativa de encode via rkmpp. Depois de falhas consecutivas
     /// demais, desliga rkmpp pelo resto do processo em vez de tentar de novo a cada filme.
