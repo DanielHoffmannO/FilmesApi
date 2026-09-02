@@ -35,7 +35,10 @@ public partial class FilmesController : ControllerBase
 
     [HttpPost]
     public async Task<IActionResult> Criar([FromBody] FilmeRequest req)
-        => Created($"/api/filmes", await _service.CriarAsync(req));
+    {
+        var filme = await _service.CriarAsync(req);
+        return Created($"/api/filmes/{filme.Id}", filme);
+    }
 
     [HttpPut("{id:int}/assistido")]
     public async Task<IActionResult> MarcarAssistido(int id)
@@ -48,10 +51,7 @@ public partial class FilmesController : ControllerBase
     /// <summary>Sincroniza o catálogo com a pasta de mídia (importa novos, remove órfãos).</summary>
     [HttpPost("scan")]
     public async Task<IActionResult> ScanMedia()
-    {
-        var r = await _service.ScanMediaAsync();
-        return Ok(new { importados = r.Importados, removidos = r.Removidos });
-    }
+        => Ok(await _service.ScanMediaAsync());
 
     /// <summary>Filmes com reprodução pendente ("continuar assistindo"), mais recentes primeiro.</summary>
     [HttpGet("continuar")]
@@ -151,13 +151,15 @@ public partial class FilmesController : ControllerBase
     [HttpGet("{id:int}/stream")]
     public async Task<IActionResult> Stream(int id, CancellationToken ct)
     {
-        var (status, caminho, erro) = await ResolverStatusAsync(id, ct);
+        var (path, erro) = await ResolverCaminhoAsync(id);
         if (erro is not null) return erro;
 
-        if (status is not StreamStatus.Compativel || caminho is null)
+        // Usa o check "seco" (sem ObterStatusAsync) de propósito: pedir /stream de um arquivo
+        // incompatível não deve disparar um transcode que ninguém vai consumir.
+        if (!await _transcode.PodeStreamDiretoAsync(path!, ct))
             return Conflict(new { mensagem = "Este vídeo precisa de HLS, use /hls/playlist.m3u8." });
 
-        return ServirComRange(caminho);
+        return ServirComRange(path!);
     }
 
     /// <summary>Manifest HLS: dispara/reusa o job de transcodificação e serve a playlist assim que ela existir.</summary>
