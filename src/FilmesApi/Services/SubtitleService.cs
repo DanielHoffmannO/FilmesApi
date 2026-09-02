@@ -30,15 +30,32 @@ public class SubtitleService
     {
         _ffmpegPath = config.GetValue<string>("FfmpegPath") ?? "ffmpeg";
         _ffprobePath = config.GetValue<string>("FfprobePath") ?? "ffprobe";
-        _cachePath = config.GetValue<string>("HlsCachePath") ?? "/data/hls";
+        // Cache próprio, longe do churn do HLS (LimparDir a cada fallback de encode, poda por
+        // teto, limpeza pós-restart) — senão o .vtt some e é re-extraído toda hora.
+        _cachePath = config.GetValue<string>("SubtitleCachePath") ?? "/data/subs";
         _logger = logger;
+        try { Directory.CreateDirectory(_cachePath); } catch (IOException) { }
+    }
+
+    /// <summary>Apaga o .vtt cacheado do filme (chamado ao deletar o filme do catálogo).</summary>
+    public void LimparCache(int filmeId)
+    {
+        try
+        {
+            var dir = Path.Combine(_cachePath, filmeId.ToString());
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     /// <summary>Faixas de legenda do arquivo, na ordem em que o ffprobe as devolve
     /// (essa ordem = o índice relativo usado em <c>-map 0:s:N</c> e no endpoint .vtt).</summary>
     public async Task<List<LegendaInfo>> ListarAsync(string arquivoAbsoluto, CancellationToken ct)
     {
-        var psi = new ProcessStartInfo(_ffprobePath) { RedirectStandardOutput = true, RedirectStandardError = true };
+        // stderr NÃO redirecionado de propósito: com "-v error" ele é mínimo, e um pipe de
+        // stderr que a gente não drena trava o ffprobe quando enche (deadlock).
+        var psi = new ProcessStartInfo(_ffprobePath) { RedirectStandardOutput = true };
         foreach (var arg in new[]
         {
             "-v", "error", "-select_streams", "s",
@@ -50,10 +67,21 @@ public class SubtitleService
         string saida;
         try
         {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(30));  // arquivo corrompido não pode pendurar isto pra sempre
             using var proc = Process.Start(psi);
             if (proc is null) return [];
-            saida = await proc.StandardOutput.ReadToEndAsync(ct);
-            await proc.WaitForExitAsync(ct);
+            try
+            {
+                saida = await proc.StandardOutput.ReadToEndAsync(timeout.Token);
+                await proc.WaitForExitAsync(timeout.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                try { proc.Kill(entireProcessTree: true); } catch { /* já morreu */ }
+                _logger.LogWarning("ffprobe de legendas estourou 30s para {Arquivo} — abortado.", arquivoAbsoluto);
+                return [];
+            }
         }
         catch (Exception ex)
         {

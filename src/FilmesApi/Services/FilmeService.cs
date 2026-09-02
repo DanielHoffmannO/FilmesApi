@@ -8,6 +8,7 @@ public class FilmeService
 {
     private readonly AppDbContext _db;
     private readonly HlsTranscodeService _transcode;
+    private readonly SubtitleService _legendas;
     private readonly ILogger<FilmeService> _logger;
     private readonly string _mediaPath;
     private static readonly string[] VideoExtensions = [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm"];
@@ -15,10 +16,11 @@ public class FilmeService
     // Dois POST /scan concorrentes leriam "não existe" pro mesmo arquivo e ambos inseririam.
     private static readonly SemaphoreSlim _scanLock = new(1, 1);
 
-    public FilmeService(AppDbContext db, HlsTranscodeService transcode, IConfiguration config, ILogger<FilmeService> logger)
+    public FilmeService(AppDbContext db, HlsTranscodeService transcode, SubtitleService legendas, IConfiguration config, ILogger<FilmeService> logger)
     {
         _db = db;
         _transcode = transcode;
+        _legendas = legendas;
         _logger = logger;
         _mediaPath = config.GetValue<string>("MediaPath") ?? "/media";
     }
@@ -89,6 +91,7 @@ public class FilmeService
         await _db.SaveChangesAsync();
 
         _transcode.LimparCache(id);
+        _legendas.LimparCache(id);
         return true;
     }
 
@@ -122,6 +125,7 @@ public class FilmeService
                     await _db.Progressos.Where(p => p.FilmeId == orfao.Id).ExecuteDeleteAsync();
                     _db.Filmes.Remove(orfao);
                     _transcode.LimparCache(orfao.Id);
+                    _legendas.LimparCache(orfao.Id);
                     _logger.LogInformation("Scan: removendo órfão {Id} ({Path}) — arquivo não está mais no disco.",
                         orfao.Id, orfao.ArquivoPath);
                 }

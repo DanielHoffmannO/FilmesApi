@@ -180,16 +180,19 @@ function chaveSerie(arquivoPath) {
   return prefixo.replace(/[._]+/g, ' ').replace(/[\s-]+$/, '').trim() || n;
 }
 
+const pad2 = n => String(n).padStart(2, '0');  // "9"->"09", "100"->"100" (não trunca)
+// escapa pra uso dentro de atributo entre aspas duplas
+const attr = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 function rotuloEpisodio(f) {
   const t = f.titulo || '';
   let m = t.match(RE_SXXEXX);
-  if (m) return 'S' + ('0' + m[1]).slice(-2) + 'E' + ('0' + m[2]).slice(-2);
+  if (m) return 'S' + pad2(m[1]) + 'E' + pad2(m[2]);
   m = t.match(RE_NXNN);
-  if (m) return 'T' + m[1] + ' Ep' + ('0' + m[2]).slice(-2);
+  if (m) return 'T' + m[1] + ' Ep' + pad2(m[2]);
   m = t.match(RE_EPNUM);
   if (m) {
     const resto = t.slice(m.index + m[0].length).replace(/^[\s._·:–—-]+/, '').trim();
-    return 'Ep ' + ('0' + m[1]).slice(-2) + (resto ? ' · ' + resto : '');
+    return 'Ep ' + pad2(m[1]) + (resto ? ' · ' + resto : '');
   }
   return t;
 }
@@ -325,9 +328,9 @@ function cardHtml(f, episodio) {
     ? `<span class="resume">▶ ${formatarTempo(f.posicaoSegundos)}</span>`
     : '';
   const rotulo = episodio ? rotuloEpisodio(f) : f.titulo;
-  const poster = f.posterUrl ? `<img class="card-poster" loading="lazy" src="${f.posterUrl}" alt="">` : '';
+  const poster = f.posterUrl ? `<img class="card-poster" loading="lazy" src="${attr(f.posterUrl)}" alt="">` : '';
   return `
-    <div class="card ${f.assistido ? 'assistido' : ''}" onclick="play(${f.id})" title="${(f.sinopse || '').replace(/"/g, '&quot;')}">
+    <div class="card ${f.assistido ? 'assistido' : ''}" onclick="play(${f.id})" title="${attr(f.sinopse)}">
       ${poster}
       <div class="card-body">
         <div class="card-top">
@@ -349,7 +352,7 @@ function continuarCardHtml(c) {
     ? `${pctProgresso(c)}% · faltam ${formatarTempo(c.duracaoSegundos - c.posicaoSegundos)}`
     : `${formatarTempo(c.posicaoSegundos)} assistidos`;
   const f = filmes.find(x => x.id === c.id);
-  const poster = f && f.posterUrl ? `<img class="card-poster" loading="lazy" src="${f.posterUrl}" alt="">` : '';
+  const poster = f && f.posterUrl ? `<img class="card-poster" loading="lazy" src="${attr(f.posterUrl)}" alt="">` : '';
   return `
     <div class="card" onclick="play(${c.id})">
       ${poster}
@@ -377,14 +380,27 @@ function destruirHls() {
   if (hls) { hls.destroy(); hls = null; }
 }
 
+let hlsRetries = 0;
 function iniciarHls(video, url, inicio) {
   destruirHls();
   const t = inicio > 5 ? Math.floor(inicio) : 0;
+  const idAlvo = filmeAtual;
   if (window.Hls && Hls.isSupported()) {
     hls = new Hls(t ? { startPosition: t } : {});  // começa já na retomada, sem pulo
     hls.loadSource(url);
     hls.attachMedia(video);
     hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
+    hls.on(Hls.Events.ERROR, (_e, data) => {
+      if (!data.fatal) return;
+      if (data.type === Hls.ErrorTypes.MEDIA_ERROR) { hls.recoverMediaError(); return; }
+      // erro fatal de rede: normalmente o transcode reiniciou e um segmento sumiu.
+      // Reabre o filme (retoma perto de onde estava) em vez de deixar o player travado.
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR && filmeAtual === idAlvo && hlsRetries++ < 3) {
+        setTimeout(() => { if (filmeAtual === idAlvo) play(idAlvo); }, 1500);
+      } else {
+        destruirHls();
+      }
+    });
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
     video.src = t ? `${url}#t=${t}` : url;
     video.play();
@@ -407,6 +423,7 @@ async function play(id) {
   ultimoSalvo = 0;
   posicaoParaRetomar = 0;
   retomarTentativas = 0;
+  hlsRetries = 0;
   duracaoConfiavel = false;
   reproducaoConcluida = false;
   const prog = await fetch(`${API}/${id}/progresso`).then(r => r.ok ? r.json() : null).catch(() => null);
