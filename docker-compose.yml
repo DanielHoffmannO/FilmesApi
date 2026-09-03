@@ -1,13 +1,29 @@
 services:
   filmes-api:
     build: .
+    container_name: filmes-api
     ports:
       - "8080:8080"
     volumes:
-      - ./data:/data          # SQLite persiste aqui
-      - ./media:/media        # Pasta com seus filmes/séries
+      - ./data:/data          # SQLite + cache HLS/legendas
+      - ./media:/media:ro     # Pasta com seus filmes/séries (só leitura)
     environment:
       - ASPNETCORE_URLS=http://+:8080
       - ConnectionStrings__Default=Data Source=/data/filmes.db
       - MediaPath=/media
+      # ─── opcionais (ver README) ──────────────────────────────
+      # - TmdbApiKey=sua_chave_v3_do_themoviedb.org   # pôster + sinopse
+      # - ThermalPauseCelsius=72                       # segura o transcode acima disso
+      # - PreTranscodeEnabled=true                     # pré-transcode noturno
+    # VPU do RK3399/RK3588 — descomente se a placa tiver (ver README):
+    # devices:
+    #   - /dev/mpp_service
+    #   - /dev/rga
+    #   - /dev/dri
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     restart: unless-stopped

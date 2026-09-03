@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Filmes</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🎬%3C/text%3E%3C/svg%3E">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:system-ui,sans-serif;background:#0d0d0d;color:#eee;min-height:100vh}
@@ -20,10 +21,12 @@ button:hover{background:#333}
 .filter-sep{width:1px;align-self:stretch;background:#222;margin:2px 4px}
 main{padding:24px}
 #grid{display:flex;flex-direction:column}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:16px}
+@media(min-width:700px){.grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}}
 .card{background:#181818;border-radius:8px;overflow:hidden;cursor:pointer;transition:transform .15s,box-shadow .15s;position:relative}
 .card:hover{transform:scale(1.03);box-shadow:0 8px 24px rgba(0,0,0,.5)}
 .card-poster{width:100%;aspect-ratio:2/3;object-fit:cover;display:block;background:#222}
+.card-poster-ph{display:flex;align-items:center;justify-content:center;font-size:44px;background:linear-gradient(160deg,#2a2a2a,#161616);opacity:.5}
 .card-body{padding:12px}
 .progressbar{height:4px;background:#333}
 .progressbar-fill{height:100%;background:#e50914}
@@ -38,7 +41,8 @@ main{padding:24px}
 .player-overlay.active{display:flex}
 .player-overlay video{max-width:100vw;max-height:100vh;width:auto;height:auto}
 .player-close{position:absolute;top:16px;right:24px;font-size:28px;color:#fff;cursor:pointer;z-index:101}
-.converting{display:none;color:#ccc;font-size:14px;margin-top:16px;white-space:pre-line;text-align:center}
+.converting{display:none;color:#ccc;font-size:14px;margin-top:16px;white-space:pre-line;text-align:center;max-width:80vw}
+.converting button{margin-top:14px;display:inline-block}
 #proximoBox{display:none;position:absolute;right:24px;bottom:80px;background:#181818;border:1px solid #333;border-radius:8px;padding:14px 16px;max-width:320px;z-index:102}
 #proximoBox.on{display:block}
 #proximoBox .lbl{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px}
@@ -57,7 +61,14 @@ main{padding:24px}
 .folder.serie .folder-title{cursor:pointer;user-select:none}
 .folder.serie .folder-title .caret{display:inline-block;width:14px;color:#888;font-size:12px}
 .folder.collapsed .grid{display:none}
-.empty{text-align:center;color:#555;padding:60px 0;font-size:15px}
+.empty{text-align:center;color:#777;padding:70px 20px;font-size:16px}
+.empty .ico{font-size:52px;display:block;margin-bottom:12px;opacity:.6}
+.empty button{margin-top:16px}
+.search{background:#1a1a1a;border:1px solid #333;color:#eee;padding:7px 12px;border-radius:20px;font-size:13px;width:200px;transition:width .2s,border-color .2s}
+.search:focus{outline:none;border-color:#e50914;width:260px}
+.header-links{display:flex;gap:14px;align-items:center;font-size:13px}
+.header-links a{color:#888;text-decoration:none}
+.header-links a:hover{color:#fff}
 .scan-msg{position:fixed;bottom:20px;right:20px;background:#2ecc40;color:#000;padding:10px 16px;border-radius:6px;font-size:13px;display:none}
 .cast-btn{background:none;border:none;color:#888;font-size:16px;cursor:pointer;padding:2px 4px;line-height:1}
 .cast-btn:hover{color:#fff}
@@ -79,7 +90,12 @@ main{padding:24px}
 <header>
   <h1>🎬 Filmes</h1>
   <div class="actions">
+    <input class="search" id="busca" type="search" placeholder="Buscar…  ( / )" oninput="render()">
     <button onclick="scanMedia()">📂 Scan Mídia</button>
+    <span class="header-links">
+      <a href="/status.html" title="Status do servidor">📊</a>
+      <a href="/swagger" title="API">‹/›</a>
+    </span>
   </div>
 </header>
 
@@ -97,13 +113,13 @@ main{padding:24px}
 
 <main>
   <div class="grid" id="grid"></div>
-  <div class="empty" id="empty" style="display:none">Nenhum filme encontrado. Clique em "Scan Mídia" para importar.</div>
+  <div class="empty" id="empty" style="display:none"></div>
 </main>
 
 <div class="player-overlay" id="player">
   <span class="player-close" onclick="closePlayer()">✕</span>
   <video id="video" controls autoplay></video>
-  <div class="converting" id="converting">Convertendo vídeo para reprodução, aguarde...</div>
+  <div class="converting" id="converting"></div>
   <div id="proximoBox">
     <div class="lbl">Próximo episódio <span id="proximoSeg"></span></div>
     <div class="tit" id="proximoTit"></div>
@@ -150,71 +166,45 @@ async function load() {
   loadbar(true);
   try {
     const [resF, resC] = await Promise.all([fetch(API), fetch(`${API}/continuar`)]);
+    if (!resF.ok) throw new Error('api');
     filmes = await resF.json();
     continuar = resC.ok ? await resC.json() : [];
     render();
+  } catch {
+    document.getElementById('grid').innerHTML = '';
+    const empty = document.getElementById('empty');
+    empty.textContent = 'Não consegui falar com o servidor. Recarregue a página.';
+    empty.style.display = 'block';
   } finally {
     loadbar(false);
   }
 }
 
-// Marcador de episódio no NOME do arquivo — sinal confiável pra separar série de
-// filme. Contar arquivos na pasta erra: filme com trailer virava "série" e
-// episódio solto (Breaking Bad S01E01.mkv) virava "filme".
-const RE_SXXEXX = /\bS(\d{1,2})[\s._-]*E(\d{1,3})\b/i;
-const RE_NXNN = /(?:^|[^\dxX])(\d{1,2})x(\d{1,3})(?:[^\dp]|$)/i;
-const RE_EPNUM = /\b(?:epis[oó]dios?|episodes?|cap[ií]tulos?)\.?\s*(\d{1,3})\b/i;  // "Episódio 11", "Capítulo 3"
-const RE_EXTRA = /\b(trailer|sample|amostra|promo|extras?|featurette|bastidores|deleted|nfo|readme)\b/i;
-const nomeArquivo = p => (p || '').replace(/^.*\//, '');
-const ehEpisodio = p => { const n = nomeArquivo(p); return RE_SXXEXX.test(n) || RE_NXNN.test(n) || RE_EPNUM.test(n); };
-const ehExtra = p => { const n = nomeArquivo(p); return RE_EXTRA.test(n) || /1xbet/i.test(n); };
-
-function chaveSerie(arquivoPath) {
-  const pasta = pastaDe(arquivoPath);
-  if (pasta !== 'Sem pasta') return pasta;            // pasta manda como nome da série
-  const n = nomeArquivo(arquivoPath);
-  let i = n.search(RE_SXXEXX);
-  if (i < 0) { const j = n.search(RE_NXNN); i = j <= 0 ? j : j + 1; } // RE_NXNN come 1 char antes
-  if (i < 0) i = n.search(RE_EPNUM);
-  const prefixo = i > 0 ? n.slice(0, i) : n;
-  return prefixo.replace(/[._]+/g, ' ').replace(/[\s-]+$/, '').trim() || n;
-}
-
-const pad2 = n => String(n).padStart(2, '0');  // "9"->"09", "100"->"100" (não trunca)
-// escapa pra uso dentro de atributo entre aspas duplas
-const attr = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-function rotuloEpisodio(f) {
-  const t = f.titulo || '';
-  let m = t.match(RE_SXXEXX);
-  if (m) return 'S' + pad2(m[1]) + 'E' + pad2(m[2]);
-  m = t.match(RE_NXNN);
-  if (m) return 'T' + m[1] + ' Ep' + pad2(m[2]);
-  m = t.match(RE_EPNUM);
-  if (m) {
-    const resto = t.slice(m.index + m[0].length).replace(/^[\s._·:–—-]+/, '').trim();
-    return 'Ep ' + pad2(m[1]) + (resto ? ' · ' + resto : '');
-  }
-  return t;
-}
+// Série/episódio/rótulo vêm prontos da API (MediaNomeParser no servidor) — uma fonte só.
+// esc() = texto entre tags; attr() = valor de atributo entre aspas duplas.
+const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const attr = s => esc(s).replace(/"/g, '&quot;');
 
 function render() {
   const grid = document.getElementById('grid');
   const empty = document.getElementById('empty');
   const scrollAntes = window.scrollY;  // não pular pro topo ao re-renderizar
 
+  const q = document.getElementById('busca').value.trim().toLowerCase();
   const filtered = filmes.filter(f => {
     if (filtroVisto === 'assistido' && !f.assistido) return false;
     if (filtroVisto === 'nao-assistido' && f.assistido) return false;
-    if (filtroTipo === 'filme' && ehEpisodio(f.arquivoPath)) return false;
-    if (filtroTipo === 'serie' && !ehEpisodio(f.arquivoPath)) return false;
+    if (filtroTipo === 'filme' && f.ehEpisodio) return false;
+    if (filtroTipo === 'serie' && !f.ehEpisodio) return false;
+    if (q && !((f.titulo + ' ' + (f.serie || '') + ' ' + (f.pasta || '')).toLowerCase().includes(q))) return false;
     return true;
   });
 
   if (!filtered.length) {
     grid.innerHTML = '';
-    empty.textContent = filmes.length
-      ? 'Nada corresponde a esse filtro.'
-      : 'Nenhum filme encontrado. Clique em "Scan Mídia" para importar.';
+    empty.innerHTML = filmes.length
+      ? `<span class="ico">🔍</span>${q ? 'Nada encontrado pra “' + esc(q) + '”.' : 'Nada corresponde a esse filtro.'}`
+      : `<span class="ico">🎬</span>Catálogo vazio.<br><button onclick="scanMedia()">📂 Escanear a pasta de mídia</button>`;
     empty.style.display = 'block';
     return;
   }
@@ -222,10 +212,7 @@ function render() {
 
   // nº de arquivos por pasta na lista COMPLETA (pra não "achatar" pasta ao filtrar)
   const porPasta = new Map();
-  for (const f of filmes) {
-    const p = pastaDe(f.arquivoPath);
-    porPasta.set(p, (porPasta.get(p) || 0) + 1);
-  }
+  for (const f of filmes) porPasta.set(f.pasta, (porPasta.get(f.pasta) || 0) + 1);
 
   const filmesSoltos = [];        // filme sem pasta ou sozinho na pasta
   const pastasFilme = new Map();  // pasta -> [filmes]  (2+ arquivos, sem episódios: filme + extras)
@@ -233,25 +220,25 @@ function render() {
   const push = (map, k, v) => { (map.get(k) || map.set(k, []).get(k)).push(v); };
 
   for (const f of filtered) {
-    if (ehEpisodio(f.arquivoPath)) { push(seriesMap, chaveSerie(f.arquivoPath), f); continue; }
-    const p = pastaDe(f.arquivoPath);
-    if (p !== 'Sem pasta' && porPasta.get(p) > 1) push(pastasFilme, p, f);
+    if (f.ehEpisodio) { push(seriesMap, f.serie, f); continue; }
+    if (f.pasta !== 'Sem pasta' && porPasta.get(f.pasta) > 1) push(pastasFilme, f.pasta, f);
     else filmesSoltos.push(f);
   }
   // pasta com 1 filme "de verdade" + só extras (trailer/sample) → mostra o filme direto
   for (const [pasta, itens] of pastasFilme) {
-    const principais = itens.filter(f => !ehExtra(f.arquivoPath));
+    const principais = itens.filter(f => !f.ehExtra);
     if (principais.length === 1) { filmesSoltos.push(principais[0]); pastasFilme.delete(pasta); }
   }
   filmesSoltos.sort((a, b) => a.titulo.localeCompare(b.titulo, 'pt-BR'));
   for (const arr of seriesMap.values())
-    arr.sort((a, b) => rotuloEpisodio(a).localeCompare(rotuloEpisodio(b), 'pt-BR', { numeric: true }));
+    arr.sort((a, b) => (a.temporada - b.temporada) || (a.episodio - b.episodio)
+      || a.titulo.localeCompare(b.titulo, 'pt-BR', { numeric: true }));
 
-  const dobravel = (key, titulo, cards) => {
+  const dobravel = (key, tituloHtml, cards) => {
     const aberto = foldersAbertos.has(key);
     return `
-      <div class="folder serie ${aberto ? '' : 'collapsed'}" data-key="${key.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}">
-        <div class="folder-title" onclick="toggleFolder(this)"><span class="caret">${aberto ? '▾' : '▸'}</span> ${titulo}</div>
+      <div class="folder serie ${aberto ? '' : 'collapsed'}" data-key="${attr(key)}">
+        <div class="folder-title" onclick="toggleFolder(this)"><span class="caret">${aberto ? '▾' : '▸'}</span> ${tituloHtml}</div>
         <div class="grid">${cards}</div>
       </div>`;
   };
@@ -271,7 +258,7 @@ function render() {
     if (filmesSoltos.length) html += `<div class="grid">${filmesSoltos.map(f => cardHtml(f)).join('')}</div>`;
     html += [...pastasFilme.keys()].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(pasta => {
       const itens = pastasFilme.get(pasta);
-      return dobravel('f:' + pasta, `📁 ${pasta} <span class="count">(${itens.length} arquivos)</span>`,
+      return dobravel('f:' + pasta, `📁 ${esc(pasta)} <span class="count">(${itens.length} arquivos)</span>`,
         itens.map(f => cardHtml(f)).join(''));
     }).join('');
     html += `</div>`;
@@ -282,7 +269,7 @@ function render() {
     html += `<div class="secao"><div class="secao-title">📺 Séries <span class="count">(${seriesNomes.length})</span></div>`;
     html += seriesNomes.map(nome => {
       const itens = seriesMap.get(nome);
-      return dobravel('s:' + nome, `${nome} <span class="count">(${itens.length} ${itens.length === 1 ? 'episódio' : 'episódios'})</span>`,
+      return dobravel('s:' + nome, `${esc(nome)} <span class="count">(${itens.length} ${itens.length === 1 ? 'episódio' : 'episódios'})</span>`,
         itens.map(f => cardHtml(f, true)).join(''));
     }).join('');
     html += `</div>`;
@@ -299,12 +286,6 @@ function toggleFolder(el) {
   else foldersAbertos.delete(folder.dataset.key);
   const caret = el.querySelector('.caret');
   if (caret) caret.textContent = aberto ? '▾' : '▸';
-}
-
-function pastaDe(arquivoPath) {
-  if (!arquivoPath) return 'Sem pasta';
-  const partes = arquivoPath.split('/');
-  return partes.length > 1 ? partes.slice(0, -1).join('/') : 'Sem pasta';
 }
 
 function pctProgresso(item) {
@@ -327,14 +308,13 @@ function cardHtml(f, episodio) {
   const retomar = f.posicaoSegundos
     ? `<span class="resume">▶ ${formatarTempo(f.posicaoSegundos)}</span>`
     : '';
-  const rotulo = episodio ? rotuloEpisodio(f) : f.titulo;
-  const poster = f.posterUrl ? `<img class="card-poster" loading="lazy" src="${attr(f.posterUrl)}" alt="">` : '';
+  const rotulo = episodio ? f.rotulo : f.titulo;
   return `
     <div class="card ${f.assistido ? 'assistido' : ''}" onclick="play(${f.id})" title="${attr(f.sinopse)}">
-      ${poster}
+      ${posterHtml(f)}
       <div class="card-body">
         <div class="card-top">
-          <div class="card-title" title="${f.titulo}">${rotulo}</div>
+          <div class="card-title" title="${attr(f.titulo)}">${esc(rotulo)}</div>
           <button class="cast-btn" title="Enviar para a TV" onclick="event.stopPropagation(); enviarParaTv(${f.id})">📺</button>
         </div>
         <div class="card-meta">
@@ -347,18 +327,23 @@ function cardHtml(f, episodio) {
     </div>`;
 }
 
+// placeholder quando não tem pôster do TMDB — senão o grid fica com cards de altura diferente
+function posterHtml(f) {
+  if (f && f.posterUrl) return `<img class="card-poster" loading="lazy" src="${attr(f.posterUrl)}" alt="">`;
+  return `<div class="card-poster card-poster-ph">🎬</div>`;
+}
+
 function continuarCardHtml(c) {
   const info = c.duracaoSegundos
     ? `${pctProgresso(c)}% · faltam ${formatarTempo(c.duracaoSegundos - c.posicaoSegundos)}`
     : `${formatarTempo(c.posicaoSegundos)} assistidos`;
   const f = filmes.find(x => x.id === c.id);
-  const poster = f && f.posterUrl ? `<img class="card-poster" loading="lazy" src="${attr(f.posterUrl)}" alt="">` : '';
   return `
     <div class="card" onclick="play(${c.id})">
-      ${poster}
+      ${posterHtml(f)}
       <div class="card-body">
         <div class="card-top">
-          <div class="card-title" title="${c.titulo}">${c.titulo}</div>
+          <div class="card-title" title="${attr(c.titulo)}">${esc((f && f.ehEpisodio) ? f.serie + ' · ' + f.rotulo : c.titulo)}</div>
           <button class="cast-btn" title="Enviar para a TV" onclick="event.stopPropagation(); enviarParaTv(${c.id})">📺</button>
         </div>
         <div class="card-meta"><span class="resume">▶ ${info}</span></div>
@@ -396,7 +381,7 @@ function iniciarHls(video, url, inicio) {
       // erro fatal de rede: normalmente o transcode reiniciou e um segmento sumiu.
       // Reabre o filme (retoma perto de onde estava) em vez de deixar o player travado.
       if (data.type === Hls.ErrorTypes.NETWORK_ERROR && filmeAtual === idAlvo && hlsRetries++ < 3) {
-        setTimeout(() => { if (filmeAtual === idAlvo) play(idAlvo); }, 1500);
+        setTimeout(() => { if (filmeAtual === idAlvo) play(idAlvo, true); }, 1500);
       } else {
         destruirHls();
       }
@@ -409,7 +394,7 @@ function iniciarHls(video, url, inicio) {
   }
 }
 
-async function play(id) {
+async function play(id, ehRetry) {
   const video = document.getElementById('video');
   const converting = document.getElementById('converting');
   cancelarProximo();
@@ -423,7 +408,8 @@ async function play(id) {
   ultimoSalvo = 0;
   posicaoParaRetomar = 0;
   retomarTentativas = 0;
-  hlsRetries = 0;
+  checarFalhas = 0;
+  if (!ehRetry) hlsRetries = 0;  // retry preserva o contador, senão o teto de 3 nunca conta
   duracaoConfiavel = false;
   reproducaoConcluida = false;
   const prog = await fetch(`${API}/${id}/progresso`).then(r => r.ok ? r.json() : null).catch(() => null);
@@ -433,20 +419,26 @@ async function play(id) {
   converting.style.display = 'block';
   const prepTimer = setInterval(() => {
     const s = Math.round((Date.now() - inicioPrep) / 1000);
-    converting.textContent = `Preparando vídeo… ${s}s` + (s > 45 ? '\n(a primeira vez demora mais)' : '');
+    const dica = s > 12 ? '\nArquivos 4K levam 1-2 min na primeira vez — depois fica em cache.' : '';
+    converting.innerHTML = `Preparando vídeo… ${s}s${esc(dica)}<br><button onclick="closePlayer()">Cancelar</button>`;
   }, 1000);
-  converting.textContent = 'Preparando vídeo…';
+  converting.innerHTML = 'Preparando vídeo…<br><button onclick="closePlayer()">Cancelar</button>';
 
-  let status = await checarStatus(id);
-  while (status === 'preparando') {
-    await new Promise(r => setTimeout(r, 1500));
+  let status;
+  try {
     status = await checarStatus(id);
+    while (status === 'preparando') {
+      await new Promise(r => setTimeout(r, 1500));
+      if (filmeAtual !== id) return;  // fechou/trocou de filme durante a espera
+      status = await checarStatus(id);
+    }
+  } finally {
+    clearInterval(prepTimer);
   }
-  clearInterval(prepTimer);
   converting.style.display = 'none';
 
   if (status === 'erro') {
-    converting.textContent = 'Falha ao converter o vídeo.';
+    converting.textContent = 'Falha ao preparar o vídeo. Tente de novo.';
     converting.style.display = 'block';
     return;
   }
@@ -465,10 +457,19 @@ async function play(id) {
   // não mais ao simplesmente abrir.
 }
 
+// nunca lança: erro de rede transitório vira 'preparando' (segue tentando);
+// depois de muitas falhas seguidas, desiste com 'erro'.
+let checarFalhas = 0;
 async function checarStatus(id) {
-  const res = await fetch(`${API}/${id}/stream-status`);
-  const data = await res.json();
-  return data.status;
+  try {
+    const res = await fetch(`${API}/${id}/stream-status`);
+    if (!res.ok) throw new Error('http ' + res.status);
+    const data = await res.json();
+    checarFalhas = 0;
+    return data.status;
+  } catch {
+    return (++checarFalhas > 12) ? 'erro' : 'preparando';
+  }
 }
 
 // ─── Legendas embutidas ───────────────────────────────────────────────
@@ -510,6 +511,7 @@ function cancelarProximo() {
 }
 
 async function ofereceProximo(id) {
+  cancelarProximo();  // 'ended' pode disparar 2x em alguns navegadores
   let prox;
   try {
     const r = await fetch(`${API}/${id}/proximo`);
@@ -519,7 +521,7 @@ async function ofereceProximo(id) {
   if (filmeAtual !== id || !prox) return;
 
   proximoInfo = prox;
-  document.getElementById('proximoTit').textContent = rotuloEpisodio(prox) + ' — ' + prox.titulo;
+  document.getElementById('proximoTit').textContent = prox.rotulo + (prox.serie ? ' — ' + prox.serie : '');
   document.getElementById('proximoBox').classList.add('on');
 
   let resta = 12;
@@ -681,7 +683,14 @@ document.getElementById('filters').addEventListener('click', e => {
   render();
 });
 
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closePlayer(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closePlayer(); document.getElementById('busca').blur(); }
+  // "/" foca a busca (a não ser que já esteja digitando em algum campo)
+  if (e.key === '/' && !/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) {
+    e.preventDefault();
+    document.getElementById('busca').focus();
+  }
+});
 configurarProgresso();
 load();
 

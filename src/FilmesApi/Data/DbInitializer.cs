@@ -38,10 +38,18 @@ public static class DbInitializer
         db.Database.ExecuteSqlRaw(
             """CREATE UNIQUE INDEX IF NOT EXISTS "IX_Filmes_ArquivoPath" ON "Filmes" ("ArquivoPath");""");
 
-        // Colunas de metadados do TMDB — SQLite não tem "ADD COLUMN IF NOT EXISTS", então
-        // checa o pragma e adiciona só as que faltam (bancos antigos não têm nenhuma).
         var colunasFilmes = db.Database
             .SqlQueryRaw<string>("""SELECT name AS "Value" FROM pragma_table_info('Filmes');""").ToList();
+
+        // A coluna "Genero" (enum EGenero -> INTEGER NOT NULL, sem default) foi removida do
+        // modelo. Num banco criado antes disso, ela sobra: o EF gera INSERT sem ela e o
+        // SQLite estoura "NOT NULL constraint failed" em todo scan. DROP COLUMN chegou no
+        // SQLite 3.35 (o embutido no .NET 9 é bem mais novo).
+        if (colunasFilmes.Contains("Genero"))
+            db.Database.ExecuteSqlRaw("""ALTER TABLE "Filmes" DROP COLUMN "Genero";""");
+
+        // Colunas de metadados do TMDB — SQLite não tem "ADD COLUMN IF NOT EXISTS", então
+        // checa o pragma e adiciona só as que faltam (bancos antigos não têm nenhuma).
         foreach (var (nome, ddl) in new (string Nome, string Ddl)[]
         {
             ("TmdbId", """ALTER TABLE "Filmes" ADD COLUMN "TmdbId" INTEGER NULL;"""),

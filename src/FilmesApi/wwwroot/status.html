@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>FilmesApi — status</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📊%3C/text%3E%3C/svg%3E">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#0d0d0d;color:#eee;font:15px/1.5 system-ui,sans-serif;padding:20px;max-width:760px;margin:0 auto}
@@ -64,8 +65,14 @@ function txt(id,v){ document.getElementById(id).textContent = v; }
 
 async function tick(){
   let d;
-  try { d = await (await fetch('/api/status')).json(); }
-  catch { txt('sub','sem resposta do servidor — tentando de novo…'); return; }
+  try {
+    const r = await fetch('/api/status');
+    d = await r.json();
+    if (!r.ok || !d || !d.termico || !d.transcode || !d.rkmpp) throw new Error('resposta inválida');
+  } catch {
+    txt('sub','sem resposta do servidor — tentando de novo…');
+    return;
+  }
 
   txt('sub','atualizado ' + new Date().toLocaleTimeString('pt-BR'));
 

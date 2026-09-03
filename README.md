@@ -299,9 +299,11 @@ filmes ainda sem metadados (roda ~30s depois do boot e reprocessa a cada scan).
 
 ```
 src/FilmesApi/
-├── Controllers/
-│   ├── FilmesController.cs       catálogo, progresso, streaming, legendas
-│   ├── PlayerController.cs       controle remoto da TV (estado compartilhado)
+├── Controllers/            (todos sob /api/filmes, exceto onde indicado)
+│   ├── CatalogoController.cs     listar/criar/remover, scan da pasta, próximo episódio
+│   ├── ProgressoController.cs    "continuar de onde parou", concluir
+│   ├── ReproducaoController.cs   stream direto vs HLS, playlist/segments, legendas, keepalive
+│   ├── PlayerController.cs       /api/player — controle remoto da TV (estado compartilhado)
 │   └── StatusController.cs       /api/status
 ├── Services/
 │   ├── FilmeService.cs           CRUD + scan da pasta de mídia

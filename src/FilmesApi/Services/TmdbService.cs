@@ -2,7 +2,9 @@ using System.Text.Json;
 
 namespace FilmesApi.Services;
 
-public record TmdbResultado(int TmdbId, string? TituloOriginal, string? Sinopse, string? PosterUrl);
+/// <summary><c>Titulo</c> = título localizado e limpo do TMDB, pra exibir no lugar do nome
+/// de arquivo scene ("...WOLVERDONFILMES COM").</summary>
+public record TmdbResultado(int TmdbId, string? Titulo, string? TituloOriginal, string? Sinopse, string? PosterUrl);
 
 /// <summary>
 /// Busca metadados (título oficial, sinopse, pôster) no TMDB a partir do nome do arquivo.
@@ -26,9 +28,12 @@ public class TmdbService
         _imgBase = (config.GetValue<string>("TmdbImageBase") ?? "https://image.tmdb.org/t/p/w342").TrimEnd('/');
     }
 
-    public bool Habilitado => !string.IsNullOrWhiteSpace(_apiKey);
+    private volatile bool _chaveInvalida;
+    public bool Habilitado => !string.IsNullOrWhiteSpace(_apiKey) && !_chaveInvalida;
 
-    /// <summary>Primeiro resultado da busca no TMDB, ou null (sem chave, sem match, ou erro de rede).</summary>
+    /// <summary>Primeiro resultado da busca, ou <c>null</c> quando o TMDB não achou nada.
+    /// <b>Lança</b> em erro de transporte (rede/timeout/5xx/JSON malformado) — o chamador
+    /// deve deixar o filme pendente, não marcar como processado.</summary>
     public async Task<TmdbResultado?> BuscarAsync(string titulo, int? ano, bool serie, CancellationToken ct)
     {
         if (!Habilitado || string.IsNullOrWhiteSpace(titulo)) return null;
@@ -39,41 +44,42 @@ public class TmdbService
                 + $"&query={Uri.EscapeDataString(titulo)}";
         if (ano is int a) url += serie ? $"&first_air_date_year={a}" : $"&year={a}";
 
-        try
+        using var cli = _http.CreateClient();
+        cli.Timeout = TimeSpan.FromSeconds(15);
+        using var resp = await cli.GetAsync(url, ct);
+
+        if (resp.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
         {
-            using var cli = _http.CreateClient();
-            cli.Timeout = TimeSpan.FromSeconds(15);
-            using var resp = await cli.GetAsync(url, ct);
-            if (!resp.IsSuccessStatusCode)
-            {
-                _logger.LogWarning("TMDB respondeu {Code} pra \"{Titulo}\".", (int)resp.StatusCode, titulo);
-                return null;
-            }
-
-            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
-            if (!doc.RootElement.TryGetProperty("results", out var results)
-                || results.ValueKind != JsonValueKind.Array || results.GetArrayLength() == 0)
-                return null;
-
-            var r = results[0];
-            if (!r.TryGetProperty("id", out var idEl) || idEl.ValueKind != JsonValueKind.Number
-                || !idEl.TryGetInt32(out var id) || id == 0)
-                return null;
-
-            string? original = serie
-                ? Str(r, "original_name") : Str(r, "original_title");
-            string? sinopse = Str(r, "overview");
-            string? posterPath = Str(r, "poster_path");
-            string? poster = string.IsNullOrEmpty(posterPath) ? null : _imgBase + posterPath;
-
-            return new TmdbResultado(id, original, string.IsNullOrWhiteSpace(sinopse) ? null : sinopse, poster);
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
-        {
-            _logger.LogWarning(ex, "Falha ao consultar o TMDB pra \"{Titulo}\".", titulo);
+            _chaveInvalida = true;
+            _logger.LogWarning("TMDB recusou a chave ({Code}) — enriquecimento desligado até reiniciar.", (int)resp.StatusCode);
             return null;
         }
+        resp.EnsureSuccessStatusCode();  // 5xx/429 -> exceção -> filme fica pendente
+
+        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+        if (!doc.RootElement.TryGetProperty("results", out var results)
+            || results.ValueKind != JsonValueKind.Array || results.GetArrayLength() == 0)
+            return null;
+
+        var r = results[0];
+        if (!r.TryGetProperty("id", out var idEl) || idEl.ValueKind != JsonValueKind.Number
+            || !idEl.TryGetInt32(out var id) || id == 0)
+            return null;
+
+        var tituloLimpo = serie ? Str(r, "name") : Str(r, "title");
+        var original = serie ? Str(r, "original_name") : Str(r, "original_title");
+        var sinopse = Str(r, "overview");
+        var posterPath = Str(r, "poster_path");
+
+        return new TmdbResultado(
+            id,
+            Vazio(tituloLimpo),
+            Vazio(original),
+            Vazio(sinopse),
+            string.IsNullOrEmpty(posterPath) ? null : _imgBase + posterPath);
     }
+
+    private static string? Vazio(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 
     private static string? Str(JsonElement e, string prop) =>
         e.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
