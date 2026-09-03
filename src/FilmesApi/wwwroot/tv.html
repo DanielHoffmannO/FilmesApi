@@ -151,10 +151,18 @@ function mostrarVideo() {
   video.style.display = 'block';
 }
 
+// nunca lança: erro transitório vira 'preparando'; muitas falhas seguidas -> 'erro'.
+let checarFalhas = 0;
 async function checarStatus(filmeId) {
-  const res = await fetch(`/api/filmes/${filmeId}/stream-status`);
-  const data = await res.json();
-  return data.status;
+  try {
+    const res = await fetch(`/api/filmes/${filmeId}/stream-status`);
+    if (!res.ok) throw new Error('http ' + res.status);
+    const data = await res.json();
+    checarFalhas = 0;
+    return data.status;
+  } catch {
+    return (++checarFalhas > 12) ? 'erro' : 'preparando';
+  }
 }
 
 let hls = null;
@@ -163,7 +171,7 @@ function destruirHls() {
   if (hls) { hls.destroy(); hls = null; }
 }
 
-async function carregarFilme(filmeId) {
+async function carregarFilme(filmeId, ehRetry) {
   mostrarMsg('Preparando vídeo…');
   destruirHls();
   cancelarProximo();
@@ -173,7 +181,8 @@ async function carregarFilme(filmeId) {
   ultimoSalvo = 0;
   posicaoRetomar = 0;
   retomarTentativas = 0;
-  hlsRetries = 0;
+  checarFalhas = 0;
+  if (!ehRetry) hlsRetries = 0;  // retry preserva o contador
   duracaoConfiavel = false;
   reproducaoConcluida = false;
   const prog = await fetch(`/api/filmes/${filmeId}/progresso`).then(r => r.ok ? r.json() : null).catch(() => null);
@@ -184,14 +193,19 @@ async function carregarFilme(filmeId) {
     const s = Math.round((Date.now() - inicioPrep) / 1000);
     mostrarMsg(`Preparando vídeo… ${s}s` + (s > 45 ? '\n(a primeira vez demora mais)' : ''));
   }, 1000);
-  let status = await checarStatus(filmeId);
-  while (status === 'preparando') {
-    await new Promise(r => setTimeout(r, 1500));
+  let status;
+  try {
     status = await checarStatus(filmeId);
+    while (status === 'preparando') {
+      await new Promise(r => setTimeout(r, 1500));
+      if (filmeAtual !== filmeId) return;  // celular trocou/parou durante a espera
+      status = await checarStatus(filmeId);
+    }
+  } finally {
+    clearInterval(prepTimer);
   }
-  clearInterval(prepTimer);
   if (status === 'erro') {
-    mostrarMsg('Falha ao converter o vídeo.');
+    mostrarMsg('Falha ao preparar o vídeo.');
     return;
   }
 
@@ -217,7 +231,7 @@ async function carregarFilme(filmeId) {
       if (!data.fatal) return;
       if (data.type === Hls.ErrorTypes.MEDIA_ERROR) { hls.recoverMediaError(); return; }
       if (data.type === Hls.ErrorTypes.NETWORK_ERROR && filmeAtual === filmeId && hlsRetries++ < 3) {
-        setTimeout(() => { if (filmeAtual === filmeId) carregarFilme(filmeId); }, 1500);
+        setTimeout(() => { if (filmeAtual === filmeId) carregarFilme(filmeId, true); }, 1500);
       }
     });
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {

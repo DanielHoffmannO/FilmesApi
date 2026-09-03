@@ -36,8 +36,13 @@ public partial class FilmesController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Criar([FromBody] FilmeRequest req)
     {
+        if (string.IsNullOrWhiteSpace(req.Titulo))
+            return BadRequest(new { mensagem = "título é obrigatório" });
+
         var filme = await _service.CriarAsync(req);
-        return Created($"/api/filmes/{filme.Id}", filme);
+        return filme is null
+            ? Conflict(new { mensagem = "já existe um filme com esse arquivo" })
+            : Created($"/api/filmes/{filme.Id}", filme);
     }
 
     [HttpPut("{id:int}/assistido")]
@@ -137,7 +142,9 @@ public partial class FilmesController : ControllerBase
         return Ok(new { compativel = await _transcode.PodeStreamDiretoAsync(path!, ct) });
     }
 
-    /// <summary>Verifica se o vídeo já pode ser tocado direto, via HLS, ou se ainda está preparando.</summary>
+    /// <summary>Estado do vídeo: <c>compativel</c> / <c>preparando</c> / <c>disponivel</c> /
+    /// <c>erro</c>. Sempre 200 quando o arquivo existe — "erro" é o transcode que falhou,
+    /// não a consulta.</summary>
     [HttpGet("{id:int}/stream-status")]
     public async Task<IActionResult> ObterStreamStatus(int id, CancellationToken ct)
     {
@@ -169,6 +176,8 @@ public partial class FilmesController : ControllerBase
         var (status, caminho, erro) = await ResolverStatusAsync(id, ct);
         if (erro is not null) return erro;
 
+        if (status is StreamStatus.Erro)
+            return StatusCode(StatusCodes.Status500InternalServerError, new { mensagem = "Falha ao converter o vídeo." });
         if (status is StreamStatus.Compativel)
             return Conflict(new { mensagem = "Este vídeo é compatível direto, use /stream." });
         if (status is StreamStatus.Preparando)
@@ -236,15 +245,14 @@ public partial class FilmesController : ControllerBase
         return path is null ? (null, NotFound("Arquivo não encontrado no disco.")) : (path, null);
     }
 
+    // `Erro` só cobre a falha de resolver o arquivo no disco (404). StreamStatus.Erro é um
+    // estado de resposta válido — cada endpoint decide o código (stream-status devolve 200).
     private async Task<(StreamStatus Status, string? Caminho, IActionResult? Erro)> ResolverStatusAsync(int id, CancellationToken ct)
     {
         var (path, erro) = await ResolverCaminhoAsync(id);
         if (erro is not null) return (default, null, erro);
 
         var (status, caminho) = await _transcode.ObterStatusAsync(id, path!, ct);
-        if (status is StreamStatus.Erro)
-            return (status, null, StatusCode(StatusCodes.Status500InternalServerError, "Falha ao converter o vídeo."));
-
         return (status, caminho, null);
     }
 

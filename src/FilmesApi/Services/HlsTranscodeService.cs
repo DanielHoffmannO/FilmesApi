@@ -35,6 +35,7 @@ public class HlsTranscodeService
     private readonly int _alturaMaxReencode;
     private readonly bool _rkmppDecodeHw;
     private readonly TimeSpan _orphanTimeout;
+    private readonly TimeSpan _falhaCooldown;
     private readonly int _maxJobs;
     private readonly SemaphoreSlim _slotEncoder;
     private readonly RkmppCapabilityService _rkmpp;
@@ -42,7 +43,10 @@ public class HlsTranscodeService
     private readonly ILogger<HlsTranscodeService> _logger;
 
     private readonly ConcurrentDictionary<int, Task> _jobs = new();
-    private readonly ConcurrentDictionary<int, bool> _falhas = new();
+    /// <summary>filmeId -> quando o transcode falhou. Não é permanente: depois de
+    /// <c>HlsFalhaCooldownMinutes</c> a entrada expira e o filme volta a ser tentável
+    /// (falha de ffmpeg costuma ser transitória — arquivo meio corrompido, placa quente).</summary>
+    private readonly ConcurrentDictionary<int, DateTime> _falhas = new();
     private readonly ConcurrentDictionary<int, bool> _completos = new();
     /// <summary>Último instante em que alguém pediu status/segmento/keepalive deste filme.
     /// Se ninguém pede há <c>HlsOrphanTimeoutSeconds</c>, o transcode em andamento é abortado
@@ -71,6 +75,7 @@ public class HlsTranscodeService
         // agente do servidor liga isso só depois de validar por linha de comando.
         _rkmppDecodeHw = config.GetValue<bool?>("HlsRkmppDecodeHw") ?? false;
         _orphanTimeout = TimeSpan.FromSeconds(config.GetValue<double?>("HlsOrphanTimeoutSeconds") ?? 90);  // 0 = nunca aborta
+        _falhaCooldown = TimeSpan.FromMinutes(config.GetValue<double?>("HlsFalhaCooldownMinutes") ?? 10);
         _slotEncoder = new SemaphoreSlim(_maxJobs, _maxJobs);
         _rkmpp = rkmpp;
         _thermal = thermal;
@@ -107,6 +112,8 @@ public class HlsTranscodeService
     public void LimparCache(int filmeId)
     {
         _ultimoAcesso.TryRemove(filmeId, out _);
+        _falhas.TryRemove(filmeId, out _);
+        _completos.TryRemove(filmeId, out _);
         try
         {
             lock (_decisaoLock)
@@ -164,6 +171,10 @@ public class HlsTranscodeService
                     bytes += fi.Length;
                     if (fi.Name == "playlist.m3u8") acesso = fi.LastWriteTimeUtc;
                 }
+                // "Acessado" = mtime do playlist OU keepalive recente (_ultimoAcesso). O mtime
+                // para de subir quando o playback vira só fetch de segmento, então sozinho ele
+                // acha que ninguém está assistindo um filme que está tocando.
+                if (_ultimoAcesso.TryGetValue(id, out var ka) && ka > acesso) acesso = ka;
                 total += bytes;
                 caches.Add((id, dir, bytes, acesso, File.Exists(Path.Combine(dir, MarcadorRemux))));
             }
@@ -224,8 +235,12 @@ public class HlsTranscodeService
         // terminando com sucesso, e apagar um cache recém-completo pra recomeçar à toa.
         lock (_decisaoLock)
         {
-            if (_falhas.ContainsKey(filmeId))
-                return (StreamStatus.Erro, null);
+            if (_falhas.TryGetValue(filmeId, out var falhouEm))
+            {
+                if (DateTime.UtcNow - falhouEm < _falhaCooldown)
+                    return (StreamStatus.Erro, null);
+                _falhas.TryRemove(filmeId, out _);  // cooldown passou — deixa tentar de novo
+            }
 
             // Uma vez confirmado completo, nunca mais muda — evita reler o playlist.m3u8
             // inteiro do disco (que cresce com o número de segments) em toda chamada futura,
@@ -360,7 +375,7 @@ public class HlsTranscodeService
             lock (_decisaoLock)
             {
                 if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
-                _falhas[filmeId] = true;
+                _falhas[filmeId] = DateTime.UtcNow;
             }
         }
         finally
@@ -590,28 +605,36 @@ public class HlsTranscodeService
         return saida;
     }
 
-    /// <summary>Retrato do estado do transcode pra página de status.</summary>
+    private readonly object _cacheStatsLock = new();
+
+    /// <summary>Retrato do estado do transcode pra página de status (que faz poll a cada ~3 s).
+    /// A varredura de tamanho do cache em disco é feita no máximo a cada 20 s.</summary>
     public Models.HlsStatusSnapshot ObterSnapshot()
     {
         var jobs = _jobs.Keys.OrderBy(x => x).ToArray();
         var encodando = Math.Max(0, _maxJobs - _slotEncoder.CurrentCount);
 
-        if (DateTime.UtcNow - _cacheStats.Quando > TimeSpan.FromSeconds(20))
+        (long Bytes, int Itens, DateTime _) stats;
+        lock (_cacheStatsLock)
         {
-            long total = 0;
-            var itens = 0;
-            try
+            if (DateTime.UtcNow - _cacheStats.Quando > TimeSpan.FromSeconds(20))
             {
-                if (Directory.Exists(_cachePath))
-                    foreach (var dir in Directory.EnumerateDirectories(_cachePath))
-                    {
-                        itens++;
-                        foreach (var arq in Directory.EnumerateFiles(dir))
-                            try { total += new FileInfo(arq).Length; } catch (IOException) { }
-                    }
+                long total = 0;
+                var itens = 0;
+                try
+                {
+                    if (Directory.Exists(_cachePath))
+                        foreach (var dir in Directory.EnumerateDirectories(_cachePath))
+                        {
+                            itens++;
+                            foreach (var arq in Directory.EnumerateFiles(dir))
+                                try { total += new FileInfo(arq).Length; } catch (IOException) { }
+                        }
+                }
+                catch (IOException) { }
+                _cacheStats = (total, itens, DateTime.UtcNow);
             }
-            catch (IOException) { }
-            _cacheStats = (total, itens, DateTime.UtcNow);
+            stats = _cacheStats;
         }
 
         return new Models.HlsStatusSnapshot(
@@ -622,8 +645,8 @@ public class HlsTranscodeService
             Falhas: _falhas.Count,
             FilmesEmJob: jobs,
             FilmesComFalha: _falhas.Keys.OrderBy(x => x).ToArray(),
-            CacheBytes: _cacheStats.Bytes,
+            CacheBytes: stats.Bytes,
             CacheMaxBytes: _cacheMaxBytes == long.MaxValue ? 0 : _cacheMaxBytes,
-            CacheItens: _cacheStats.Itens);
+            CacheItens: stats.Itens);
     }
 }

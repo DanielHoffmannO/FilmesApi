@@ -64,8 +64,14 @@ function txt(id,v){ document.getElementById(id).textContent = v; }
 
 async function tick(){
   let d;
-  try { d = await (await fetch('/api/status')).json(); }
-  catch { txt('sub','sem resposta do servidor — tentando de novo…'); return; }
+  try {
+    const r = await fetch('/api/status');
+    d = await r.json();
+    if (!r.ok || !d || !d.termico || !d.transcode || !d.rkmpp) throw new Error('resposta inválida');
+  } catch {
+    txt('sub','sem resposta do servidor — tentando de novo…');
+    return;
+  }
 
   txt('sub','atualizado ' + new Date().toLocaleTimeString('pt-BR'));
 

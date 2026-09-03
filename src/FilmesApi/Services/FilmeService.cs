@@ -56,8 +56,14 @@ public class FilmeService
     public Task<string?> ObterArquivoPathAsync(int id)
         => _db.Filmes.AsNoTracking().Where(f => f.Id == id).Select(f => f.ArquivoPath).FirstOrDefaultAsync();
 
-    public async Task<FilmeResponse> CriarAsync(FilmeRequest req)
+    /// <summary>Cria um filme manualmente. Retorna null se já existe um com o mesmo
+    /// <c>ArquivoPath</c> (índice único) — o controller mapeia pra 409.</summary>
+    public async Task<FilmeResponse?> CriarAsync(FilmeRequest req)
     {
+        if (req.ArquivoPath is not null
+            && await _db.Filmes.AnyAsync(f => f.ArquivoPath == req.ArquivoPath))
+            return null;
+
         var filme = new Filme
         {
             Titulo = req.Titulo,
@@ -66,7 +72,9 @@ public class FilmeService
             ArquivoPath = req.ArquivoPath
         };
         _db.Filmes.Add(filme);
-        await _db.SaveChangesAsync();
+        try { await _db.SaveChangesAsync(); }
+        catch (DbUpdateException) { return null; }  // corrida contra o índice único
+
         return new FilmeResponse(filme.Id, filme.Titulo, filme.AnoLancamento, filme.Diretor, filme.ArquivoPath,
             filme.Assistido, filme.DataAdicionado, null, null);
     }
@@ -163,7 +171,24 @@ public class FilmeService
 
         var dentroDaRaiz = full == raiz || full.StartsWith(raiz + Path.DirectorySeparatorChar, StringComparison.Ordinal);
         if (!dentroDaRaiz) return null;
+        if (!File.Exists(full)) return null;
 
-        return File.Exists(full) ? full : null;
+        // Path.GetFullPath só normaliza a string — não segue symlink. Um link dentro de
+        // _mediaPath apontando pra fora (ex.: /media/x.mp4 -> /etc/shadow) passaria no
+        // containment acima. Resolve o alvo real e re-checa.
+        var alvoReal = TentarResolverLink(full);
+        return alvoReal.StartsWith(raiz + Path.DirectorySeparatorChar, StringComparison.Ordinal) || alvoReal == raiz
+            ? full : null;
+    }
+
+    private static string TentarResolverLink(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            var alvo = info.ResolveLinkTarget(returnFinalTarget: true);
+            return alvo is null ? path : Path.GetFullPath(alvo.FullName);
+        }
+        catch (IOException) { return path; }
     }
 }
