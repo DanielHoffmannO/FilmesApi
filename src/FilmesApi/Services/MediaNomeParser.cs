@@ -32,9 +32,10 @@ public static partial class MediaNomeParser
     private static partial Regex ReEpNum();
 
     // Número solto no começo do nome do arquivo: "8 - I See You", "08. Título", "E08 - x",
-    // "[12] Título". Exige separador logo depois do número, pra não pegar "1917" nem
-    // "2001 A Space Odyssey". Só é usado quando a PASTA tem marcador de temporada.
-    [GeneratedRegex(@"^\s*\[?\s*(?:e|ep|epis[oó]dio|cap[ií]tulo)?\s*([0-9]{1,3})\s*\]?\s*[-–—.):]\s", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    // "[12] Título" (colchete já é delimitador — não precisa de separador depois). Fora do
+    // colchete, exige separador logo após o número, pra não pegar "1917" nem "2001 A Space
+    // Odyssey". Só é usado quando a PASTA tem marcador de temporada.
+    [GeneratedRegex(@"^\s*(?:\[\s*([0-9]{1,3})\s*\]|(?:e|ep|epis[oó]dio|cap[ií]tulo)?\s*([0-9]{1,3})\s*[-–—.):]\s)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ReEpPrefixo();
 
     // Temporada indicada só na pasta: "3 Temporada", "3ª Temporada", "Temporada 3",
@@ -125,7 +126,11 @@ public static partial class MediaNomeParser
         if (tempPasta is int t)
         {
             m = ReEpPrefixo().Match(nome);
-            if (m.Success) return (t, ParseInt(m.Groups[1].Value));
+            if (m.Success)
+            {
+                var g = m.Groups[1].Success ? m.Groups[1] : m.Groups[2];  // [1]=colchete, [2]=solto
+                return (t, ParseInt(g.Value));
+            }
         }
         return null;
     }

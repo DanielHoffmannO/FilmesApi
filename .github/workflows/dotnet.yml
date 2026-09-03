@@ -1,4 +1,4 @@
-name: .NET Build
+name: .NET
 
 on:
   push:
@@ -10,9 +10,21 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: '9.0.x'
-    - run: dotnet restore
-    - run: dotnet build --no-restore --configuration Release
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - run: dotnet restore
+
+      # falha se algo estiver fora do .editorconfig
+      - name: format
+        run: dotnet format FilmesApi.sln --verify-no-changes --severity warn
+
+      - run: dotnet build FilmesApi.sln --no-restore --configuration Release
+
+      # o teste de downmix 5.1 -> estéreo gera e sonda mídia de verdade
+      - name: install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - run: dotnet test FilmesApi.sln --no-build --configuration Release --verbosity normal
