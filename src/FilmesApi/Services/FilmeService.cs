@@ -65,6 +65,8 @@ public class FilmeService
         return f is null ? null : ComClassificacao(f);
     }
 
+    public Task<bool> ExisteAsync(int id) => _db.Filmes.AnyAsync(f => f.Id == id);
+
     /// <summary>Próximo episódio da mesma série na ordem (temporada, episódio). null quando
     /// não há: id não existe, não é episódio, é o último, ou é um "extra".</summary>
     public async Task<FilmeResponse?> ProximoEpisodioAsync(int id)
