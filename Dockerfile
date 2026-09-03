@@ -32,7 +32,7 @@ RUN apt-get update \
  && apt-get update \
  && JELLYFIN_FFMPEG_PKG=$(apt-cache search '^jellyfin-ffmpeg[0-9]+$' | sort -V | tail -1 | cut -d' ' -f1) \
  && apt-get install -y --no-install-recommends "$JELLYFIN_FFMPEG_PKG" \
- && apt-get purge -y --autoremove gnupg curl \
+ && apt-get purge -y --autoremove gnupg \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd -g 1000 filmesapi \
  && useradd -u 1000 -g filmesapi -G video -M -s /usr/sbin/nologin filmesapi \

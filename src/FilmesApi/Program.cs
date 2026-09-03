@@ -1,7 +1,10 @@
+using System.Reflection;
 using System.Text.Json.Serialization;
 using FilmesApi.Data;
 using FilmesApi.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,6 +20,7 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseSqlite(builder.Configuration.GetConnectionString("Default") ?? "Data Source=/data/filmes.db"));
 
 builder.Services.AddSingleton(FfmpegOptions.From(builder.Configuration));
+builder.Services.AddSingleton<MediaProbeService>();
 builder.Services.AddScoped<FilmeService>();
 builder.Services.AddScoped<ProgressoService>();
 builder.Services.AddSingleton<RkmppCapabilityService>();
@@ -33,10 +37,36 @@ builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "FilmesApi",
+        Version = "v1",
+        Description = "Servidor pessoal de streaming — catálogo, transcode HLS sob demanda, "
+                    + "legendas, retomada, próximo episódio e controle da TV pelo celular.",
+    });
+    var xml = Path.Combine(AppContext.BaseDirectory, $"{Assembly.GetExecutingAssembly().GetName().Name}.xml");
+    if (File.Exists(xml)) c.IncludeXmlComments(xml);
+});
 
-// CORS aberto pra qualquer dispositivo na LAN (TV, celular, etc)
-builder.Services.AddCors(o => o.AddDefaultPolicy(p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
+// health check — o mount da pasta de mídia (SMB/USB) cai; o ffmpeg pode não estar no lugar.
+builder.Services.AddHealthChecks()
+    .AddCheck("media", () =>
+    {
+        var p = builder.Configuration.GetValue<string>("MediaPath") ?? "/media";
+        return Directory.Exists(p) ? HealthCheckResult.Healthy() : HealthCheckResult.Unhealthy($"MediaPath '{p}' não está montado");
+    })
+    .AddCheck("ffmpeg", () =>
+    {
+        var ff = builder.Configuration.GetValue<string>("FfmpegPath") ?? "ffmpeg";
+        return !Path.IsPathRooted(ff) || File.Exists(ff) ? HealthCheckResult.Healthy() : HealthCheckResult.Unhealthy($"ffmpeg '{ff}' não existe");
+    });
+
+// CORS: as páginas são same-origin. Só libera geral se AllowAnyOrigin=true (caso alguém sirva
+// as telas de outro host); por padrão, sem CORS.
+if (builder.Configuration.GetValue<bool>("AllowAnyOrigin"))
+    builder.Services.AddCors(o => o.AddDefaultPolicy(p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
 
 var app = builder.Build();
 
@@ -48,11 +78,12 @@ using (var scope = app.Services.CreateScope())
 }
 
 // ─── Pipeline ───────────────────────────────────────────────────────────
-app.UseCors();
+if (app.Configuration.GetValue<bool>("AllowAnyOrigin")) app.UseCors();
 app.UseStaticFiles();
 app.UseSwagger();
 app.UseSwaggerUI(c => c.RoutePrefix = "swagger");
 app.MapControllers();
+app.MapHealthChecks("/health");
 app.MapFallbackToFile("index.html");
 
 app.Run();
