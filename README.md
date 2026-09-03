@@ -112,7 +112,7 @@ Extensões reconhecidas: `.mp4 .mkv .avi .mov .wmv .flv .webm`
 
 | URL | Pra quê |
 |---|---|
-| `/` (`index.html`) | Interface principal — catálogo com pôster, filtros (tipo / assistido), séries colapsáveis, "continuar assistindo", player com legenda e próximo-episódio, e uma barra flutuante pra controlar a TV. |
+| `/` (`index.html`) | Interface principal — catálogo em lista compacta, busca, filtros (tipo / assistido), pastas e séries colapsáveis, "continuar assistindo", player com legenda e próximo-episódio, e uma barra flutuante pra controlar a TV. |
 | `/feia.html` | Interface mínima pra **smart TV antiga** (ES5, sem flexbox/grid, navegação por setas do controle). Toca o arquivo original direto; botão vermelho liga/desliga legenda. |
 | `/tv.html` | O que fica **aberto na TV**. Não tem catálogo — é dirigido pelo celular via `/api/player/*` (selecionar, play/pause, seek, volume, legenda). |
 | `/status.html` | Diagnóstico: temperatura da placa, fila de transcode, uso do cache HLS, estado da VPU. |
