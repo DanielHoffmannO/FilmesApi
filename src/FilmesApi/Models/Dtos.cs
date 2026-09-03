@@ -13,7 +13,7 @@ public record FilmeResponse(
     bool EhEpisodio = false, bool EhExtra = false, string? Serie = null,
     int? Temporada = null, int? Episodio = null, string Rotulo = "", string Pasta = "Sem pasta");
 
-public record ScanResultado(int Importados, int Removidos);
+public record ScanResultado(int Importados, int Removidos, int TitulosLimpos = 0);
 
 /// <summary>Uma faixa de legenda embutida. <c>Idx</c> é o índice relativo (0,1,2… na ordem
 /// do ffprobe) usado no endpoint <c>/legenda/{idx}</c>. <c>Convertivel</c> = é texto e dá
