@@ -139,7 +139,9 @@ public partial class ReproducaoController : ControllerBase
         if (arquivoPath is null) return (null, NotFound());
 
         var path = _service.ObterCaminhoAbsoluto(arquivoPath);
-        return path is null ? (null, NotFound("Arquivo não encontrado no disco.")) : (path, null);
+        return path is null
+            ? (null, NotFound(new { mensagem = "arquivo não encontrado no disco" }))
+            : (path, null);
     }
 
     // `Erro` só cobre a falha de resolver o arquivo no disco (404). StreamStatus.Erro é um
