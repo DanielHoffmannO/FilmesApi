@@ -199,6 +199,11 @@ public static partial class MediaNomeParser
         if (string.IsNullOrWhiteSpace(n)) n = tituloFallback ?? "";
         n = RePontos().Replace(n, " ");
 
+        // "8 - I See You" -> "I See You": num de episódio no começo é ruído aqui
+        // (já está em Temporada/Episódio). Só quando é mesmo episódio.
+        if (OrdemEpisodio(arquivoPath) is not null)
+            n = Regex.Replace(n, @"^\s*\[?\s*\d{1,3}\s*\]?\s*[-–—.):]*\s*", "");
+
         // corta no marcador de episódio (antes do ano). ReNxNN "come 1 char antes".
         var iSxx = IndiceOuMenos1(ReSxxExx(), n);
         if (iSxx > 0) n = n[..iSxx];

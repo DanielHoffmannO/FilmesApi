@@ -671,6 +671,7 @@ async function scanMedia() {
     const msg = document.getElementById('scanMsg');
     const partes = [`${data.importados} importado(s)`];
     if (data.removidos) partes.push(`${data.removidos} removido(s)`);
+    if (data.titulosLimpos) partes.push(`${data.titulosLimpos} título(s) limpo(s)`);
     msg.textContent = partes.join(' · ');
     msg.style.display = 'block';
     setTimeout(() => msg.style.display = 'none', 3000);

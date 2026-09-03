@@ -131,6 +131,10 @@ public class MediaNomeParserTests
     [InlineData("Filmes/Interestelar.2014.1080p.Dublado.mkv", "Interestelar", 2014)]
     [InlineData("Filmes/O Poderoso Chefao (1972).mkv", "O Poderoso Chefao", 1972)]
     [InlineData("Show/Show.S02E05.720p.WEB-DL.mkv", "Show", null)]
+    [InlineData("Breaking Bad 2011 4ª Temporada Completa [WWW.BLUDV.COM]/Breaking.Bad.2011.S04E09.720p.BluRay.x264.DUAL.mkv", "Breaking Bad", 2011)]
+    // episódio "N - Título": o número vira ruído (já está em Temporada/Episódio)
+    [InlineData("Breaking Bad 3 Temporada - The Pirate Filmes/8 - I See You.mp4", "I See You", null)]
+    [InlineData("Show/Season 2/07. O Retorno.mkv", "O Retorno", null)]
     public void TituloParaBusca(string path, string titulo, int? ano)
     {
         var r = MediaNomeParser.TituloParaBusca(path);
