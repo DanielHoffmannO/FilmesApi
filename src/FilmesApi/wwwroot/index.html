@@ -19,24 +19,30 @@ button:hover{background:#333}
 .filter-label{font-size:11px;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-left:12px}
 .filter-label:first-child{margin-left:0}
 .filter-sep{width:1px;align-self:stretch;background:#222;margin:2px 4px}
-main{padding:24px}
+main{padding:16px 24px;max-width:1000px;margin:0 auto}
 #grid{display:flex;flex-direction:column}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:16px}
-@media(min-width:700px){.grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}}
-.card{background:#181818;border-radius:8px;overflow:hidden;cursor:pointer;transition:transform .15s,box-shadow .15s;position:relative}
-.card:hover{transform:scale(1.03);box-shadow:0 8px 24px rgba(0,0,0,.5)}
-.card-poster{width:100%;aspect-ratio:2/3;object-fit:cover;display:block;background:#222}
-.card-poster-ph{display:flex;align-items:center;justify-content:center;font-size:44px;background:linear-gradient(160deg,#2a2a2a,#161616);opacity:.5}
-.card-body{padding:12px}
-.progressbar{height:4px;background:#333}
-.progressbar-fill{height:100%;background:#e50914}
-.card-meta .resume{color:#e50914}
-.card-title{font-size:14px;font-weight:500;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.card-meta{font-size:11px;color:#888;display:flex;gap:8px}
-.card-meta .badge{background:#333;color:#888;border:1px solid #444;padding:1px 8px;border-radius:3px;font-size:10px;cursor:pointer;user-select:none}
-.card-meta .badge:hover{border-color:#666;color:#ccc}
-.card-meta .badge.on{background:#2ecc40;color:#000;border-color:#2ecc40}
-.card.assistido .card-body{border-left:3px solid #2ecc40}
+.lista{display:flex;flex-direction:column}
+.row{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:6px;cursor:pointer;position:relative}
+.row:hover{background:#181818}
+.row .rtit{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}
+.row .rep{color:#888;font-variant-numeric:tabular-nums;margin-right:8px}
+.row .rano{font-size:12px;color:#777;font-variant-numeric:tabular-nums;white-space:nowrap}
+.row .resume{font-size:12px;color:#e50914;white-space:nowrap}
+.row .badge{font-size:11px;color:#888;border:1px solid #333;border-radius:3px;padding:1px 7px;white-space:nowrap;user-select:none}
+.row .badge:hover{border-color:#666;color:#ccc}
+.row .badge.on{background:#2ecc40;color:#000;border-color:#2ecc40}
+.row.assistido .rtit{color:#8a8a8a}
+.row .rprog{position:absolute;left:12px;right:12px;bottom:1px;height:2px;background:#2a2a2a;border-radius:1px;overflow:hidden}
+.row .rprog>div{height:100%;background:#e50914}
+.cast-btn{background:none;border:none;color:#666;font-size:14px;cursor:pointer;padding:2px 4px;line-height:1}
+.cast-btn:hover{color:#fff}
+.grupo{margin-bottom:2px}
+.grupo-hd{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:6px;cursor:pointer;user-select:none;font-size:14px;font-weight:600;color:#ddd}
+.grupo-hd:hover{background:#181818}
+.grupo-hd .caret{display:inline-block;width:12px;color:#888;font-size:11px}
+.grupo-hd .count{font-size:12px;color:#666;font-weight:400}
+.grupo.collapsed .grupo-body{display:none}
+.grupo-body{padding-left:22px}
 .player-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:100;flex-direction:column;align-items:center;justify-content:center}
 .player-overlay.active{display:flex}
 .player-overlay video{max-width:100vw;max-height:100vh;width:auto;height:auto}
@@ -52,15 +58,9 @@ main{padding:24px}
 #loadbar{position:fixed;top:0;left:0;height:3px;width:0;background:#e50914;z-index:200;opacity:0;transition:width .3s ease}
 #loadbar.on{opacity:1;width:75%}
 #loadbar.done{opacity:0;width:100%;transition:width .2s ease,opacity .4s ease .2s}
-.secao{margin-bottom:40px}
-.secao-title{font-size:19px;font-weight:700;color:#fff;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #222}
-.secao-title .count{font-size:13px;color:#666;font-weight:400}
-.folder{margin-bottom:32px}
-.folder-title{font-size:16px;font-weight:600;margin-bottom:12px;color:#ccc;display:flex;align-items:center;gap:8px}
-.folder-title .count{font-size:12px;color:#666;font-weight:400}
-.folder.serie .folder-title{cursor:pointer;user-select:none}
-.folder.serie .folder-title .caret{display:inline-block;width:14px;color:#888;font-size:12px}
-.folder.collapsed .grid{display:none}
+.secao{margin-bottom:26px}
+.secao-title{font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px;padding:0 12px}
+.secao-title .count{color:#555;font-weight:400}
 .empty{text-align:center;color:#777;padding:70px 20px;font-size:16px}
 .empty .ico{font-size:52px;display:block;margin-bottom:12px;opacity:.6}
 .empty button{margin-top:16px}
@@ -70,9 +70,6 @@ main{padding:24px}
 .header-links a{color:#888;text-decoration:none}
 .header-links a:hover{color:#fff}
 .scan-msg{position:fixed;bottom:20px;right:20px;background:#2ecc40;color:#000;padding:10px 16px;border-radius:6px;font-size:13px;display:none}
-.cast-btn{background:none;border:none;color:#888;font-size:16px;cursor:pointer;padding:2px 4px;line-height:1}
-.cast-btn:hover{color:#fff}
-.card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:4px}
 .remote{position:fixed;left:0;right:0;bottom:0;background:#111;border-top:1px solid #222;padding:10px 16px;display:none;flex-direction:column;gap:8px;z-index:50}
 .remote.active{display:flex}
 .remote-l1{display:flex;align-items:baseline;gap:10px}
@@ -112,7 +109,7 @@ main{padding:24px}
 </div>
 
 <main>
-  <div class="grid" id="grid"></div>
+  <div id="grid"></div>
   <div class="empty" id="empty" style="display:none"></div>
 </main>
 
@@ -234,56 +231,62 @@ function render() {
     arr.sort((a, b) => (a.temporada - b.temporada) || (a.episodio - b.episodio)
       || a.titulo.localeCompare(b.titulo, 'pt-BR', { numeric: true }));
 
-  const dobravel = (key, tituloHtml, cards) => {
+  const grupo = (key, tituloHtml, rows) => {
     const aberto = foldersAbertos.has(key);
     return `
-      <div class="folder serie ${aberto ? '' : 'collapsed'}" data-key="${attr(key)}">
-        <div class="folder-title" onclick="toggleFolder(this)"><span class="caret">${aberto ? '▾' : '▸'}</span> ${tituloHtml}</div>
-        <div class="grid">${cards}</div>
+      <div class="grupo ${aberto ? '' : 'collapsed'}" data-key="${attr(key)}">
+        <div class="grupo-hd" onclick="toggleGrupo(this)"><span class="caret">${aberto ? '▾' : '▸'}</span>${tituloHtml}</div>
+        <div class="grupo-body">${rows}</div>
       </div>`;
   };
 
+  const continuarVis = continuar.filter(c => {
+    if (!q) return true;
+    const f = filmes.find(x => x.id === c.id);
+    return ((c.titulo + ' ' + (f ? (f.serie || '') + ' ' + (f.pasta || '') : '')).toLowerCase()).includes(q);
+  });
+
   let html = '';
-  if (filtroTipo === 'all' && filtroVisto === 'all' && continuar.length) {
+  if (filtroTipo === 'all' && filtroVisto === 'all' && continuarVis.length) {
     html += `
     <div class="secao">
-      <div class="secao-title">▶ Continuar assistindo <span class="count">(${continuar.length})</span></div>
-      <div class="grid">${continuar.map(continuarCardHtml).join('')}</div>
+      <div class="secao-title">▶ Continuar assistindo <span class="count">(${continuarVis.length})</span></div>
+      <div class="lista">${continuarVis.map(continuarRowHtml).join('')}</div>
     </div>`;
   }
 
   const totalFilmes = filmesSoltos.length + [...pastasFilme.values()].reduce((s, a) => s + a.length, 0);
   if (totalFilmes) {
-    html += `<div class="secao"><div class="secao-title">🎬 Filmes <span class="count">(${totalFilmes})</span></div>`;
-    if (filmesSoltos.length) html += `<div class="grid">${filmesSoltos.map(f => cardHtml(f)).join('')}</div>`;
+    html += `<div class="secao"><div class="secao-title">🎬 Filmes <span class="count">(${totalFilmes})</span></div><div class="lista">`;
+    if (filmesSoltos.length) html += filmesSoltos.map(f => rowHtml(f)).join('');
     html += [...pastasFilme.keys()].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(pasta => {
       const itens = pastasFilme.get(pasta);
-      return dobravel('f:' + pasta, `📁 ${esc(pasta)} <span class="count">(${itens.length} arquivos)</span>`,
-        itens.map(f => cardHtml(f)).join(''));
+      return grupo('f:' + pasta, `📁 ${esc(pasta)} <span class="count">(${itens.length} arquivos)</span>`,
+        itens.map(f => rowHtml(f)).join(''));
     }).join('');
-    html += `</div>`;
+    html += `</div></div>`;
   }
 
   const seriesNomes = [...seriesMap.keys()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   if (seriesNomes.length) {
-    html += `<div class="secao"><div class="secao-title">📺 Séries <span class="count">(${seriesNomes.length})</span></div>`;
+    html += `<div class="secao"><div class="secao-title">📺 Séries <span class="count">(${seriesNomes.length})</span></div><div class="lista">`;
     html += seriesNomes.map(nome => {
       const itens = seriesMap.get(nome);
-      return dobravel('s:' + nome, `${esc(nome)} <span class="count">(${itens.length} ${itens.length === 1 ? 'episódio' : 'episódios'})</span>`,
-        itens.map(f => cardHtml(f, true)).join(''));
+      return grupo('s:' + nome, `${esc(nome)} <span class="count">(${itens.length} ${itens.length === 1 ? 'episódio' : 'episódios'})</span>`,
+        itens.map(f => rowHtml(f, true)).join(''));
     }).join('');
-    html += `</div>`;
+    html += `</div></div>`;
   }
   grid.innerHTML = html;
   window.scrollTo(0, scrollAntes);
 }
 
-function toggleFolder(el) {
-  const folder = el.parentNode;
-  folder.classList.toggle('collapsed');
-  const aberto = !folder.classList.contains('collapsed');
-  if (aberto) foldersAbertos.add(folder.dataset.key);
-  else foldersAbertos.delete(folder.dataset.key);
+function toggleGrupo(el) {
+  const grupo = el.parentNode;
+  grupo.classList.toggle('collapsed');
+  const aberto = !grupo.classList.contains('collapsed');
+  if (aberto) foldersAbertos.add(grupo.dataset.key);
+  else foldersAbertos.delete(grupo.dataset.key);
   const caret = el.querySelector('.caret');
   if (caret) caret.textContent = aberto ? '▾' : '▸';
 }
@@ -295,7 +298,7 @@ function pctProgresso(item) {
 
 function barraProgresso(item) {
   const pct = pctProgresso(item);
-  return pct ? `<div class="progressbar"><div class="progressbar-fill" style="width:${pct}%"></div></div>` : '';
+  return pct ? `<div class="rprog"><div style="width:${pct}%"></div></div>` : '';
 }
 
 function formatarTempo(seg) {
@@ -304,50 +307,55 @@ function formatarTempo(seg) {
   return h ? `${h}h ${m}min` : `${m}min`;
 }
 
-function cardHtml(f, episodio) {
-  const retomar = f.posicaoSegundos
-    ? `<span class="resume">▶ ${formatarTempo(f.posicaoSegundos)}</span>`
-    : '';
-  const rotulo = episodio ? f.rotulo : f.titulo;
+const pad2 = n => String(n).padStart(2, '0');
+
+// nome "limpo" do episódio: tira SxxExx embutido, o "8 - "/"8   " do começo e,
+// se sobrar só o nome da série (nome de arquivo genérico), não repete.
+function tituloEpisodio(f) {
+  let s = String(f.titulo || '')
+    .replace(/\bS\d{1,2}\s*E\d{1,3}\b/ig, ' ')
+    .replace(/^\s*\d{1,3}[\s.\-–—):\]]+/, '')
+    .replace(/\s+/g, ' ').trim();
+  if (f.serie && s.toLowerCase() === f.serie.toLowerCase()) s = '';
+  return s;
+}
+
+function rowHtml(f, episodio) {
+  const retomar = f.posicaoSegundos ? `<span class="resume">▶ ${formatarTempo(f.posicaoSegundos)}</span>` : '';
+  let titulo;
+  if (episodio) {
+    const cod = f.temporada != null ? `S${pad2(f.temporada)}E${pad2(f.episodio)}` : (f.rotulo || '');
+    const nome = tituloEpisodio(f);
+    titulo = (cod || nome)
+      ? `${cod ? `<span class="rep">${esc(cod)}</span>` : ''}${esc(nome)}`
+      : esc(f.titulo);
+  } else {
+    titulo = esc(f.titulo);
+  }
   return `
-    <div class="card ${f.assistido ? 'assistido' : ''}" onclick="play(${f.id})" title="${attr(f.sinopse)}">
-      ${posterHtml(f)}
-      <div class="card-body">
-        <div class="card-top">
-          <div class="card-title" title="${attr(f.titulo)}">${esc(rotulo)}</div>
-          <button class="cast-btn" title="Enviar para a TV" onclick="event.stopPropagation(); enviarParaTv(${f.id})">📺</button>
-        </div>
-        <div class="card-meta">
-          ${f.anoLancamento ? `<span>${f.anoLancamento}</span>` : ''}
-          ${retomar}
-          <span class="badge ${f.assistido ? 'on' : ''}" onclick="event.stopPropagation(); toggleAssistido(${f.id})">${f.assistido ? '✓ Assistido' : 'Marcar assistido'}</span>
-        </div>
-      </div>
+    <div class="row ${f.assistido ? 'assistido' : ''}" onclick="play(${f.id})" title="${attr(f.sinopse || f.titulo)}">
+      <span class="rtit">${titulo}</span>
+      ${!episodio && f.anoLancamento ? `<span class="rano">${f.anoLancamento}</span>` : ''}
+      ${retomar}
+      <span class="badge ${f.assistido ? 'on' : ''}" onclick="event.stopPropagation(); toggleAssistido(${f.id})">${f.assistido ? '✓ Assistido' : 'Marcar'}</span>
+      <button class="cast-btn" title="Enviar para a TV" onclick="event.stopPropagation(); enviarParaTv(${f.id})">📺</button>
       ${barraProgresso(f)}
     </div>`;
 }
 
-// placeholder quando não tem pôster do TMDB — senão o grid fica com cards de altura diferente
-function posterHtml(f) {
-  if (f && f.posterUrl) return `<img class="card-poster" loading="lazy" src="${attr(f.posterUrl)}" alt="">`;
-  return `<div class="card-poster card-poster-ph">🎬</div>`;
-}
-
-function continuarCardHtml(c) {
+function continuarRowHtml(c) {
   const info = c.duracaoSegundos
     ? `${pctProgresso(c)}% · faltam ${formatarTempo(c.duracaoSegundos - c.posicaoSegundos)}`
     : `${formatarTempo(c.posicaoSegundos)} assistidos`;
   const f = filmes.find(x => x.id === c.id);
+  const nome = (f && f.ehEpisodio)
+    ? `<span class="rep">${f.serie} · S${pad2(f.temporada)}E${pad2(f.episodio)}</span>${esc(tituloEpisodio(f))}`
+    : esc(c.titulo);
   return `
-    <div class="card" onclick="play(${c.id})">
-      ${posterHtml(f)}
-      <div class="card-body">
-        <div class="card-top">
-          <div class="card-title" title="${attr(c.titulo)}">${esc((f && f.ehEpisodio) ? f.serie + ' · ' + f.rotulo : c.titulo)}</div>
-          <button class="cast-btn" title="Enviar para a TV" onclick="event.stopPropagation(); enviarParaTv(${c.id})">📺</button>
-        </div>
-        <div class="card-meta"><span class="resume">▶ ${info}</span></div>
-      </div>
+    <div class="row" onclick="play(${c.id})" title="${attr(c.titulo)}">
+      <span class="rtit">${nome}</span>
+      <span class="resume">▶ ${info}</span>
+      <button class="cast-btn" title="Enviar para a TV" onclick="event.stopPropagation(); enviarParaTv(${c.id})">📺</button>
       ${barraProgresso(c)}
     </div>`;
 }

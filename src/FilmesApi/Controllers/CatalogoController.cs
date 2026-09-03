@@ -54,11 +54,12 @@ public class CatalogoController : ControllerBase
     public async Task<IActionResult> ScanMedia()
         => Ok(await _service.ScanMediaAsync());
 
-    /// <summary>Próximo episódio da mesma série (ordem temporada/episódio). 204 quando não há
-    /// próximo: id inexistente, não é episódio, é o último, ou é um "extra".</summary>
+    /// <summary>Próximo episódio da mesma série (ordem temporada/episódio). 404 se o filme
+    /// não existe; 204 quando existe mas não há próximo: não é episódio, é o último, ou é um "extra".</summary>
     [HttpGet("{id:int}/proximo")]
     public async Task<IActionResult> ProximoEpisodio(int id)
     {
+        if (!await _service.ExisteAsync(id)) return NotFound();
         var prox = await _service.ProximoEpisodioAsync(id);
         return prox is null ? NoContent() : Ok(prox);
     }
