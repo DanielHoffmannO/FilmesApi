@@ -390,8 +390,11 @@ public class HlsTranscodeService
         }
     }
 
-    private async Task<(int ExitCode, string Stderr, bool Orfao)> RunFfmpegHlsAsync(
-        int filmeId, string origem, string dir, bool videoCompativel, bool usarRkmpp, int? audioStreamIndex, int? downscalePara, bool decodeHw)
+    /// <summary>Monta a linha de argumentos do ffmpeg pro job HLS. Pura e <c>internal</c>
+    /// de propósito: dá pra testar a decisão de encode (ex.: o <c>-ac 2</c> obrigatório)
+    /// sem subir processo — ver <c>FilmesApi.Tests</c>.</summary>
+    internal static List<string> MontarArgsFfmpegHls(
+        string origem, bool videoCompativel, bool usarRkmpp, int? audioStreamIndex, int? downscalePara, bool decodeHw)
     {
         List<string> args = ["-y"];
 
@@ -446,7 +449,12 @@ public class HlsTranscodeService
             args.AddRange(["-sc_threshold", "0", "-force_key_frames", $"expr:gte(t,n_forced*{SegmentoSegundos})"]);
         }
 
-        if (audioStreamIndex is not null) args.AddRange(["-c:a", "aac", "-b:a", "192k"]);
+        // -ac 2: downmix pra estéreo SEMPRE. Áudio 5.1/7.1 (EAC3 de WEB-DL é o caso comum)
+        // reencodado pra AAC multicanal sai sem channel_layout que o decoder AAC do Chrome
+        // (MSE/hls.js) reconheça — e ele rejeita EM SILÊNCIO: a API responde 200, playlist e
+        // segments existem, mas o vídeo não toca e não há erro em log nenhum. ffprobe e players
+        // desktop toleram, então é quase impossível diagnosticar sem saber disso de antemão.
+        if (audioStreamIndex is not null) args.AddRange(["-c:a", "aac", "-b:a", "192k", "-ac", "2"]);
         args.AddRange([
             "-f", "hls",
             "-hls_time", SegmentoSegundos.ToString(),
@@ -458,6 +466,13 @@ public class HlsTranscodeService
             "-hls_segment_filename", "seg_%05d.ts",
             "playlist.m3u8",
         ]);
+        return args;
+    }
+
+    private async Task<(int ExitCode, string Stderr, bool Orfao)> RunFfmpegHlsAsync(
+        int filmeId, string origem, string dir, bool videoCompativel, bool usarRkmpp, int? audioStreamIndex, int? downscalePara, bool decodeHw)
+    {
+        var args = MontarArgsFfmpegHls(origem, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw);
 
         var psi = new ProcessStartInfo(_ffmpegPath) { WorkingDirectory = dir };
         foreach (var arg in args) psi.ArgumentList.Add(arg);

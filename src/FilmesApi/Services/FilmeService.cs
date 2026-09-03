@@ -42,8 +42,13 @@ public class FilmeService
         var c = MediaNomeParser.Classificar(f.ArquivoPath, f.Titulo);
         return f with
         {
-            EhEpisodio = c.EhEpisodio, EhExtra = c.EhExtra, Serie = c.Serie,
-            Temporada = c.Temporada, Episodio = c.Episodio, Rotulo = c.Rotulo, Pasta = c.Pasta,
+            EhEpisodio = c.EhEpisodio,
+            EhExtra = c.EhExtra,
+            Serie = c.Serie,
+            Temporada = c.Temporada,
+            Episodio = c.Episodio,
+            Rotulo = c.Rotulo,
+            Pasta = c.Pasta,
         };
     }
 
