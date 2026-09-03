@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <title>Filmes (modo TV antiga)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📺%3C/text%3E%3C/svg%3E">
 <style>
 /* Sem flexbox, sem grid, sem media queries: so o que TV velha entende. */
 * { margin: 0; padding: 0; }
@@ -197,46 +198,8 @@ video { width: 100%; height: auto; background: #000; }
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
-  function pastaDe(p) {
-    if (!p) return 'Sem pasta';
-    var parts = p.split('/');
-    return parts.length > 1 ? parts.slice(0, -1).join('/') : 'Sem pasta';
-  }
-
-  // Marcador de episodio no NOME do arquivo (S01E02, 1x02) — sinal confiavel pra
-  // separar serie de filme. Contar arquivos na pasta errava (filme com trailer
-  // virava serie, Breaking Bad S01E01.mkv solto virava filme).
-  var RE_SXXEXX = /\bS(\d{1,2})[\s._-]*E(\d{1,3})\b/i;
-  var RE_NXNN = /(?:^|[^\dxX])(\d{1,2})x(\d{1,3})(?:[^\dp]|$)/i;
-  var RE_EPNUM = /\b(?:epis[oó]dios?|episodes?|cap[ií]tulos?)\.?\s*(\d{1,3})\b/i;  // "Episodio 11", "Capitulo 3"
-  var RE_EXTRA = /\b(trailer|sample|amostra|promo|extras?|featurette|bastidores|deleted|nfo|readme)\b/i;
-  function nomeArquivo(p) { return (p || '').replace(/^.*\//, ''); }
-  function ehEpisodio(p) { var n = nomeArquivo(p); return RE_SXXEXX.test(n) || RE_NXNN.test(n) || RE_EPNUM.test(n); }
-  function ehExtra(p) { var n = nomeArquivo(p); return RE_EXTRA.test(n) || /1xbet/i.test(n); }
-  function chaveSerie(arquivoPath) {
-    var pasta = pastaDe(arquivoPath);
-    if (pasta !== 'Sem pasta') return pasta;
-    var n = nomeArquivo(arquivoPath);
-    var i = n.search(RE_SXXEXX);
-    if (i < 0) { var jj = n.search(RE_NXNN); i = jj <= 0 ? jj : jj + 1; }
-    if (i < 0) i = n.search(RE_EPNUM);
-    var prefixo = i > 0 ? n.slice(0, i) : n;
-    return prefixo.replace(/[._]+/g, ' ').replace(/[\s-]+$/, '').trim() || n;
-  }
-  function pad2(n) { n = String(n); return n.length >= 2 ? n : ('0' + n); }  // ES5, nao trunca 3 digitos
-  function rotuloEpisodio(m) {
-    var t = m.titulo || '', r = t.match(RE_SXXEXX);
-    if (r) return 'S' + pad2(r[1]) + 'E' + pad2(r[2]);
-    r = t.match(RE_NXNN);
-    if (r) return 'T' + r[1] + ' Ep' + pad2(r[2]);
-    r = t.match(RE_EPNUM);
-    if (r) {
-      var resto = t.slice(r.index + r[0].length).replace(/^[\s._·:–—-]+/, '');
-      resto = resto.replace(/\s+$/, '');
-      return 'Ep ' + pad2(r[1]) + (resto ? ' · ' + resto : '');
-    }
-    return t;
-  }
+  // Serie/episodio/rotulo/pasta vem prontos da API (MediaNomeParser no servidor) — uma
+  // fonte so, sem regex duplicada aqui.
 
   function load() {
     document.getElementById('msg').style.display = 'block';
@@ -268,7 +231,7 @@ video { width: 100%; height: auto; background: #000; }
     // nº de arquivos por pasta na lista COMPLETA (pra nao "achatar" pasta ao filtrar)
     var porPasta = {};
     for (i = 0; i < filmes.length; i++) {
-      var pp = pastaDe(filmes[i].arquivoPath);
+      var pp = filmes[i].pasta;
       porPasta[pp] = (porPasta[pp] || 0) + 1;
     }
 
@@ -277,8 +240,8 @@ video { width: 100%; height: auto; background: #000; }
       var f = filmes[i];
       if (filtroVisto === 'sim' && !f.assistido) continue;
       if (filtroVisto === 'nao' && f.assistido) continue;
-      if (filtroTipo === 'filme' && ehEpisodio(f.arquivoPath)) continue;
-      if (filtroTipo === 'serie' && !ehEpisodio(f.arquivoPath)) continue;
+      if (filtroTipo === 'filme' && f.ehEpisodio) continue;
+      if (filtroTipo === 'serie' && !f.ehEpisodio) continue;
       list.push(f);
     }
     if (!list.length) {
@@ -304,13 +267,13 @@ video { width: 100%; height: auto; background: #000; }
     var serieMap = {}, serieOrdem = [];
     for (i = 0; i < list.length; i++) {
       var m = list[i];
-      if (ehEpisodio(m.arquivoPath)) {
-        var ks = chaveSerie(m.arquivoPath);
+      if (m.ehEpisodio) {
+        var ks = m.serie;
         if (!serieMap[ks]) { serieMap[ks] = []; serieOrdem.push(ks); }
         serieMap[ks].push(m);
         continue;
       }
-      var pa = pastaDe(m.arquivoPath);
+      var pa = m.pasta;
       if (pa !== 'Sem pasta' && porPasta[pa] > 1) {
         if (!pfMap[pa]) { pfMap[pa] = []; pfOrdem.push(pa); }
         pfMap[pa].push(m);
@@ -321,7 +284,7 @@ video { width: 100%; height: auto; background: #000; }
     // pasta com 1 filme "de verdade" + so extras -> mostra o filme direto
     for (i = 0; i < pfOrdem.length; i++) {
       var arr0 = pfMap[pfOrdem[i]], princ = [];
-      for (j = 0; j < arr0.length; j++) if (!ehExtra(arr0[j].arquivoPath)) princ.push(arr0[j]);
+      for (j = 0; j < arr0.length; j++) if (!arr0[j].ehExtra) princ.push(arr0[j]);
       if (princ.length === 1) { filmesSoltos.push(princ[0]); delete pfMap[pfOrdem[i]]; pfOrdem.splice(i, 1); i--; }
     }
     filmesSoltos.sort(function (a, b) {
@@ -331,8 +294,8 @@ video { width: 100%; height: auto; background: #000; }
     serieOrdem.sort(); pfOrdem.sort();
     for (i = 0; i < serieOrdem.length; i++) {
       serieMap[serieOrdem[i]].sort(function (a, b) {
-        var x = rotuloEpisodio(a), y = rotuloEpisodio(b);
-        return x < y ? -1 : (x > y ? 1 : 0);
+        return (a.temporada - b.temporada) || (a.episodio - b.episodio) ||
+               (String(a.titulo) < String(b.titulo) ? -1 : 1);
       });
     }
 
@@ -369,7 +332,7 @@ video { width: 100%; height: auto; background: #000; }
     for (i = 0; i < serieOrdem.length; i++) {
       var sarr = serieMap[serieOrdem[i]], seps = '';
       if (i === 0) html += '<h2>Series (' + serieOrdem.length + ')</h2>';
-      for (j = 0; j < sarr.length; j++) seps += itemHtml(sarr[j], rotuloEpisodio(sarr[j]));
+      for (j = 0; j < sarr.length; j++) seps += itemHtml(sarr[j], sarr[j].rotulo);
       html += grpHtml('s:' + serieOrdem[i],
         esc(serieOrdem[i]) + ' (' + sarr.length + (sarr.length === 1 ? ' episodio)' : ' episodios)'), seps);
     }
@@ -502,7 +465,7 @@ video { width: 100%; height: auto; background: #000; }
       var pmsg = document.getElementById('pmsg');
       var resta = 12;
       function tick() {
-        pmsg.innerHTML = 'Proximo: ' + esc(rotuloEpisodio(prox)) + ' &mdash; OK assiste, Voltar cancela  (' + resta + 's)';
+        pmsg.innerHTML = 'Proximo: ' + esc(prox.rotulo) + ' &mdash; OK assiste, Voltar cancela  (' + resta + 's)';
         if (resta-- <= 0) irProximo();
       }
       tick();

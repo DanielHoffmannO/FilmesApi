@@ -1,126 +1,23 @@
 using System.Text.RegularExpressions;
-using FilmesApi.Models;
 using FilmesApi.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FilmesApi.Controllers;
 
+/// <summary>Entrega do vídeo: decisão stream-direto vs HLS, playlist/segments, legendas e keepalive.</summary>
 [ApiController]
-[Route("api/[controller]")]
-public partial class FilmesController : ControllerBase
+[Route("api/filmes")]
+public partial class ReproducaoController : ControllerBase
 {
     private readonly FilmeService _service;
     private readonly HlsTranscodeService _transcode;
-    private readonly ProgressoService _progresso;
     private readonly SubtitleService _legendas;
 
-    public FilmesController(FilmeService service, HlsTranscodeService transcode, ProgressoService progresso, SubtitleService legendas)
+    public ReproducaoController(FilmeService service, HlsTranscodeService transcode, SubtitleService legendas)
     {
         _service = service;
         _transcode = transcode;
-        _progresso = progresso;
         _legendas = legendas;
-    }
-
-    [HttpGet]
-    public async Task<IActionResult> Listar([FromQuery] bool? assistido)
-        => Ok(await _service.ListarAsync(assistido));
-
-    [HttpGet("{id:int}")]
-    public async Task<IActionResult> Obter(int id)
-    {
-        var filme = await _service.ObterAsync(id);
-        return filme is null ? NotFound() : Ok(filme);
-    }
-
-    [HttpPost]
-    public async Task<IActionResult> Criar([FromBody] FilmeRequest req)
-    {
-        if (string.IsNullOrWhiteSpace(req.Titulo))
-            return BadRequest(new { mensagem = "título é obrigatório" });
-
-        var filme = await _service.CriarAsync(req);
-        return filme is null
-            ? Conflict(new { mensagem = "já existe um filme com esse arquivo" })
-            : Created($"/api/filmes/{filme.Id}", filme);
-    }
-
-    [HttpPut("{id:int}/assistido")]
-    public async Task<IActionResult> MarcarAssistido(int id)
-        => await _service.MarcarAssistidoAsync(id) ? NoContent() : NotFound();
-
-    [HttpDelete("{id:int}")]
-    public async Task<IActionResult> Deletar(int id)
-        => await _service.DeletarAsync(id) ? NoContent() : NotFound();
-
-    /// <summary>Sincroniza o catálogo com a pasta de mídia (importa novos, remove órfãos).</summary>
-    [HttpPost("scan")]
-    public async Task<IActionResult> ScanMedia()
-        => Ok(await _service.ScanMediaAsync());
-
-    /// <summary>Filmes com reprodução pendente ("continuar assistindo"), mais recentes primeiro.</summary>
-    [HttpGet("continuar")]
-    public async Task<IActionResult> Continuar()
-        => Ok(await _progresso.ContinuarAssistindoAsync());
-
-    /// <summary>Ponto de retomada do filme. 204 se não há nada guardado.</summary>
-    [HttpGet("{id:int}/progresso")]
-    public async Task<IActionResult> ObterProgresso(int id)
-    {
-        var p = await _progresso.ObterAsync(id);
-        return p is null ? NoContent() : Ok(p);
-    }
-
-    /// <summary>Salva onde a reprodução parou. Perto do início/fim, apenas descarta a retomada.</summary>
-    [HttpPut("{id:int}/progresso")]
-    public async Task<IActionResult> SalvarProgresso(int id, [FromBody] ProgressoRequest req)
-    {
-        if (double.IsNaN(req.Posicao) || double.IsInfinity(req.Posicao) || req.Posicao < 0)
-            return BadRequest(new { mensagem = "posicao inválida" });
-
-        // req.Duracao is > 0 já exclui NaN (NaN > 0 é false); +Infinity é que precisa de guarda.
-        var duracao = req.Duracao is > 0 && !double.IsInfinity(req.Duracao.Value) ? req.Duracao : null;
-
-        return await _progresso.SalvarAsync(id, req.Posicao, duracao) ? NoContent() : NotFound();
-    }
-
-    /// <summary>Esquece o ponto de retomada ("assistir do começo").</summary>
-    [HttpDelete("{id:int}/progresso")]
-    public async Task<IActionResult> LimparProgresso(int id)
-        => await _progresso.LimparAsync(id) ? NoContent() : NotFound();
-
-    /// <summary>Reprodução chegou ao fim: marca assistido e limpa a retomada.</summary>
-    [HttpPost("{id:int}/concluir")]
-    public async Task<IActionResult> Concluir(int id)
-        => await _progresso.ConcluirAsync(id) ? NoContent() : NotFound();
-
-    /// <summary>Próximo episódio da mesma série (ordem S/E). 204 quando não há próximo:
-    /// este não é episódio, é o último, ou é um "extra" (deleted scene/trailer) que não
-    /// entra na sequência. Série/episódio vem do nome do arquivo (<see cref="MediaNomeParser"/>).</summary>
-    [HttpGet("{id:int}/proximo")]
-    public async Task<IActionResult> ProximoEpisodio(int id)
-    {
-        var atual = await _service.ObterAsync(id);
-        if (atual is null) return NotFound();
-        if (!MediaNomeParser.EhEpisodio(atual.ArquivoPath)) return NoContent();
-
-        var chave = MediaNomeParser.ChaveSerie(atual.ArquivoPath);
-        var todos = await _service.ListarAsync();
-
-        var episodios = todos
-            .Where(f => MediaNomeParser.EhEpisodio(f.ArquivoPath)
-                        && !MediaNomeParser.EhExtra(f.ArquivoPath)
-                        && MediaNomeParser.ChaveSerie(f.ArquivoPath) == chave)
-            .Select(f => new { Filme = f, Ordem = MediaNomeParser.OrdemEpisodio(f.Titulo) })
-            .OrderBy(x => x.Ordem?.Temporada ?? 0)
-            .ThenBy(x => x.Ordem?.Episodio ?? 0)
-            .ThenBy(x => x.Filme.Titulo, StringComparer.OrdinalIgnoreCase)
-            .Select(x => x.Filme)
-            .ToList();
-
-        var i = episodios.FindIndex(f => f.Id == id);
-        if (i < 0 || i + 1 >= episodios.Count) return NoContent();
-        return Ok(episodios[i + 1]);
     }
 
     /// <summary>Keepalive do player: "ainda tem alguém assistindo este filme". Sem isso, o

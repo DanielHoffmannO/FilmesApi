@@ -7,6 +7,8 @@ namespace FilmesApi.Services;
 /// stderr capturado até o momento — essencial pra diagnosticar ffmpeg que trava sem morrer.</summary>
 public static class ProcessRunner
 {
+    /// <param name="psi">O processo a iniciar (stdout/stderr são configurados aqui).</param>
+    /// <param name="timeout">Prazo máximo — depois disso a árvore de processos é morta.</param>
     /// <param name="travou">Chamado a cada ~2s enquanto o processo roda; se devolver true,
     /// o processo é considerado travado (sem progresso) e morto. Null = só o timeout vale.</param>
     public static async Task<(int ExitCode, string Stderr)> ExecutarComTimeoutAsync(
