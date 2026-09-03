@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FilmesApi.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -67,6 +68,7 @@ public class MetadataService : BackgroundService
 
         // Episódios da mesma série buscam o mesmo termo — cacheia dentro do lote.
         var cache = new Dictionary<string, TmdbResultado?>();
+        var processados = 0;
 
         foreach (var filme in pendentes)
         {
@@ -76,7 +78,17 @@ public class MetadataService : BackgroundService
 
             if (!cache.TryGetValue(chave, out var res))
             {
-                res = string.IsNullOrWhiteSpace(titulo) ? null : await _tmdb.BuscarAsync(titulo, ano, serie, ct);
+                try
+                {
+                    res = string.IsNullOrWhiteSpace(titulo) ? null : await _tmdb.BuscarAsync(titulo, ano, serie, ct);
+                }
+                catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+                {
+                    // TMDB fora do ar / timeout: para o lote aqui. Os restantes (e este) ficam
+                    // com MetadadosEm == null e o ExecuteAsync re-tenta em 10 min.
+                    _logger.LogWarning(ex, "Metadados: TMDB indisponível — {N} filmes ficam pendentes.", pendentes.Count - processados);
+                    break;
+                }
                 cache[chave] = res;
                 try { await Task.Delay(TimeSpan.FromMilliseconds(300), ct); }
                 catch (OperationCanceledException) { break; }
@@ -86,11 +98,14 @@ public class MetadataService : BackgroundService
             filme.TituloOriginal = res?.TituloOriginal;
             filme.PosterUrl = res?.PosterUrl;
             filme.Sinopse = res?.Sinopse;
+            // Título limpo do TMDB só pra filme — episódio mantém o nome do arquivo, que o
+            // parser de série/episódio ainda precisa pra achar o "SxxExx".
+            if (!serie && res?.Titulo is { Length: > 0 } limpo) filme.Titulo = limpo;
             filme.MetadadosEm = DateTime.UtcNow;
 
             // Salva um por um: se um /scan concorrente apagou este filme no meio do lote,
             // o erro fica isolado neste filme e não descarta o trabalho (e a cota TMDB) dos outros.
-            try { await db.SaveChangesAsync(ct); }
+            try { await db.SaveChangesAsync(ct); processados++; }
             catch (DbUpdateException)
             {
                 db.Entry(filme).State = EntityState.Detached;
@@ -98,8 +113,8 @@ public class MetadataService : BackgroundService
             }
         }
 
-        var achados = pendentes.Count(f => f.TmdbId != null);
-        _logger.LogInformation("Metadados: {N} filmes processados, {Achados} com match no TMDB.", pendentes.Count, achados);
-        return pendentes.Count;
+        var achados = pendentes.Take(processados).Count(f => f.TmdbId != null);
+        _logger.LogInformation("Metadados: {N} filmes processados, {Achados} com match no TMDB.", processados, achados);
+        return processados;
     }
 }

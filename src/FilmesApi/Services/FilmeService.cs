@@ -25,30 +25,62 @@ public class FilmeService
         _mediaPath = config.GetValue<string>("MediaPath") ?? "/media";
     }
 
-    // Projeção compartilhada — inclui o ponto de retomada (LEFT JOIN em Progressos).
+    // Projeção SQL — só as colunas do banco + o ponto de retomada (LEFT JOIN em Progressos).
+    // Todos os args explícitos: expression tree não aceita construtor com args opcionais.
+    // Os campos de classificação vêm depois, em memória (ComClassificacao) — regex não roda em SQL.
     private static readonly System.Linq.Expressions.Expression<Func<Filme, FilmeResponse>> ToResponse =
         f => new FilmeResponse(
             f.Id, f.Titulo, f.AnoLancamento, f.Diretor, f.ArquivoPath, f.Assistido, f.DataAdicionado,
             f.Progresso != null ? f.Progresso.PosicaoSegundos : (double?)null,
             f.Progresso != null ? f.Progresso.DuracaoSegundos : null,
-            f.PosterUrl, f.Sinopse, f.TituloOriginal);
+            f.PosterUrl, f.Sinopse, f.TituloOriginal,
+            false, false, null, null, null, "", "Sem pasta");
+
+    /// <summary>Preenche série/episódio/rótulo a partir do caminho do arquivo.</summary>
+    public static FilmeResponse ComClassificacao(FilmeResponse f)
+    {
+        var c = MediaNomeParser.Classificar(f.ArquivoPath, f.Titulo);
+        return f with
+        {
+            EhEpisodio = c.EhEpisodio, EhExtra = c.EhExtra, Serie = c.Serie,
+            Temporada = c.Temporada, Episodio = c.Episodio, Rotulo = c.Rotulo, Pasta = c.Pasta,
+        };
+    }
 
     public async Task<List<FilmeResponse>> ListarAsync(bool? assistido = null)
     {
         var query = _db.Filmes.AsNoTracking().AsQueryable();
         if (assistido.HasValue) query = query.Where(f => f.Assistido == assistido.Value);
 
-        return await query.OrderByDescending(f => f.DataAdicionado)
-            .Select(ToResponse)
-            .ToListAsync();
+        var lista = await query.OrderByDescending(f => f.DataAdicionado).Select(ToResponse).ToListAsync();
+        return lista.Select(ComClassificacao).ToList();
     }
 
     public async Task<FilmeResponse?> ObterAsync(int id)
     {
-        return await _db.Filmes.AsNoTracking()
+        var f = await _db.Filmes.AsNoTracking()
             .Where(f => f.Id == id)
             .Select(ToResponse)
             .FirstOrDefaultAsync();
+        return f is null ? null : ComClassificacao(f);
+    }
+
+    /// <summary>Próximo episódio da mesma série na ordem (temporada, episódio). null quando
+    /// não há: id não existe, não é episódio, é o último, ou é um "extra".</summary>
+    public async Task<FilmeResponse?> ProximoEpisodioAsync(int id)
+    {
+        var atual = await ObterAsync(id);
+        if (atual is null || !atual.EhEpisodio || atual.EhExtra) return null;
+
+        var episodios = (await ListarAsync())
+            .Where(f => f.EhEpisodio && !f.EhExtra && f.Serie == atual.Serie)
+            .OrderBy(f => f.Temporada ?? 0)
+            .ThenBy(f => f.Episodio ?? 0)
+            .ThenBy(f => f.Titulo, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var i = episodios.FindIndex(f => f.Id == id);
+        return i >= 0 && i + 1 < episodios.Count ? episodios[i + 1] : null;
     }
 
     /// <summary>Só o ArquivoPath — para o streaming resolver o caminho no disco sem
@@ -56,8 +88,14 @@ public class FilmeService
     public Task<string?> ObterArquivoPathAsync(int id)
         => _db.Filmes.AsNoTracking().Where(f => f.Id == id).Select(f => f.ArquivoPath).FirstOrDefaultAsync();
 
-    public async Task<FilmeResponse> CriarAsync(FilmeRequest req)
+    /// <summary>Cria um filme manualmente. Retorna null se já existe um com o mesmo
+    /// <c>ArquivoPath</c> (índice único) — o controller mapeia pra 409.</summary>
+    public async Task<FilmeResponse?> CriarAsync(FilmeRequest req)
     {
+        if (req.ArquivoPath is not null
+            && await _db.Filmes.AnyAsync(f => f.ArquivoPath == req.ArquivoPath))
+            return null;
+
         var filme = new Filme
         {
             Titulo = req.Titulo,
@@ -66,9 +104,11 @@ public class FilmeService
             ArquivoPath = req.ArquivoPath
         };
         _db.Filmes.Add(filme);
-        await _db.SaveChangesAsync();
-        return new FilmeResponse(filme.Id, filme.Titulo, filme.AnoLancamento, filme.Diretor, filme.ArquivoPath,
-            filme.Assistido, filme.DataAdicionado, null, null);
+        try { await _db.SaveChangesAsync(); }
+        catch (DbUpdateException) { return null; }  // corrida contra o índice único
+
+        return ComClassificacao(new FilmeResponse(filme.Id, filme.Titulo, filme.AnoLancamento, filme.Diretor,
+            filme.ArquivoPath, filme.Assistido, filme.DataAdicionado, null, null, null, null, null));
     }
 
     public async Task<bool> MarcarAssistidoAsync(int id)
@@ -200,7 +240,24 @@ public class FilmeService
 
         var dentroDaRaiz = full == raiz || full.StartsWith(raiz + Path.DirectorySeparatorChar, StringComparison.Ordinal);
         if (!dentroDaRaiz) return null;
+        if (!File.Exists(full)) return null;
 
-        return File.Exists(full) ? full : null;
+        // Path.GetFullPath só normaliza a string — não segue symlink. Um link dentro de
+        // _mediaPath apontando pra fora (ex.: /media/x.mp4 -> /etc/shadow) passaria no
+        // containment acima. Resolve o alvo real e re-checa.
+        var alvoReal = TentarResolverLink(full);
+        return alvoReal.StartsWith(raiz + Path.DirectorySeparatorChar, StringComparison.Ordinal) || alvoReal == raiz
+            ? full : null;
+    }
+
+    private static string TentarResolverLink(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            var alvo = info.ResolveLinkTarget(returnFinalTarget: true);
+            return alvo is null ? path : Path.GetFullPath(alvo.FullName);
+        }
+        catch (IOException) { return path; }
     }
 }

@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Text.Json;
 
 namespace FilmesApi.Services;
 
@@ -27,7 +26,6 @@ public class HlsTranscodeService
 
     private readonly string _cachePath;
     private readonly string _ffmpegPath;
-    private readonly string _ffprobePath;
     private readonly string _cachePathLegado;
     private readonly TimeSpan _jobTimeout;
     private readonly TimeSpan _stallTimeout;
@@ -35,16 +33,19 @@ public class HlsTranscodeService
     private readonly int _alturaMaxReencode;
     private readonly bool _rkmppDecodeHw;
     private readonly TimeSpan _orphanTimeout;
+    private readonly TimeSpan _falhaCooldown;
     private readonly int _maxJobs;
     private readonly SemaphoreSlim _slotEncoder;
     private readonly RkmppCapabilityService _rkmpp;
     private readonly ThermalService _thermal;
+    private readonly MediaProbeService _probe;
     private readonly ILogger<HlsTranscodeService> _logger;
 
     private readonly ConcurrentDictionary<int, Task> _jobs = new();
-    // Valor = instante (UTC) da falha, não um marcador permanente — ver ObterStatusAsync.
+    /// <summary>filmeId -> quando o transcode falhou. Não é permanente: depois de
+    /// <c>HlsFalhaCooldownMinutes</c> a entrada expira e o filme volta a ser tentável
+    /// (falha de ffmpeg costuma ser transitória — arquivo meio corrompido, placa quente).</summary>
     private readonly ConcurrentDictionary<int, DateTime> _falhas = new();
-    private readonly TimeSpan _falhaRetryApos;
     private readonly ConcurrentDictionary<int, bool> _completos = new();
     /// <summary>Último instante em que alguém pediu status/segmento/keepalive deste filme.
     /// Se ninguém pede há <c>HlsOrphanTimeoutSeconds</c>, o transcode em andamento é abortado
@@ -56,15 +57,14 @@ public class HlsTranscodeService
     /// (a página de status é refresh manual, não vale o I/O). Ver <see cref="ObterSnapshot"/>.</summary>
     private (long Bytes, int Itens, DateTime Quando) _cacheStats = (0, 0, DateTime.MinValue);
 
-    public HlsTranscodeService(FfmpegOptions ffmpeg, IConfiguration config, RkmppCapabilityService rkmpp, ThermalService thermal, ILogger<HlsTranscodeService> logger)
+    public HlsTranscodeService(FfmpegOptions ffmpeg, IConfiguration config, RkmppCapabilityService rkmpp,
+        ThermalService thermal, MediaProbeService probe, ILogger<HlsTranscodeService> logger)
     {
         _cachePath = config.GetValue<string>("HlsCachePath") ?? "/data/hls";
         _ffmpegPath = ffmpeg.Ffmpeg;
-        _ffprobePath = ffmpeg.Ffprobe;
         _cachePathLegado = config.GetValue<string>("TranscodeCachePath") ?? "/data/transcoded";
         _maxJobs = config.GetValue<int?>("MaxConcurrentTranscodeJobs") ?? 1;
         _jobTimeout = TimeSpan.FromHours(config.GetValue<double?>("TranscodeJobTimeoutHours") ?? 6);
-        _falhaRetryApos = TimeSpan.FromMinutes(config.GetValue<double?>("TranscodeFalhaRetryMinutos") ?? 10);
         _stallTimeout = TimeSpan.FromMinutes(config.GetValue<double?>("HlsStallTimeoutMinutes") ?? 8);
         var maxGb = config.GetValue<double?>("HlsCacheMaxGB") ?? 20;
         _cacheMaxBytes = maxGb > 0 ? (long)(maxGb * 1024 * 1024 * 1024) : long.MaxValue;
@@ -74,9 +74,11 @@ public class HlsTranscodeService
         // agente do servidor liga isso só depois de validar por linha de comando.
         _rkmppDecodeHw = config.GetValue<bool?>("HlsRkmppDecodeHw") ?? false;
         _orphanTimeout = TimeSpan.FromSeconds(config.GetValue<double?>("HlsOrphanTimeoutSeconds") ?? 90);  // 0 = nunca aborta
+        _falhaCooldown = TimeSpan.FromMinutes(config.GetValue<double?>("HlsFalhaCooldownMinutes") ?? 10);
         _slotEncoder = new SemaphoreSlim(_maxJobs, _maxJobs);
         _rkmpp = rkmpp;
         _thermal = thermal;
+        _probe = probe;
         _logger = logger;
         Directory.CreateDirectory(_cachePath);
     }
@@ -110,14 +112,14 @@ public class HlsTranscodeService
     public void LimparCache(int filmeId)
     {
         _ultimoAcesso.TryRemove(filmeId, out _);
+        _falhas.TryRemove(filmeId, out _);
+        _completos.TryRemove(filmeId, out _);
         try
         {
             lock (_decisaoLock)
             {
                 var dir = DiretorioCache(filmeId);
                 if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
-                _completos.TryRemove(filmeId, out _);
-                _falhas.TryRemove(filmeId, out _);
             }
 
             var mp4Legado = Path.Combine(_cachePathLegado, $"{filmeId}.mp4");
@@ -169,6 +171,10 @@ public class HlsTranscodeService
                     bytes += fi.Length;
                     if (fi.Name == "playlist.m3u8") acesso = fi.LastWriteTimeUtc;
                 }
+                // "Acessado" = mtime do playlist OU keepalive recente (_ultimoAcesso). O mtime
+                // para de subir quando o playback vira só fetch de segmento, então sozinho ele
+                // acha que ninguém está assistindo um filme que está tocando.
+                if (_ultimoAcesso.TryGetValue(id, out var ka) && ka > acesso) acesso = ka;
                 total += bytes;
                 caches.Add((id, dir, bytes, acesso, File.Exists(Path.Combine(dir, MarcadorRemux))));
             }
@@ -231,9 +237,9 @@ public class HlsTranscodeService
         {
             if (_falhas.TryGetValue(filmeId, out var falhouEm))
             {
-                if (DateTime.UtcNow - falhouEm < _falhaRetryApos)
+                if (DateTime.UtcNow - falhouEm < _falhaCooldown)
                     return (StreamStatus.Erro, null);
-                _falhas.TryRemove(filmeId, out _);
+                _falhas.TryRemove(filmeId, out _);  // cooldown passou — deixa tentar de novo
             }
 
             // Uma vez confirmado completo, nunca mais muda — evita reler o playlist.m3u8
@@ -292,30 +298,27 @@ public class HlsTranscodeService
             // naturalmente os próximos jobs e dá tempo de a placa esfriar entre um 4K e outro.
             await _thermal.AguardarResfriamentoAsync(CancellationToken.None);
 
-            // Só o codec de vídeo decide o caminho de encode aqui — não precisa do de áudio
-            // (que ProbeCodecsAsync também traria), então evita o segundo processo ffprobe.
-            var videoCodec = await RunFfprobeAsync(origem, "v:0", CancellationToken.None);
+            // Uma leitura de ffprobe só (cacheada): codec, resolução e faixa de áudio.
+            var info = await _probe.InspecionarAsync(origem, CancellationToken.None)
+                       ?? throw new InvalidOperationException("ffprobe não conseguiu ler o arquivo.");
+            var videoCodec = info.VideoCodec;
             var videoCompativel = videoCodec is not null && VideoCodecsCompativeis.Contains(videoCodec);
 
             // 4K/UHD decodificado + encodado em software trava o Radxa por minutos e esquenta
             // a placa. Se vamos reencodar e a entrada passa do teto, reduz a resolução no
-            // filtro do ffmpeg — corta o custo de encode (e a chance de cair no fallback
-            // libx264) drasticamente. Perde-se resolução, ganha-se estabilidade.
+            // filtro do ffmpeg — corta o custo de encode drasticamente. Perde resolução,
+            // ganha estabilidade.
             int? downscalePara = null;
-            if (!videoCompativel && _alturaMaxReencode > 0)
+            if (!videoCompativel && _alturaMaxReencode > 0 && info.Altura > _alturaMaxReencode)
             {
-                var res = await ProbeResolucaoAsync(origem, CancellationToken.None);
-                if (res is { } r && r.Altura > _alturaMaxReencode)
-                {
-                    downscalePara = _alturaMaxReencode;
-                    _logger.LogWarning(
-                        "Filme {Id}: entrada {W}x{H} — reencode com downscale pra {Alvo}p (4K+ em software sobrecarrega o servidor).",
-                        filmeId, r.Largura, r.Altura, _alturaMaxReencode);
-                }
+                downscalePara = _alturaMaxReencode;
+                _logger.LogWarning(
+                    "Filme {Id}: entrada {W}x{H} — reencode com downscale pra {Alvo}p (4K+ em software sobrecarrega o servidor).",
+                    filmeId, info.Largura, info.Altura, _alturaMaxReencode);
             }
 
             var usarRkmpp = !videoCompativel && await _rkmpp.DisponivelAsync();
-            var audioStreamIndex = await EscolherStreamAudioAsync(origem, CancellationToken.None);
+            var audioStreamIndex = EscolherStreamAudio(info.Audios);
 
             // Decode por hardware só faz diferença (e só vale o risco) no 4K com downscale —
             // 1080p decodifica barato em software. Fallback em cascata: hw-decode+hw-encode →
@@ -499,128 +502,60 @@ public class HlsTranscodeService
         var ext = Path.GetExtension(path).ToLowerInvariant();
         if (ext is not (".mp4" or ".webm" or ".mov" or ".m4v")) return false;
 
-        var (video, audio) = await ProbeCodecsAsync(path, ct);
-        var videoOk = video is not null && VideoCodecsCompativeis.Contains(video);
-        var audioOk = audio is null || AudioCodecsCompativeis.Contains(audio);
+        var info = await _probe.InspecionarAsync(path, ct);
+        return info is not null && PodeTocarDireto(info);
+    }
+
+    private static bool PodeTocarDireto(MediaInfo info)
+    {
+        var videoOk = info.VideoCodec is not null && VideoCodecsCompativeis.Contains(info.VideoCodec);
+        var primeiroAudio = info.Audios.Count > 0 ? info.Audios[0].Codec : null;
+        var audioOk = primeiroAudio is null || AudioCodecsCompativeis.Contains(primeiroAudio);
         return videoOk && audioOk;
     }
 
-    private async Task<(string? Video, string? Audio)> ProbeCodecsAsync(string path, CancellationToken ct)
+    /// <summary>Índice global (pra <c>-map</c>) da faixa de áudio que vai pro HLS: primeiro
+    /// uma em português — rip "dual áudio" costuma marcar a faixa errada como default —, senão
+    /// a default, senão a primeira. null se não há áudio. Função pura sobre o probe.</summary>
+    private static int? EscolherStreamAudio(IReadOnlyList<FaixaAudio> audios)
     {
-        var videoTask = RunFfprobeAsync(path, "v:0", ct);
-        var audioTask = RunFfprobeAsync(path, "a:0", ct);
-        await Task.WhenAll(videoTask, audioTask);
-        return (videoTask.Result, audioTask.Result);
+        if (audios.Count == 0) return null;
+        return audios.Where(a => a.Idioma is not null && IdiomasAudioPreferidos.Contains(a.Idioma))
+                .Select(a => (int?)a.Index).FirstOrDefault()
+            ?? audios.Where(a => a.Default).Select(a => (int?)a.Index).FirstOrDefault()
+            ?? audios[0].Index;
     }
 
-    /// <summary>Entre os streams de áudio do arquivo, escolhe o índice global (pra -map) da
-    /// faixa que deve ir pro HLS: primeiro tenta achar uma em português — rip "dual áudio"
-    /// costuma vir com a faixa errada marcada como default pelo grupo de release —, senão a
-    /// marcada default, senão a primeira. Retorna null se o arquivo não tem áudio.</summary>
-    private async Task<int?> EscolherStreamAudioAsync(string path, CancellationToken ct)
-    {
-        var psi = new ProcessStartInfo(_ffprobePath) { RedirectStandardOutput = true };
-        foreach (var arg in new[]
-        {
-            "-v", "error", "-select_streams", "a",
-            "-show_entries", "stream=index:stream_tags=language:disposition=default",
-            "-of", "json", path,
-        })
-            psi.ArgumentList.Add(arg);
+    private readonly object _cacheStatsLock = new();
 
-        using var proc = Process.Start(psi);
-        if (proc is null) return null;
-        var saida = await proc.StandardOutput.ReadToEndAsync(ct);
-        await proc.WaitForExitAsync(ct);
-
-        List<(int Index, string? Idioma, bool Default)> streams;
-        try
-        {
-            using var doc = JsonDocument.Parse(saida);
-            streams = doc.RootElement.GetProperty("streams").EnumerateArray().Select(s => (
-                Index: s.GetProperty("index").GetInt32(),
-                Idioma: s.TryGetProperty("tags", out var tags) && tags.TryGetProperty("language", out var lang)
-                    ? lang.GetString() : null,
-                Default: s.GetProperty("disposition").GetProperty("default").GetInt32() == 1
-            )).ToList();
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-
-        if (streams.Count == 0) return null;
-
-        return streams.Where(s => s.Idioma is not null && IdiomasAudioPreferidos.Contains(s.Idioma))
-                .Select(s => (int?)s.Index).FirstOrDefault()
-            ?? streams.Where(s => s.Default).Select(s => (int?)s.Index).FirstOrDefault()
-            ?? streams[0].Index;
-    }
-
-    private async Task<string?> RunFfprobeAsync(string path, string stream, CancellationToken ct)
-    {
-        var saida = await RodarFfprobeAsync(new[]
-        {
-            "-v", "error", "-select_streams", stream,
-            "-show_entries", "stream=codec_name",
-            "-of", "default=noprint_wrappers=1:nokey=1", path,
-        }, ct);
-        var valor = saida.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .FirstOrDefault();
-        return string.IsNullOrWhiteSpace(valor) ? null : valor;
-    }
-
-    /// <summary>(largura, altura) do vídeo, ou null se não deu pra ler. Pede "um valor por
-    /// linha" (default nokey), mas o parsing tolera qualquer separador — o ffprobe do
-    /// jellyfin devolvia o CSV com uma vírgula sobrando ("3840,1920,") e quebrava tudo.</summary>
-    private async Task<(int Largura, int Altura)?> ProbeResolucaoAsync(string path, CancellationToken ct)
-    {
-        var saida = await RodarFfprobeAsync(new[]
-        {
-            "-v", "error", "-select_streams", "v:0",
-            "-show_entries", "stream=width,height",
-            "-of", "default=noprint_wrappers=1:nokey=1", path,
-        }, ct);
-        var nums = saida.Split(['\n', '\r', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return nums.Length >= 2 && int.TryParse(nums[0], out var w) && int.TryParse(nums[1], out var h) && w > 0 && h > 0
-            ? (w, h)
-            : null;
-    }
-
-    private async Task<string> RodarFfprobeAsync(string[] args, CancellationToken ct)
-    {
-        var psi = new ProcessStartInfo(_ffprobePath) { RedirectStandardOutput = true };
-        foreach (var arg in args) psi.ArgumentList.Add(arg);
-
-        using var proc = Process.Start(psi);
-        if (proc is null) return "";
-        var saida = await proc.StandardOutput.ReadToEndAsync(ct);
-        await proc.WaitForExitAsync(ct);
-        return saida;
-    }
-
-    /// <summary>Retrato do estado do transcode pra página de status.</summary>
+    /// <summary>Retrato do estado do transcode pra página de status (que faz poll a cada ~3 s).
+    /// A varredura de tamanho do cache em disco é feita no máximo a cada 20 s.</summary>
     public Models.HlsStatusSnapshot ObterSnapshot()
     {
         var jobs = _jobs.Keys.OrderBy(x => x).ToArray();
         var encodando = Math.Max(0, _maxJobs - _slotEncoder.CurrentCount);
 
-        if (DateTime.UtcNow - _cacheStats.Quando > TimeSpan.FromSeconds(20))
+        (long Bytes, int Itens, DateTime _) stats;
+        lock (_cacheStatsLock)
         {
-            long total = 0;
-            var itens = 0;
-            try
+            if (DateTime.UtcNow - _cacheStats.Quando > TimeSpan.FromSeconds(20))
             {
-                if (Directory.Exists(_cachePath))
-                    foreach (var dir in Directory.EnumerateDirectories(_cachePath))
-                    {
-                        itens++;
-                        foreach (var arq in Directory.EnumerateFiles(dir))
-                            try { total += new FileInfo(arq).Length; } catch (IOException) { }
-                    }
+                long total = 0;
+                var itens = 0;
+                try
+                {
+                    if (Directory.Exists(_cachePath))
+                        foreach (var dir in Directory.EnumerateDirectories(_cachePath))
+                        {
+                            itens++;
+                            foreach (var arq in Directory.EnumerateFiles(dir))
+                                try { total += new FileInfo(arq).Length; } catch (IOException) { }
+                        }
+                }
+                catch (IOException) { }
+                _cacheStats = (total, itens, DateTime.UtcNow);
             }
-            catch (IOException) { }
-            _cacheStats = (total, itens, DateTime.UtcNow);
+            stats = _cacheStats;
         }
 
         return new Models.HlsStatusSnapshot(
@@ -631,8 +566,8 @@ public class HlsTranscodeService
             Falhas: _falhas.Count,
             FilmesEmJob: jobs,
             FilmesComFalha: _falhas.Keys.OrderBy(x => x).ToArray(),
-            CacheBytes: _cacheStats.Bytes,
+            CacheBytes: stats.Bytes,
             CacheMaxBytes: _cacheMaxBytes == long.MaxValue ? 0 : _cacheMaxBytes,
-            CacheItens: _cacheStats.Itens);
+            CacheItens: stats.Itens);
     }
 }
