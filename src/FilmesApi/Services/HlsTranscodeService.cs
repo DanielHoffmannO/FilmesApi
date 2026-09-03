@@ -26,7 +26,6 @@ public class HlsTranscodeService
 
     private readonly string _cachePath;
     private readonly string _ffmpegPath;
-    private readonly string _cachePathLegado;
     private readonly TimeSpan _jobTimeout;
     private readonly TimeSpan _stallTimeout;
     private readonly long _cacheMaxBytes;
@@ -62,7 +61,6 @@ public class HlsTranscodeService
     {
         _cachePath = config.GetValue<string>("HlsCachePath") ?? "/data/hls";
         _ffmpegPath = ffmpeg.Ffmpeg;
-        _cachePathLegado = config.GetValue<string>("TranscodeCachePath") ?? "/data/transcoded";
         _maxJobs = config.GetValue<int?>("MaxConcurrentTranscodeJobs") ?? 1;
         _jobTimeout = TimeSpan.FromHours(config.GetValue<double?>("TranscodeJobTimeoutHours") ?? 6);
         _stallTimeout = TimeSpan.FromMinutes(config.GetValue<double?>("HlsStallTimeoutMinutes") ?? 8);
@@ -107,8 +105,7 @@ public class HlsTranscodeService
     /// <summary>Este filme tem job de transcode vivo? Barato — sem I/O.</summary>
     public bool TemJobDoFilme(int filmeId) => _jobs.ContainsKey(filmeId);
 
-    /// <summary>Apaga best-effort qualquer cache de transcode do filme (HLS atual e .mp4
-    /// legado de uma geração anterior) — usado ao deletar o filme do catálogo.</summary>
+    /// <summary>Apaga best-effort o cache HLS do filme — usado ao deletar o filme do catálogo.</summary>
     public void LimparCache(int filmeId)
     {
         _ultimoAcesso.TryRemove(filmeId, out _);
@@ -121,9 +118,6 @@ public class HlsTranscodeService
                 var dir = DiretorioCache(filmeId);
                 if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
             }
-
-            var mp4Legado = Path.Combine(_cachePathLegado, $"{filmeId}.mp4");
-            if (File.Exists(mp4Legado)) File.Delete(mp4Legado);
         }
         catch (IOException) { /* best-effort: não bloqueia a exclusão do filme */ }
         catch (UnauthorizedAccessException) { /* best-effort: não bloqueia a exclusão do filme */ }
