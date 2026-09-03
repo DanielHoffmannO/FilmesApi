@@ -1,13 +1,8 @@
+using FilmesApi.Models;
 using FilmesApi.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FilmesApi.Controllers;
-
-public record VolumeRequest(double Valor);
-public record SeekRequest(double Delta);
-public record PosicaoRequest(double Pos, double Dur);
-public record SeekAbsRequest(double Pos);
-public record LegendaRequest(int Idx);
 
 /// <summary>Controle remoto do player da TV: o celular manda comandos, a TV consulta o estado.</summary>
 [ApiController]
