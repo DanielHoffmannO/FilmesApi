@@ -446,7 +446,14 @@ public class HlsTranscodeService
             args.AddRange(["-sc_threshold", "0", "-force_key_frames", $"expr:gte(t,n_forced*{SegmentoSegundos})"]);
         }
 
-        if (audioStreamIndex is not null) args.AddRange(["-c:a", "aac", "-b:a", "192k"]);
+        // -ac 2: downmix forçado pra estéreo. Sem isso, converter uma faixa 5.1 pra AAC pode
+        // produzir um stream com channel_layout=unknown (visto via ffprobe no segmento real
+        // gerado) — ffprobe e players desktop toleram, mas o decoder AAC do Chrome via MSE
+        // (hls.js) rejeita, e o sintoma é "nenhum vídeo com formato suportado" mesmo a API
+        // respondendo 200 com playlist e segments do tamanho certo. Estéreo é o caminho mais
+        // simples e universalmente compatível; 5.1 real exigiria mapear o layout de saída
+        // explicitamente, o que não vale a pena só pra tocar no navegador.
+        if (audioStreamIndex is not null) args.AddRange(["-c:a", "aac", "-ac", "2", "-b:a", "192k"]);
         args.AddRange([
             "-f", "hls",
             "-hls_time", SegmentoSegundos.ToString(),
