@@ -150,9 +150,15 @@ async function load() {
   loadbar(true);
   try {
     const [resF, resC] = await Promise.all([fetch(API), fetch(`${API}/continuar`)]);
+    if (!resF.ok) throw new Error('api');
     filmes = await resF.json();
     continuar = resC.ok ? await resC.json() : [];
     render();
+  } catch {
+    document.getElementById('grid').innerHTML = '';
+    const empty = document.getElementById('empty');
+    empty.textContent = 'Não consegui falar com o servidor. Recarregue a página.';
+    empty.style.display = 'block';
   } finally {
     loadbar(false);
   }
@@ -396,7 +402,7 @@ function iniciarHls(video, url, inicio) {
       // erro fatal de rede: normalmente o transcode reiniciou e um segmento sumiu.
       // Reabre o filme (retoma perto de onde estava) em vez de deixar o player travado.
       if (data.type === Hls.ErrorTypes.NETWORK_ERROR && filmeAtual === idAlvo && hlsRetries++ < 3) {
-        setTimeout(() => { if (filmeAtual === idAlvo) play(idAlvo); }, 1500);
+        setTimeout(() => { if (filmeAtual === idAlvo) play(idAlvo, true); }, 1500);
       } else {
         destruirHls();
       }
@@ -409,7 +415,7 @@ function iniciarHls(video, url, inicio) {
   }
 }
 
-async function play(id) {
+async function play(id, ehRetry) {
   const video = document.getElementById('video');
   const converting = document.getElementById('converting');
   cancelarProximo();
@@ -423,7 +429,8 @@ async function play(id) {
   ultimoSalvo = 0;
   posicaoParaRetomar = 0;
   retomarTentativas = 0;
-  hlsRetries = 0;
+  checarFalhas = 0;
+  if (!ehRetry) hlsRetries = 0;  // retry preserva o contador, senão o teto de 3 nunca conta
   duracaoConfiavel = false;
   reproducaoConcluida = false;
   const prog = await fetch(`${API}/${id}/progresso`).then(r => r.ok ? r.json() : null).catch(() => null);
@@ -437,16 +444,21 @@ async function play(id) {
   }, 1000);
   converting.textContent = 'Preparando vídeo…';
 
-  let status = await checarStatus(id);
-  while (status === 'preparando') {
-    await new Promise(r => setTimeout(r, 1500));
+  let status;
+  try {
     status = await checarStatus(id);
+    while (status === 'preparando') {
+      await new Promise(r => setTimeout(r, 1500));
+      if (filmeAtual !== id) return;  // fechou/trocou de filme durante a espera
+      status = await checarStatus(id);
+    }
+  } finally {
+    clearInterval(prepTimer);
   }
-  clearInterval(prepTimer);
   converting.style.display = 'none';
 
   if (status === 'erro') {
-    converting.textContent = 'Falha ao converter o vídeo.';
+    converting.textContent = 'Falha ao preparar o vídeo. Tente de novo.';
     converting.style.display = 'block';
     return;
   }
@@ -465,10 +477,19 @@ async function play(id) {
   // não mais ao simplesmente abrir.
 }
 
+// nunca lança: erro de rede transitório vira 'preparando' (segue tentando);
+// depois de muitas falhas seguidas, desiste com 'erro'.
+let checarFalhas = 0;
 async function checarStatus(id) {
-  const res = await fetch(`${API}/${id}/stream-status`);
-  const data = await res.json();
-  return data.status;
+  try {
+    const res = await fetch(`${API}/${id}/stream-status`);
+    if (!res.ok) throw new Error('http ' + res.status);
+    const data = await res.json();
+    checarFalhas = 0;
+    return data.status;
+  } catch {
+    return (++checarFalhas > 12) ? 'erro' : 'preparando';
+  }
 }
 
 // ─── Legendas embutidas ───────────────────────────────────────────────
@@ -510,6 +531,7 @@ function cancelarProximo() {
 }
 
 async function ofereceProximo(id) {
+  cancelarProximo();  // 'ended' pode disparar 2x em alguns navegadores
   let prox;
   try {
     const r = await fetch(`${API}/${id}/proximo`);

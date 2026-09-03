@@ -37,11 +37,8 @@ public class ProgressoService
             // Começo do filme ou praticamente no fim: não guarda ponto de retomada.
             if (filme.Progresso is not null) _db.Progressos.Remove(filme.Progresso);
             if (pertoDoFim) filme.Assistido = true;
-            await _db.SaveChangesAsync();
-            return true;
         }
-
-        if (filme.Progresso is null)
+        else if (filme.Progresso is null)
         {
             _db.Progressos.Add(new ProgressoReproducao
             {
@@ -58,7 +55,13 @@ public class ProgressoService
             filme.Progresso.AtualizadoEm = DateTime.UtcNow;
         }
 
-        await _db.SaveChangesAsync();
+        try { await _db.SaveChangesAsync(); }
+        catch (DbUpdateException)
+        {
+            // Corrida com outro save/concluir do mesmo filme (aba dupla, pagehide + pause).
+            // O próximo tick de progresso corrige — melhor engolir do que 500 no player.
+            _db.ChangeTracker.Clear();
+        }
         return true;
     }
 
