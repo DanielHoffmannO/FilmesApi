@@ -62,6 +62,10 @@ dotnet run --project src/FilmesApi
 
 Requer o **.NET 9 SDK** e `ffmpeg`/`ffprobe` instalados.
 
+```bash
+dotnet test        # MediaNomeParser (nome de arquivo -> série/episódio) + downmix 5.1 do HLS
+```
+
 ---
 
 ## 📁 Organizando sua mídia
@@ -139,6 +143,8 @@ passa de `HlsCacheMaxGB`. Só **1 transcodificação por vez** por padrão (`Max
 
 **Faixa de áudio:** escolhe automaticamente português (`por`/`pt`/`pob`), senão a marcada como
 _default_, senão a primeira. (Rip dual-áudio costuma vir com a faixa errada como default.)
+Sempre reencodada pra **AAC estéreo** (`-ac 2`): AAC 5.1/7.1 sem `channel_layout` reconhecido
+é rejeitado _em silêncio_ pelo decoder do Chrome (MSE/hls.js) — o vídeo não toca e não há erro.
 
 **Legendas:** não são muxadas no HLS. As faixas de **texto** (SRT/ASS/mov_text) são extraídas
 sob demanda pra WebVTT (`/api/filmes/{id}/legenda/{idx}`) e servidas como `<track>`. Legenda
@@ -322,6 +328,8 @@ src/FilmesApi/
 ├── Data/AppDbContext.cs          Filmes + Progressos (SQLite)
 ├── wwwroot/                      index.html · feia.html · tv.html · status.html · vendor/hls.min.js
 └── Program.cs                    DI, pipeline, "auto-migração" no boot
+
+tests/FilmesApi.Tests/          corpus do MediaNomeParser + downmix 5.1→estéreo do HLS
 ```
 
 **Stack:** .NET 9 / ASP.NET Core · EF Core 8 + SQLite · Swashbuckle (Swagger) ·
