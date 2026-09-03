@@ -142,6 +142,21 @@ public class FilmeService
         return true;
     }
 
+    /// <summary>Nome "cru" do arquivo (só troca <c>. _ -</c> por espaço). É o que o título
+    /// vale antes de qualquer limpeza — serve de marcador "ninguém mexeu nisso".</summary>
+    private static string TituloCru(string relativoPath) =>
+        Path.GetFileNameWithoutExtension(relativoPath).Replace('.', ' ').Replace('_', ' ').Replace('-', ' ');
+
+    /// <summary>Título + ano só a partir do nome do arquivo, sem lixo de release
+    /// (<c>720p</c>, <c>x264</c>, <c>DUAL</c>, <c>SxxExx</c>…). Mesmo caminho do
+    /// <see cref="MediaNomeParser.TituloParaBusca"/> — tela e busca no TMDB batem.</summary>
+    private static (string Titulo, int? Ano) DeduzirTitulo(string relativoPath)
+    {
+        var cru = TituloCru(relativoPath);
+        var (limpo, ano) = MediaNomeParser.TituloParaBusca(relativoPath, cru);
+        return (string.IsNullOrWhiteSpace(limpo) ? cru : limpo, ano);
+    }
+
     /// <summary>
     /// Sincroniza o catálogo com a pasta de mídia: importa vídeos novos e remove entradas
     /// cujo arquivo sumiu do disco. Idempotente — rodar de novo não muda nada.
@@ -183,14 +198,28 @@ public class FilmeService
             foreach (var relativo in noDisco)
             {
                 if (existentes.Contains(relativo)) continue;
-                var titulo = Path.GetFileNameWithoutExtension(relativo)
-                    .Replace('.', ' ').Replace('_', ' ').Replace('-', ' ');
-                _db.Filmes.Add(new Filme { Titulo = titulo, ArquivoPath = relativo });
+                var (titulo, ano) = DeduzirTitulo(relativo);
+                _db.Filmes.Add(new Filme { Titulo = titulo, AnoLancamento = ano, ArquivoPath = relativo });
                 novos++;
             }
 
-            if (novos > 0 || removidos > 0) await _db.SaveChangesAsync();
-            return new ScanResultado(novos, removidos);
+            // Re-limpa título de linhas antigas que ainda estão com o nome CRU do arquivo
+            // (ninguém renomeou, o TMDB não tocou) — pra "Breaking.Bad.2011.S04E09.720p.x264"
+            // virar "Breaking Bad". Roda de novo não muda mais nada (título já não é o cru).
+            var limpos = 0;
+            foreach (var filme in noBanco)
+            {
+                if (filme.ArquivoPath is null || !noDisco.Contains(filme.ArquivoPath)) continue;
+                if (filme.Titulo != TituloCru(filme.ArquivoPath)) continue;
+                var (titulo, ano) = DeduzirTitulo(filme.ArquivoPath);
+                if (titulo == filme.Titulo) continue;
+                filme.Titulo = titulo;
+                filme.AnoLancamento ??= ano;
+                limpos++;
+            }
+
+            if (novos > 0 || removidos > 0 || limpos > 0) await _db.SaveChangesAsync();
+            return new ScanResultado(novos, removidos, limpos);
         }
         finally
         {
