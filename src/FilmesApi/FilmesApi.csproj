@@ -7,11 +7,15 @@
     <!-- Expõe os /// <summary> dos controllers no Swagger. 1591 = "falta doc XML" (não queremos em tudo). -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);1591</NoWarn>
+    <!-- O servidor só fala com ffmpeg/SQLite/TMDB usando InvariantCulture e comparações
+         Ordinal (ver MediaNomeParser, ThermalService). Sem ICU: menos ~30 MB de imagem,
+         menos RAM e boot mais rápido no Rock Pi. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.8" />
-    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.5.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.9" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.9.0" />
   </ItemGroup>
 
   <ItemGroup>

@@ -17,7 +17,8 @@ builder.WebHost.ConfigureKestrel(k =>
 
 // ─── Serviços ───────────────────────────────────────────────────────────
 builder.Services.AddDbContext<AppDbContext>(opt =>
-    opt.UseSqlite(builder.Configuration.GetConnectionString("Default") ?? "Data Source=/data/filmes.db"));
+    opt.UseSqlite(builder.Configuration.GetConnectionString("Default") ?? "Data Source=/data/filmes.db")
+       .AddInterceptors(new SqlitePragmaInterceptor()));
 
 builder.Services.AddSingleton(FfmpegOptions.From(builder.Configuration));
 builder.Services.AddSingleton<MediaProbeService>();
@@ -70,12 +71,19 @@ if (builder.Configuration.GetValue<bool>("AllowAnyOrigin"))
 
 var app = builder.Build();
 
-// ─── Boot: auto-migração + poda de cache ────────────────────────────────
+// ─── Boot: auto-migração ────────────────────────────────────────────────
 using (var scope = app.Services.CreateScope())
 {
     DbInitializer.Executar(scope.ServiceProvider.GetRequiredService<AppDbContext>());
-    scope.ServiceProvider.GetRequiredService<HlsTranscodeService>().LimparCacheExcedente();
 }
+
+// Poda do cache HLS fora do caminho de boot: varre até 20 GB de arquivos calculando
+// tamanho, e em SD card isso segurava o start antes de aceitar a primeira request.
+_ = Task.Run(() =>
+{
+    try { app.Services.GetRequiredService<HlsTranscodeService>().LimparCacheExcedente(); }
+    catch (Exception ex) { app.Logger.LogWarning(ex, "Poda inicial do cache HLS falhou."); }
+});
 
 // ─── Pipeline ───────────────────────────────────────────────────────────
 if (app.Configuration.GetValue<bool>("AllowAnyOrigin")) app.UseCors();

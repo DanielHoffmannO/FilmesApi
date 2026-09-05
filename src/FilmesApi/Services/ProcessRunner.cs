@@ -11,8 +11,10 @@ public static class ProcessRunner
     /// <param name="timeout">Prazo máximo — depois disso a árvore de processos é morta.</param>
     /// <param name="travou">Chamado a cada ~2s enquanto o processo roda; se devolver true,
     /// o processo é considerado travado (sem progresso) e morto. Null = só o timeout vale.</param>
+    /// <param name="ct">Cancelado no shutdown do host — mata a árvore de processos em vez de
+    /// deixar o ffmpeg como órfão até o SIGKILL do container.</param>
     public static async Task<(int ExitCode, string Stderr)> ExecutarComTimeoutAsync(
-        ProcessStartInfo psi, TimeSpan timeout, Func<bool>? travou = null)
+        ProcessStartInfo psi, TimeSpan timeout, Func<bool>? travou = null, CancellationToken ct = default)
     {
         psi.UseShellExecute = false;
         psi.RedirectStandardError = true;
@@ -25,7 +27,13 @@ public static class ProcessRunner
 
         while (!proc.HasExited)
         {
-            await Task.Delay(2000);
+            try { await Task.Delay(2000, ct); }
+            catch (OperationCanceledException)
+            {
+                Matar(proc);
+                return (-1, "host encerrando — processo abortado.\n" +
+                            $"--- stderr até aqui ---\n{await StderrParcial(stderrTask)}");
+            }
             if (proc.HasExited) break;
 
             if (DateTime.UtcNow > prazo)
