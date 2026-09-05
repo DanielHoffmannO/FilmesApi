@@ -153,6 +153,7 @@ video { width: 100%; height: auto; background: #000; }
 /* ES5 puro, XMLHttpRequest, sem Promise. Feito pra navegador de smart TV antiga. */
 (function () {
   var API = '/api/filmes';
+  var PLAYER_API = '/api/player';
   var filmes = [];
   var continuar = [];
   var filtroTipo = 'all';   // all | filme | serie
@@ -169,6 +170,14 @@ video { width: 100%; height: auto; background: #000; }
   var reproducaoConcluida = false;  // apos 'ended', nao deixa um save tardio recriar a retomada
   var proximoPendente = null;       // proximo episodio oferecido apos o 'ended'
   var proximoTimer = null;
+
+  // controle remoto pelo celular (mesmo /api/player/* que o tv.html usa). Essa TV
+  // manda estado quando o proprio controle dela seleciona/fecha (tocar/fecharPlayer
+  // abaixo postam pro servidor), e obedece ao celular via pollRemoto().
+  var estadoAnterior = {
+    filmeId: null, playing: false, volume: 1,
+    seekVersion: 0, pararVersion: 0, seekAbsVersion: 0, legendaVersion: 0, legendaIdx: -1
+  };
 
   function get(url, cb) {
     var x = new XMLHttpRequest();
@@ -191,6 +200,13 @@ video { width: 100%; height: auto; background: #000; }
     var x = new XMLHttpRequest();
     x.open(method, url, true);
     x.send();
+  }
+
+  function sendJson(method, url, obj) {
+    var x = new XMLHttpRequest();
+    x.open(method, url, true);
+    x.setRequestHeader('Content-Type', 'application/json');
+    x.send(JSON.stringify(obj));
   }
 
   function esc(s) {
@@ -453,6 +469,68 @@ video { width: 100%; height: auto; background: #000; }
     });
   }
 
+  // aplica a faixa escolhida pelo celular. idx aqui e a POSICAO do <track> no DOM
+  // (mesma convencao do tv.html) — nao o "idx" que a API usa na URL da legenda.
+  function aplicarLegendaRemota(idx) {
+    var v = document.getElementById('video');
+    var tt = v.textTracks;
+    if (!tt) return;
+    for (var i = 0; i < tt.length; i++) tt[i].mode = (i === idx) ? 'showing' : 'disabled';
+  }
+
+  // A cada ~2s manda pro servidor onde o video esta — e assim que a barra de
+  // progresso no celular acompanha o que esta passando nesta TV.
+  function reportarPosicaoRemota() {
+    if (filmeAtual == null) return;
+    var v = document.getElementById('video');
+    sendJson('POST', PLAYER_API + '/posicao', {
+      pos: v.currentTime,
+      dur: (isFinite(v.duration) && v.duration > 0) ? v.duration : 0
+    });
+  }
+
+  // Poll do estado do "controle remoto" (celular manda comando, essa TV obedece).
+  // Encadeado por setTimeout (nao setInterval) pra nunca ter 2 polls em voo ao
+  // mesmo tempo — se a resposta demorar, so agenda o proximo quando essa acabar.
+  function pollRemoto() {
+    get(PLAYER_API + '/state', function (err, estado) {
+      if (!err && estado) aplicarEstadoRemoto(estado);
+      setTimeout(pollRemoto, 1500);
+    });
+  }
+
+  function aplicarEstadoRemoto(estado) {
+    var v = document.getElementById('video');
+
+    if (estado.pararVersion !== estadoAnterior.pararVersion && estado.filmeId === null) {
+      // celular mandou parar — so fecha se essa TV realmente estiver tocando algo
+      // (senao seria eco do proprio fecharPlayer() local, que ja fez isso).
+      if (filmeAtual != null) fecharPlayer();
+    } else if (estado.filmeId !== null && estado.filmeId !== filmeAtual) {
+      // celular selecionou (ou trocou) o filme — mesmo caminho do OK no controle.
+      tocar(estado.filmeId);
+    } else if (estado.filmeId !== null && filmeAtual === estado.filmeId && !proximoPendente && !reproducaoConcluida) {
+      // reproducaoConcluida: sem isso, video.play() num <video> que ja chegou no fim
+      // reinicia do zero (comportamento padrao do navegador) — e o poll ficaria
+      // "revivendo" o filme pra sempre so porque o servidor ainda diz playing=true.
+      if (estado.playing && v.paused) { try { v.play(); } catch (e) {} }
+      if (!estado.playing && !v.paused) v.pause();
+    }
+
+    if (filmeAtual != null) {
+      if (estado.volume !== estadoAnterior.volume) v.volume = estado.volume;
+      if (estado.legendaVersion !== estadoAnterior.legendaVersion) aplicarLegendaRemota(estado.legendaIdx);
+      if (estado.seekVersion !== estadoAnterior.seekVersion) {
+        v.currentTime = Math.max(0, v.currentTime + estado.seekDelta);
+      }
+      if (estado.seekAbsVersion !== estadoAnterior.seekAbsVersion) {
+        try { v.currentTime = Math.max(0, estado.seekAbsPos); } catch (e) {}
+      }
+    }
+
+    estadoAnterior = estado;
+  }
+
   function cancelarProximo() {
     if (proximoTimer) { clearInterval(proximoTimer); proximoTimer = null; }
     proximoPendente = null;
@@ -482,6 +560,9 @@ video { width: 100%; height: auto; background: #000; }
   function tocar(id) {
     cancelarProximo();
     removerLegendas();
+    // avisa o servidor (idempotente: se foi o celular que pediu isso, so confirma) —
+    // e assim o celular ve na hora que essa TV esta com esse filme.
+    send('POST', PLAYER_API + '/selecionar/' + id);
     document.getElementById('list').className = 'hide';
     document.getElementById('player').className = 'on';
     document.body.className = 'playing';
@@ -580,6 +661,7 @@ video { width: 100%; height: auto; background: #000; }
   function fecharPlayer() {
     cancelarProximo();
     removerLegendas();
+    send('POST', PLAYER_API + '/parar');  // idempotente — mesma lógica do tocar()
     // grava o progresso e so entao recarrega a lista, senao o "continuar
     // assistindo" volta antes do PUT e fica desatualizado.
     salvarProgresso(function () { load(); });
@@ -677,6 +759,8 @@ video { width: 100%; height: auto; background: #000; }
 
   configurarProgresso();
   load();
+  setTimeout(pollRemoto, 1500);
+  setInterval(reportarPosicaoRemota, 2000);
 })();
 </script>
 </body>
