@@ -39,6 +39,8 @@ public class HlsTranscodeService
     private readonly ThermalService _thermal;
     private readonly MediaProbeService _probe;
     private readonly ILogger<HlsTranscodeService> _logger;
+    /// <summary>Cancelado no shutdown do host — mata o ffmpeg em vez de deixá-lo órfão.</summary>
+    private readonly CancellationToken _pararToken;
 
     private readonly ConcurrentDictionary<int, Task> _jobs = new();
     /// <summary>filmeId -> quando o transcode falhou. Não é permanente: depois de
@@ -57,8 +59,10 @@ public class HlsTranscodeService
     private (long Bytes, int Itens, DateTime Quando) _cacheStats = (0, 0, DateTime.MinValue);
 
     public HlsTranscodeService(FfmpegOptions ffmpeg, IConfiguration config, RkmppCapabilityService rkmpp,
-        ThermalService thermal, MediaProbeService probe, ILogger<HlsTranscodeService> logger)
+        ThermalService thermal, MediaProbeService probe, ILogger<HlsTranscodeService> logger,
+        IHostApplicationLifetime lifetime)
     {
+        _pararToken = lifetime.ApplicationStopping;
         _cachePath = config.GetValue<string>("HlsCachePath") ?? "/data/hls";
         _ffmpegPath = ffmpeg.Ffmpeg;
         _maxJobs = config.GetValue<int?>("MaxConcurrentTranscodeJobs") ?? 1;
@@ -285,12 +289,21 @@ public class HlsTranscodeService
     private async Task TranscodificarHlsAsync(int filmeId, string origem)
     {
         var dir = DiretorioCache(filmeId);
-        await _slotEncoder.WaitAsync(CancellationToken.None);
+
+        // Espera a placa esfriar ANTES de tomar o slot: com MaxConcurrentTranscodeJobs > 1,
+        // segurar só depois do slot deixaria os dois jobs entrarem e rodarem quentes juntos —
+        // o gate só pegaria o terceiro. Aqui, um job novo não ocupa slot enquanto a placa
+        // está no teto.
+        var slotObtido = false;
         try
         {
-            // Placa quente? Segura aqui — o slot de encode já é nosso, então isso enfileira
-            // naturalmente os próximos jobs e dá tempo de a placa esfriar entre um 4K e outro.
-            await _thermal.AguardarResfriamentoAsync(CancellationToken.None);
+            await _thermal.AguardarResfriamentoAsync(_pararToken);
+            await _slotEncoder.WaitAsync(_pararToken);
+            slotObtido = true;
+
+            // Rechecagem: o slot pode ter demorado a liberar e a placa esquentado de novo
+            // (o job anterior encerrou quente). Barato quando já está fria.
+            await _thermal.AguardarResfriamentoAsync(_pararToken);
 
             // Uma leitura de ffprobe só (cacheada): codec, resolução e faixa de áudio.
             var info = await _probe.InspecionarAsync(origem, CancellationToken.None)
@@ -360,6 +373,15 @@ public class HlsTranscodeService
             if (videoCompativel)
                 try { File.WriteAllText(Path.Combine(dir, MarcadorRemux), ""); } catch (IOException) { }
         }
+        catch (OperationCanceledException)
+        {
+            // Shutdown do host (ou placa quente demais por tempo demais). Não marca _falhas:
+            // fica retentável no próximo boot / próxima abertura.
+            _logger.LogInformation("Transcode do filme {Id} interrompido (host encerrando).", filmeId);
+            try { lock (_decisaoLock) { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); } }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Falha ao transcodificar filme {Id} para HLS.", filmeId);
@@ -372,10 +394,10 @@ public class HlsTranscodeService
         finally
         {
             lock (_decisaoLock) { _jobs.TryRemove(filmeId, out _); }
-            _slotEncoder.Release();
+            if (slotObtido) _slotEncoder.Release();
         }
 
-        LimparCacheExcedente();
+        if (!_pararToken.IsCancellationRequested) LimparCacheExcedente();
     }
 
     /// <summary>Zera o dir de cache antes de uma nova tentativa de encode. Sob o mesmo lock
@@ -502,7 +524,7 @@ public class HlsTranscodeService
             return DateTime.UtcNow - ultimoProgresso > _stallTimeout;
         }
 
-        var (exitCode, stderr) = await ProcessRunner.ExecutarComTimeoutAsync(psi, _jobTimeout, Travou);
+        var (exitCode, stderr) = await ProcessRunner.ExecutarComTimeoutAsync(psi, _jobTimeout, Travou, _pararToken);
         return (exitCode, stderr, orfao);
     }
 

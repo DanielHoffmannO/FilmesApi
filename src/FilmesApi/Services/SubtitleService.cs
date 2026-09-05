@@ -23,11 +23,14 @@ public class SubtitleService
     private readonly MediaProbeService _probe;
     private readonly ILogger<SubtitleService> _logger;
     private readonly SemaphoreSlim _extracao = new(1, 1);
+    private readonly CancellationToken _pararToken;
 
-    public SubtitleService(FfmpegOptions ffmpeg, IConfiguration config, MediaProbeService probe, ILogger<SubtitleService> logger)
+    public SubtitleService(FfmpegOptions ffmpeg, IConfiguration config, MediaProbeService probe,
+        ILogger<SubtitleService> logger, IHostApplicationLifetime lifetime)
     {
         _ffmpegPath = ffmpeg.Ffmpeg;
         _probe = probe;
+        _pararToken = lifetime.ApplicationStopping;
         // Cache próprio, longe do churn do HLS (LimparDir a cada fallback de encode, poda por
         // teto, limpeza pós-restart) — senão o .vtt some e é re-extraído toda hora.
         _cachePath = config.GetValue<string>("SubtitleCachePath") ?? "/data/subs";
@@ -93,7 +96,7 @@ public class SubtitleService
             })
                 psi.ArgumentList.Add(arg);
 
-            var (exit, stderr) = await ProcessRunner.ExecutarComTimeoutAsync(psi, TimeSpan.FromMinutes(3));
+            var (exit, stderr) = await ProcessRunner.ExecutarComTimeoutAsync(psi, TimeSpan.FromMinutes(3), null, _pararToken);
             if (exit != 0 || !File.Exists(destino) || new FileInfo(destino).Length == 0)
             {
                 _logger.LogWarning("Extração da legenda {Idx} do filme {Id} falhou (exit {Exit}): {Err}",
