@@ -129,10 +129,10 @@ video { width: 100%; height: auto; background: #000; }
   color: #fff;
 }
 
-/* aviso/erro — abaixo da barra de cima */
+/* aviso/erro — mais pra baixo, longe da barra de cima e da OSD */
 #pmsg {
   position: absolute;
-  top: 66px; left: 0; right: 0;
+  top: 150px; left: 0; right: 0;
   margin: 0;
   padding: 10px 16px;
   font-size: 22px;
@@ -143,14 +143,14 @@ video { width: 100%; height: auto; background: #000; }
 }
 #pmsg:empty { display: none; }
 
-/* OSD de baixo: barra de progresso grande + tempo. Aparece ao pausar ou ao
-   apertar qualquer tecla, e some sozinha uns segundos depois durante o filme.
-   O <video> nao tem mais "controls" nativo (some/e minusculo em TV velha) —
-   OK pausa, <- -> pulam 15s, e essa barra mostra onde voce esta. */
+/* OSD: barra de progresso grande + tempo, LOGO ABAIXO da barra de cima (nao
+   embaixo — la ficam os controles nativos do <video>, que a TV usa pra tela
+   cheia/volume). Aparece ao pausar ou apertar seta, some sozinha uns segundos
+   depois durante o filme. */
 #posd {
   position: absolute;
-  left: 0; right: 0; bottom: 0;
-  padding: 18px 28px 24px;
+  left: 0; right: 0; top: 62px;
+  padding: 16px 28px 20px;
   background: rgba(0,0,0,.8);
   z-index: 4;
   display: none;
@@ -191,12 +191,11 @@ video { width: 100%; height: auto; background: #000; }
 </div>
 
 <div id="player">
-  <video id="video" autoplay></video>
+  <video id="video" controls autoplay></video>
   <div id="ptop">
     <span id="pclose">&#10005; Voltar</span>
     <span id="ptitle"></span>
   </div>
-  <div id="pmsg"></div>
   <div id="posd">
     <div id="posdbar"><div id="posdfill"></div></div>
     <div id="posdrow">
@@ -204,6 +203,7 @@ video { width: 100%; height: auto; background: #000; }
       <span id="posdhint">&#8592; &#8594; 15s &middot; OK pausa &middot; Vermelho = legenda</span>
     </div>
   </div>
+  <div id="pmsg"></div>
 </div>
 
 <script>
@@ -793,7 +793,7 @@ video { width: 100%; height: auto; background: #000; }
 
     if (playerAtivo) {
       // Durante o filme: <- -> pulam 15s, OK pausa. Qualquer seta tambem reacende a
-      // barra de baixo (OSD). Cima/baixo nao sao capturados — ficam pra TV (volume).
+      // OSD. Cima/baixo ficam com o controle nativo do <video> (volume / foco).
       var v = document.getElementById('video');
 
       // Oferta de proximo episodio na tela: OK assiste agora, resto ignora
@@ -830,8 +830,14 @@ video { width: 100%; height: auto; background: #000; }
         if (e.preventDefault) e.preventDefault(); return false;
       }
       if (k === 13 || k === 32) {
+        // decide o alvo agora e aplica depois de um tiquinho: com "controls"
+        // nativo, o proprio <video> tambem responde ao OK e os dois brigavam.
+        var querPausar = !v.paused;
         if (e.preventDefault) e.preventDefault();
-        if (v.paused) { try { v.play(); } catch (er) {} } else { v.pause(); }
+        setTimeout(function () {
+          if (querPausar && !v.paused) v.pause();
+          else if (!querPausar && v.paused) { try { v.play(); } catch (er) {} }
+        }, 80);
         return false;
       }
       return true;
