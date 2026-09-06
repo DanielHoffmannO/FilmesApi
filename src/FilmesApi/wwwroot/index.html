@@ -4,6 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Filmes</title>
+<script>
+/* ES5 puro, roda ANTES do resto. TV/navegador velho que não tem fetch/Promise/async
+   também não roda esta página (é toda ES6+) — manda pra feia.html, que é feita pra isso. */
+(function () {
+  var temAsync = false;
+  try { new Function('(async function(){})'); temAsync = true; } catch (e) {}
+  if (!window.fetch || !window.Promise || !temAsync) {
+    location.replace('/feia.html');
+  }
+})();
+</script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🎬%3C/text%3E%3C/svg%3E">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
