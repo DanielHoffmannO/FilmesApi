@@ -97,44 +97,75 @@ video { width: 100%; height: auto; background: #000; }
   width: auto; height: auto;
   max-width: 100%; max-height: 100%;
 }
-/* aviso/erro no TOPO — nunca em cima da barra de controle do <video> (que fica embaixo) */
-#pmsg {
+/* Barra de cima: botao Voltar + titulo do que esta tocando. Sempre visivel. */
+#ptop {
   position: absolute;
   top: 0; left: 0; right: 0;
+  padding: 8px 6px;
+  background: rgba(0,0,0,.72);
+  z-index: 4;
+  white-space: nowrap;
+  overflow: hidden;
+}
+/* Botao de voltar SEMPRE visivel: nem toda TV tem tecla "Voltar" com keyCode
+   reconhecido, e quem assiste pelo celular/PC nao tem tecla nenhuma. */
+#pclose {
+  display: inline-block;
+  vertical-align: middle;
+  padding: 10px 20px;
+  font-size: 24px;
+  font-weight: bold;
+  color: #fff;
+  background: rgba(0,0,0,.5);
+  border: 2px solid #666;
+  cursor: pointer;
+}
+#pclose:focus, #pclose:hover { background: #e50914; border-color: #fff; outline: 0; }
+#ptitle {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 16px;
+  font-size: 25px;
+  color: #fff;
+}
+
+/* aviso/erro — abaixo da barra de cima */
+#pmsg {
+  position: absolute;
+  top: 66px; left: 0; right: 0;
   margin: 0;
   padding: 10px 16px;
   font-size: 22px;
   text-align: center;
   color: #ddd;
   background: rgba(0,0,0,.7);
-  z-index: 2;
-}
-#pmsg:empty { display: none; }
-#phint {
-  position: absolute;
-  top: 0; right: 0;
-  padding: 6px 12px;
-  font-size: 18px;
-  color: #aaa;
-  background: rgba(0,0,0,.5);
   z-index: 3;
 }
-/* Botao de voltar SEMPRE visivel: nem toda TV tem tecla "Voltar" com keyCode
-   reconhecido, e quem assiste pelo celular/PC nao tem tecla nenhuma. Canto
-   superior esquerdo — longe dos controles nativos do <video> (embaixo). */
-#pclose {
+#pmsg:empty { display: none; }
+
+/* OSD de baixo: barra de progresso grande + tempo. Aparece ao pausar ou ao
+   apertar qualquer tecla, e some sozinha uns segundos depois durante o filme.
+   O <video> nao tem mais "controls" nativo (some/e minusculo em TV velha) —
+   OK pausa, <- -> pulam 15s, e essa barra mostra onde voce esta. */
+#posd {
   position: absolute;
-  top: 0; left: 0;
-  padding: 12px 22px;
-  font-size: 26px;
-  font-weight: bold;
-  color: #fff;
-  background: rgba(0,0,0,.65);
-  border: 2px solid #666;
-  cursor: pointer;
-  z-index: 5;
+  left: 0; right: 0; bottom: 0;
+  padding: 18px 28px 24px;
+  background: rgba(0,0,0,.8);
+  z-index: 4;
+  display: none;
 }
-#pclose:focus, #pclose:hover { background: #e50914; border-color: #fff; outline: 0; }
+#posd.on { display: block; }
+#posdbar { height: 14px; background: #444; border: 1px solid #777; }
+#posdfill { height: 100%; width: 0; background: #e50914; }
+#posdrow {
+  margin-top: 10px;
+  font-size: 22px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+#posdtime { color: #fff; font-weight: bold; }
+#posdhint { color: #999; margin-left: 22px; }
 </style>
 </head>
 <body>
@@ -160,10 +191,19 @@ video { width: 100%; height: auto; background: #000; }
 </div>
 
 <div id="player">
-  <video id="video" controls autoplay></video>
-  <div id="pclose">&#10005; Voltar</div>
+  <video id="video" autoplay></video>
+  <div id="ptop">
+    <span id="pclose">&#10005; Voltar</span>
+    <span id="ptitle"></span>
+  </div>
   <div id="pmsg"></div>
-  <div id="phint">&#8592; &#8594; 15s &middot; OK pausa &middot; Vermelho = legenda &middot; Voltar = lista</div>
+  <div id="posd">
+    <div id="posdbar"><div id="posdfill"></div></div>
+    <div id="posdrow">
+      <span id="posdtime">0:00 / 0:00</span>
+      <span id="posdhint">&#8592; &#8594; 15s &middot; OK pausa &middot; Vermelho = legenda</span>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -254,6 +294,45 @@ video { width: 100%; height: auto; background: #000; }
     seg = Math.max(0, Math.round(seg || 0));
     var h = Math.floor(seg / 3600), m = Math.round((seg % 3600) / 60);
     return h ? (h + 'h ' + m + 'min') : (m + 'min');
+  }
+
+  // "12:30" / "1:04:07"
+  function mmss(s) {
+    s = Math.max(0, Math.round(s || 0));
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+    var mm = (h && m < 10) ? ('0' + m) : m;
+    return (h ? (h + ':' + mm) : m) + ':' + (ss < 10 ? ('0' + ss) : ss);
+  }
+
+  // titulo pra barra de cima do player, a partir do id (usa o array 'filmes')
+  function tituloDoFilme(id) {
+    var f = null, i;
+    for (i = 0; i < filmes.length; i++) if (filmes[i].id === id) { f = filmes[i]; break; }
+    if (!f) return 'Reproduzindo...';
+    if (f.ehEpisodio) {
+      var t = f.serie + ' · ' + f.rotulo;
+      if (f.titulo && f.titulo !== f.rotulo && !/^[0-9]+$/.test(f.titulo)) t += ' · ' + f.titulo;
+      return t;
+    }
+    return f.titulo + (f.anoLancamento ? ' (' + f.anoLancamento + ')' : '');
+  }
+
+  // OSD de baixo (barra + tempo). persistente=true fica na tela (usado no pause).
+  var osdTimer = null;
+  function mostrarOsd(persistente) {
+    document.getElementById('posd').className = 'on';
+    if (osdTimer) { clearTimeout(osdTimer); osdTimer = null; }
+    if (!persistente) osdTimer = setTimeout(esconderOsd, 4500);
+  }
+  function esconderOsd() {
+    document.getElementById('posd').className = '';
+    if (osdTimer) { clearTimeout(osdTimer); osdTimer = null; }
+  }
+  function atualizarOsd() {
+    var v = document.getElementById('video');
+    var d = isFinite(v.duration) && v.duration > 0 ? v.duration : 0;
+    document.getElementById('posdfill').style.width = d ? (Math.min(100, 100 * v.currentTime / d) + '%') : '0';
+    document.getElementById('posdtime').innerHTML = mmss(v.currentTime) + ' / ' + (d ? mmss(d) : '--:--');
   }
 
   function render() {
@@ -583,15 +662,12 @@ video { width: 100%; height: auto; background: #000; }
     document.getElementById('list').className = 'hide';
     document.getElementById('player').className = 'on';
     document.body.className = 'playing';
+    document.getElementById('ptitle').innerHTML = esc(tituloDoFilme(id));
+    esconderOsd();
     var v = document.getElementById('video');
     var pmsg = document.getElementById('pmsg');
     pmsg.innerHTML = 'Preparando...';
     v.removeAttribute('src');
-
-    // dica dos controles so nos primeiros segundos, pra nao ficar sobre o video
-    var phint = document.getElementById('phint');
-    phint.style.display = 'block';
-    setTimeout(function () { phint.style.display = 'none'; }, 7000);
 
     filmeAtual = id;
     ultimoSalvo = 0;
@@ -640,18 +716,24 @@ video { width: 100%; height: auto; background: #000; }
     var v = document.getElementById('video');
     v.onloadeddata = aplicarRetomada;
     v.oncanplay = aplicarRetomada;
-    v.onseeked = aplicarRetomada;
+    v.onseeked = function () { aplicarRetomada(); atualizarOsd(); };
+    v.onplay = function () { atualizarOsd(); mostrarOsd(false); };
     v.ontimeupdate = function () {
+      atualizarOsd();
       if (filmeAtual == null || v.paused) return;
       var t = (new Date()).getTime();
       if (t - ultimoSalvo < 10000) return;
       ultimoSalvo = t;
       salvarProgresso();
     };
-    v.onpause = function () { salvarProgresso(); };
+    v.onpause = function () {
+      salvarProgresso();
+      if (filmeAtual != null && !reproducaoConcluida) { atualizarOsd(); mostrarOsd(true); }
+    };
     v.onended = function () {
       if (filmeAtual == null) return;
       reproducaoConcluida = true;
+      esconderOsd();
       var idFim = filmeAtual;
       send('POST', API + '/' + idFim + '/concluir');
       ofereceProximo(idFim);
@@ -678,6 +760,7 @@ video { width: 100%; height: auto; background: #000; }
   function fecharPlayer() {
     cancelarProximo();
     removerLegendas();
+    esconderOsd();
     send('POST', PLAYER_API + '/parar');  // idempotente — mesma lógica do tocar()
     // grava o progresso e so entao recarrega a lista, senao o "continuar
     // assistindo" volta antes do PUT e fica desatualizado.
@@ -687,6 +770,7 @@ video { width: 100%; height: auto; background: #000; }
     v.removeAttribute('src');
     try { v.load(); } catch (e) {}
     filmeAtual = null;
+    document.getElementById('ptitle').innerHTML = '';
     document.getElementById('player').className = '';
     document.getElementById('list').className = '';
     document.body.className = '';
@@ -708,8 +792,8 @@ video { width: 100%; height: auto; background: #000; }
     }
 
     if (playerAtivo) {
-      // Nesta TV a navegacao e por seta — durante o filme: <- -> pulam 15s, OK pausa.
-      // Cima/baixo (volume) ficam com o controle nativo do <video>.
+      // Durante o filme: <- -> pulam 15s, OK pausa. Qualquer seta tambem reacende a
+      // barra de baixo (OSD). Cima/baixo nao sao capturados — ficam pra TV (volume).
       var v = document.getElementById('video');
 
       // Oferta de proximo episodio na tela: OK assiste agora, resto ignora
@@ -718,6 +802,8 @@ video { width: 100%; height: auto; background: #000; }
         if (k === 13 || k === 32) { if (e.preventDefault) e.preventDefault(); irProximo(); return false; }
         return true;
       }
+
+      if (k === 37 || k === 38 || k === 39 || k === 40 || k === 13 || k === 32) mostrarOsd(false);
 
       // botao VERMELHO (403 na maioria dos controles): liga/desliga legenda
       if (k === 403) {
@@ -744,14 +830,8 @@ video { width: 100%; height: auto; background: #000; }
         if (e.preventDefault) e.preventDefault(); return false;
       }
       if (k === 13 || k === 32) {
-        // decide o alvo agora e aplica depois de um tiquinho, corrigindo caso o
-        // controle nativo do <video> tambem responda ao OK e fique de briga.
-        var querPausar = !v.paused;
         if (e.preventDefault) e.preventDefault();
-        setTimeout(function () {
-          if (querPausar && !v.paused) v.pause();
-          if (!querPausar && v.paused) { try { v.play(); } catch (er) {} }
-        }, 80);
+        if (v.paused) { try { v.play(); } catch (er) {} } else { v.pause(); }
         return false;
       }
       return true;

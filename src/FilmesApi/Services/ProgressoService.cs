@@ -83,12 +83,15 @@ public class ProgressoService
     /// não roda porque a duração não é confiável durante o transcode.</summary>
     public async Task<bool> ConcluirAsync(int filmeId)
     {
-        var filme = await _db.Filmes.Include(f => f.Progresso).FirstOrDefaultAsync(f => f.Id == filmeId);
-        if (filme is null) return false;
+        if (!await _db.Filmes.AnyAsync(f => f.Id == filmeId)) return false;
 
-        filme.Assistido = true;
-        if (filme.Progresso is not null) _db.Progressos.Remove(filme.Progresso);
-        await _db.SaveChangesAsync();
+        // Bulk update/delete (sem change tracker): o 'ended' costuma disparar junto com um
+        // salvarProgresso, e dois /concluir concorrentes eram DbUpdateConcurrencyException
+        // (linha de progresso já apagada). Assim cada operação é um WHERE idempotente —
+        // apagar 0 linhas é ok.
+        await _db.Filmes.Where(f => f.Id == filmeId)
+            .ExecuteUpdateAsync(s => s.SetProperty(f => f.Assistido, true));
+        await _db.Progressos.Where(p => p.FilmeId == filmeId).ExecuteDeleteAsync();
         return true;
     }
 
