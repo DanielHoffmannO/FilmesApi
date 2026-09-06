@@ -119,6 +119,22 @@ video { width: 100%; height: auto; background: #000; }
   background: rgba(0,0,0,.5);
   z-index: 3;
 }
+/* Botao de voltar SEMPRE visivel: nem toda TV tem tecla "Voltar" com keyCode
+   reconhecido, e quem assiste pelo celular/PC nao tem tecla nenhuma. Canto
+   superior esquerdo — longe dos controles nativos do <video> (embaixo). */
+#pclose {
+  position: absolute;
+  top: 0; left: 0;
+  padding: 12px 22px;
+  font-size: 26px;
+  font-weight: bold;
+  color: #fff;
+  background: rgba(0,0,0,.65);
+  border: 2px solid #666;
+  cursor: pointer;
+  z-index: 5;
+}
+#pclose:focus, #pclose:hover { background: #e50914; border-color: #fff; outline: 0; }
 </style>
 </head>
 <body>
@@ -145,6 +161,7 @@ video { width: 100%; height: auto; background: #000; }
 
 <div id="player">
   <video id="video" controls autoplay></video>
+  <div id="pclose">&#10005; Voltar</div>
   <div id="pmsg"></div>
   <div id="phint">&#8592; &#8594; 15s &middot; OK pausa &middot; Vermelho = legenda &middot; Voltar = lista</div>
 </div>
@@ -681,8 +698,11 @@ video { width: 100%; height: auto; background: #000; }
     var k = e.keyCode;
     var playerAtivo = document.getElementById('player').className === 'on';
 
-    // Voltar (varia por fabricante: 8, 27, 461, 10009, 166)
-    if (k === 8 || k === 27 || k === 461 || k === 10009 || k === 166) {
+    // Voltar: keyCode nas TVs antigas (varia por fabricante: 8, 27, 461, 10009, 166),
+    // e.key nas mais novas (que às vezes mandam keyCode 0). O botao "✕ Voltar" na tela
+    // cobre o resto (TV sem tecla reconhecida, celular, PC).
+    if (k === 8 || k === 27 || k === 461 || k === 10009 || k === 166 ||
+        e.key === 'Escape' || e.key === 'Backspace' || e.key === 'GoBack' || e.key === 'BrowserBack') {
       if (playerAtivo) { fecharPlayer(); if (e.preventDefault) e.preventDefault(); return false; }
       return true;
     }
@@ -756,6 +776,7 @@ video { width: 100%; height: auto; background: #000; }
     var t = e.target || e.srcElement;
     if (t && t.tagName === 'A') { ativar(t); return false; }
   };
+  document.getElementById('pclose').onclick = function () { fecharPlayer(); return false; };
 
   configurarProgresso();
   load();
