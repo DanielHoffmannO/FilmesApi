@@ -107,6 +107,7 @@ main{padding:10px 6px 90px;max-width:760px;margin:0 auto}
       <button class="pmini" onclick="rBriReset()">↺</button>
     </div>
     <div class="pextra">
+      <button id="pZoom" onclick="rZoom()">⛶ Tela cheia</button>
       <button id="pCC" onclick="rCC()" style="display:none">CC</button>
       <button class="prox" id="pProx" onclick="rProximo()" style="display:none">▶ Próximo</button>
       <button class="parar" onclick="rParar()">⏹ Parar</button>
@@ -345,6 +346,7 @@ async function rBri(v) {
   await fetch(`${PLAYER}/brilho`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ valor: Number(v) }) }).catch(() => {});
 }
 function rBriReset() { document.getElementById('pBri').value = 1; rBri(1); }
+async function rZoom() { await fetch(`${PLAYER}/zoom`, { method: 'POST' }).catch(() => {}); poll(); }
 async function scrub(e) {
   const dur = (estado && estado.duracaoSegundos) || 0;
   const r = document.getElementById('pProg').getBoundingClientRect();
@@ -433,6 +435,7 @@ function atualizarPainel() {
   if (document.activeElement !== vol) vol.value = estado.volume;
   const bri = document.getElementById('pBri');
   if (document.activeElement !== bri && estado.brilho != null) bri.value = estado.brilho;
+  document.getElementById('pZoom').textContent = estado.zoom ? '⛶ Restaurar' : '⛶ Tela cheia';
 
   const pos = estado.posSegundos || 0, dur = estado.duracaoSegundos || 0;
   document.getElementById('pProgFill').style.width = dur ? Math.min(100, 100 * pos / dur) + '%' : '0';

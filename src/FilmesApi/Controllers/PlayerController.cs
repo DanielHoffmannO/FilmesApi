@@ -45,6 +45,14 @@ public class PlayerController : ControllerBase
         return Ok(_state.Snapshot());
     }
 
+    /// <summary>Alterna "tela cheia" na TV (o vídeo preenche cortando as barras pretas).</summary>
+    [HttpPost("zoom")]
+    public IActionResult AlternarZoom()
+    {
+        _state.AlternarZoom();
+        return Ok(_state.Snapshot());
+    }
+
     [HttpPost("seek")]
     public IActionResult Seek([FromBody] SeekRequest req)
     {
