@@ -5,13 +5,13 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Filmes</title>
 <script>
-/* ES5 puro, roda ANTES do resto. TV/navegador velho que não tem fetch/Promise/async
-   também não roda esta página (é toda ES6+) — manda pra feia.html, que é feita pra isso. */
+/* ES5 puro, roda ANTES do resto. Navegador de TV antiga não roda esta página (é toda
+   ES6+) — quem abre o servidor numa TV velha quer o receptor, manda pra /tv.html. */
 (function () {
   var temAsync = false;
   try { new Function('(async function(){})'); temAsync = true; } catch (e) {}
   if (!window.fetch || !window.Promise || !temAsync) {
-    location.replace('/feia.html');
+    location.replace('/tv.html');
   }
 })();
 </script>

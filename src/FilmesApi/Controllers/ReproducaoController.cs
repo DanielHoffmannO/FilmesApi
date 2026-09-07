@@ -29,8 +29,8 @@ public partial class ReproducaoController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>"Dá pra tocar o arquivo direto?" — sem disparar transcode. A feia.html
-    /// (TV antiga, que não roda HLS) usa isso pra escolher entre /stream e /original.</summary>
+    /// <summary>"Dá pra tocar o arquivo direto?" — sem disparar transcode. O tv.html numa
+    /// TV antiga (que não roda HLS) usa isso pra escolher entre /stream e /original.</summary>
     [HttpGet("{id:int}/pode-direto")]
     public async Task<IActionResult> PodeDireto(int id, CancellationToken ct)
     {

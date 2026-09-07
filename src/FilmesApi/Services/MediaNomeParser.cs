@@ -17,7 +17,7 @@ public record ClassificacaoMidia(
 
 /// <summary>
 /// Fonte única da classificação série/filme/episódio. Antes essa lógica existia em
-/// triplicata (aqui + index.html + feia.html); agora o servidor computa e as telas só renderizam.
+/// triplicata (aqui + nas telas); agora o servidor computa e as telas só renderizam.
 /// </summary>
 public static partial class MediaNomeParser
 {

@@ -10,6 +10,7 @@ public class PlayerStateService
     private int? _filmeId;
     private bool _playing;
     private double _volume = 1.0;
+    private double _brilho = 1.0;   // filtro CSS brightness() no <video> da TV (não mexe no painel)
     private int _seekVersion;
     private double _seekDelta;
     private int _pararVersion;
@@ -29,6 +30,7 @@ public class PlayerStateService
                 filmeId = _filmeId,
                 playing = _playing,
                 volume = _volume,
+                brilho = _brilho,
                 seekVersion = _seekVersion,
                 seekDelta = _seekDelta,
                 pararVersion = _pararVersion,
@@ -82,6 +84,13 @@ public class PlayerStateService
     public void SetVolume(double volume)
     {
         lock (_lock) { _volume = Math.Clamp(volume, 0, 1); }
+    }
+
+    /// <summary>Brilho do vídeo (filtro <c>brightness()</c> no <c>&lt;video&gt;</c>, não o painel
+    /// da TV — não dá pra mexer nele por navegador). 1.0 = normal. Persiste entre filmes.</summary>
+    public void SetBrilho(double brilho)
+    {
+        lock (_lock) { _brilho = Math.Clamp(brilho, 0.3, 2.0); }
     }
 
     public void Seek(double deltaSegundos)

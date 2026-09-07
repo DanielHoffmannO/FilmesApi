@@ -76,6 +76,7 @@ main{padding:10px 6px 90px;max-width:760px;margin:0 auto}
 .pvol{display:flex;align-items:center;gap:12px}
 .pvol span{font-size:18px}
 .pvol input{flex:1;accent-color:#e50914;height:28px}
+.pmini{background:#1a1a1a;border:1px solid #333;color:#999;border-radius:6px;padding:4px 8px;font-size:13px}
 </style>
 </head>
 <body>
@@ -98,6 +99,12 @@ main{padding:10px 6px 90px;max-width:760px;margin:0 auto}
       <span>🔈</span>
       <input type="range" id="pVol" min="0" max="1" step="0.05" oninput="rVol(this.value)">
       <span>🔊</span>
+    </div>
+    <div class="pvol">
+      <span>🔅</span>
+      <input type="range" id="pBri" min="0.3" max="2" step="0.05" value="1" oninput="rBri(this.value)">
+      <span>🔆</span>
+      <button class="pmini" onclick="rBriReset()">↺</button>
     </div>
     <div class="pextra">
       <button id="pCC" onclick="rCC()" style="display:none">CC</button>
@@ -334,6 +341,10 @@ async function rSeek(d) {
 async function rVol(v) {
   await fetch(`${PLAYER}/volume`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ valor: Number(v) }) }).catch(() => {});
 }
+async function rBri(v) {
+  await fetch(`${PLAYER}/brilho`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ valor: Number(v) }) }).catch(() => {});
+}
+function rBriReset() { document.getElementById('pBri').value = 1; rBri(1); }
 async function scrub(e) {
   const dur = (estado && estado.duracaoSegundos) || 0;
   const r = document.getElementById('pProg').getBoundingClientRect();
@@ -420,6 +431,8 @@ function atualizarPainel() {
   document.getElementById('pPlay').textContent = estado.playing ? '⏸' : '▶';
   const vol = document.getElementById('pVol');
   if (document.activeElement !== vol) vol.value = estado.volume;
+  const bri = document.getElementById('pBri');
+  if (document.activeElement !== bri && estado.brilho != null) bri.value = estado.brilho;
 
   const pos = estado.posSegundos || 0, dur = estado.duracaoSegundos || 0;
   document.getElementById('pProgFill').style.width = dur ? Math.min(100, 100 * pos / dur) + '%' : '0';

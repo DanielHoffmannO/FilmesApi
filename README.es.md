@@ -78,13 +78,17 @@ Extensiones reconocidas: `.mp4 .mkv .avi .mov .wmv .flv .webm`
 
 ## 🖥️ Las pantallas
 
-| URL | Para |
-|---|---|
-| `/` (`index.html`) | Interfaz principal — catálogo con pósters, filtros, series colapsables, continuar, reproductor con subtítulos y próximo-episodio, y una barra flotante para controlar la TV. |
-| `/feia.html` | Interfaz mínima para **smart TVs viejas** (ES5, sin flexbox/grid, navegación por flechas). |
-| `/tv.html` | Lo que corre **en la TV** — sin catálogo, dirigido por el celular vía `/api/player/*`. |
-| `/status.html` | Diagnóstico: temperatura de la placa, cola de transcode, uso del caché HLS, estado de la VPU. |
-| `/swagger` | Documentación interactiva de la API. |
+Cada pantalla tiene **un** rol:
+
+| URL | Dónde | Para |
+|---|---|---|
+| `/` (`index.html`) | celular / PC | **Ver ahí mismo.** Catálogo en lista compacta, búsqueda, filtros, continuar, reproductor con subtítulos y próximo-episodio. No controla ninguna TV. Navegador viejo cae a `/tv.html`. |
+| `/controle.html` | celular | **Solo controla.** Navega el catálogo y comanda lo que suena en la TV (`/api/player/*`) — play/pausa, seek, volumen, brillo, subtítulos, siguiente, parar. Sin `<video>`. |
+| `/tv.html` | la TV | **Recibe y reproduce.** ES5, corre en TV vieja (archivo directo) y nueva (HLS). Espera que `/controle` elija algo. |
+| `/status.html` | — | Diagnóstico: temperatura de la placa, cola de transcode, uso del caché HLS, estado de la VPU. |
+| `/swagger` | — | Documentación interactiva de la API. |
+
+> Una TV por ahora — el estado del reproductor es único (`PlayerStateService`). Descubrimiento / emparejamiento de varias TVs queda para después.
 
 ---
 

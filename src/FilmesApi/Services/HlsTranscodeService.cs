@@ -98,8 +98,8 @@ public class HlsTranscodeService
             _ultimoAcesso[filmeId] = DateTime.UtcNow;
     }
 
-    /// <summary>Só responde "dá pra tocar direto?" sem disparar transcode nenhum — a
-    /// <c>feia.html</c> usa isso pra decidir entre /stream e /original sem esperar HLS.</summary>
+    /// <summary>Só responde "dá pra tocar direto?" sem disparar transcode nenhum — o
+    /// <c>tv.html</c> numa TV antiga usa isso pra decidir entre /stream e /original sem HLS.</summary>
     public Task<bool> PodeStreamDiretoAsync(string arquivoOriginal, CancellationToken ct)
         => EhCompativelAsync(arquivoOriginal, ct);
 
