@@ -114,13 +114,18 @@ Extensões reconhecidas: `.mp4 .mkv .avi .mov .wmv .flv .webm`
 
 ## 🖥️ As telas
 
-| URL | Pra quê |
-|---|---|
-| `/` (`index.html`) | Interface principal — catálogo em lista compacta, busca, filtros (tipo / assistido), pastas e séries colapsáveis, "continuar assistindo", player com legenda e próximo-episódio, e uma barra flutuante pra controlar a TV. |
-| `/feia.html` | Interface mínima pra **smart TV antiga** (ES5, sem flexbox/grid, navegação por setas do controle). Toca o arquivo original direto; botão vermelho liga/desliga legenda. Também obedece ao controle remoto do celular (`/api/player/*`, o mesmo do `tv.html`) — pode navegar direto na TV **ou** mandar pelo celular. |
-| `/tv.html` | O que fica **aberto na TV**. Não tem catálogo — é dirigido pelo celular via `/api/player/*` (selecionar, play/pause, seek, volume, legenda). |
-| `/status.html` | Diagnóstico: temperatura da placa, fila de transcode, uso do cache HLS, estado da VPU. |
-| `/swagger` | Documentação interativa da API. |
+Cada tela tem **um** papel:
+
+| URL | Onde | Pra quê |
+|---|---|---|
+| `/` (`index.html`) | celular / PC | **Assistir ali mesmo.** Catálogo em lista compacta, busca, filtros, "continuar assistindo", player com legenda e próximo-episódio. Não controla TV nenhuma. Navegador velho cai pra `/feia.html`. |
+| `/controle.html` | celular | **Só controla.** Navega o catálogo e comanda o que toca na TV (`/api/player/*`) — play/pause, seek, volume, legenda, próximo, parar. Sem `<video>`. |
+| `/tv.html` | a TV | **Recebe e toca.** ES5, roda em TV antiga (arquivo direto) e moderna (HLS). Fica esperando o `/controle` escolher algo. |
+| `/feia.html` | TV antiga | Catálogo standalone navegável pelo **controle físico da TV** (ES5, setas). Alternativa ao `/tv.html` + `/controle` quando o celular não está por perto. |
+| `/status.html` | — | Diagnóstico: temperatura da placa, fila de transcode, uso do cache HLS, estado da VPU. |
+| `/swagger` | — | Documentação interativa da API. |
+
+> Uma TV só por enquanto — o estado do player é único (`PlayerStateService`). Descoberta / pareamento de várias TVs fica pra depois.
 
 ---
 

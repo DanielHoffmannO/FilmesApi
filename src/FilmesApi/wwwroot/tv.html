@@ -2,288 +2,386 @@
 <html lang="pt-br">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Filmes - TV</title>
+<title>Filmes — TV</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📺%3C/text%3E%3C/svg%3E">
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100%;height:100%;background:#000;overflow:hidden}
-video{width:100%;height:100%;object-fit:contain}
-.msg{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#ccc;font:20px system-ui,sans-serif;text-align:center;padding:24px;white-space:pre-line}
+/* ES5, sem flexbox/grid: roda em TV antiga. So recebe e toca — quem navega e o /controle.html no celular. */
+* { margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; background: #000; color: #fff; overflow: hidden;
+  font-family: Arial, Helvetica, sans-serif; }
+#video { width: 100%; height: 100%; background: #000; }
+#msg {
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  text-align: center; padding: 8%;
+  font-size: 30px; color: #ccc;
+}
+/* centraliza a mensagem sem flexbox */
+#msg span { display: inline-block; margin-top: 20%; white-space: pre-line; }
+#titulo {
+  position: absolute; top: 0; left: 0; right: 0;
+  padding: 14px 24px; font-size: 26px; color: #fff;
+  background: rgba(0,0,0,.6);
+  white-space: nowrap; overflow: hidden;
+}
+#titulo:empty { display: none; }
+#barra {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  height: 8px; background: rgba(255,255,255,.15);
+}
+#barra > div { height: 100%; width: 0; background: #e50914; }
+#barra.hide { display: none; }
 </style>
 </head>
 <body>
+
 <video id="video" autoplay></video>
-<div class="msg" id="msg">Aguardando seleção pelo controle remoto (celular)…</div>
+<div id="titulo"></div>
+<div id="barra" class="hide"><div id="barrafill"></div></div>
+<div id="msg"><span>Abra o <b>/controle</b> no celular pra escolher o que assistir.</span></div>
 
 <script src="/vendor/hls.min.js"></script>
 <script>
-const API = '';
-let estadoAnterior = { filmeId: null, playing: false, volume: 1, seekVersion: 0, pararVersion: 0, seekAbsVersion: 0, legendaVersion: 0, legendaIdx: -1 };
-const video = document.getElementById('video');
-const msg = document.getElementById('msg');
+/* ES5 puro, XMLHttpRequest, sem Promise/arrow/template. */
+(function () {
+  var API = '/api/filmes';
+  var PLAYER = '/api/player';
+  var video = document.getElementById('video');
 
-// Reporta a posição pro celular desenhar a barra de progresso do controle remoto,
-// e serve de keepalive (senão o transcode em andamento é abortado por inatividade).
-setInterval(() => {
-  if (filmeAtual == null || !isFinite(video.currentTime)) return;
-  fetch('/api/player/posicao', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pos: video.currentTime, dur: isFinite(video.duration) ? video.duration : 0 })
-  }).catch(() => {});
-  fetch(`/api/filmes/${filmeAtual}/assistindo`, { method: 'POST' }).catch(() => {});
-}, 2000);
-
-// continuar de onde parou
-let filmeAtual = null, ultimoSalvo = 0, posicaoRetomar = 0, retomarTentativas = 0, hlsRetries = 0;
-// video.duration só é confiável no stream direto; no HLS cresce durante o transcode.
-let duracaoConfiavel = false;
-// depois do 'ended' o /concluir já limpou a retomada — impede um save tardio de recriá-la.
-let reproducaoConcluida = false;
-
-// aplicar só no 'loadedmetadata' não cola (o navegador volta pra 0 depois);
-// 'loadeddata'/'canplay'/'seeked' pegam, e re-tenta se o seek for revertido.
-function aplicarRetomada() {
-  if (!(posicaoRetomar > 5)) return;
-  const dur = video.duration;
-  if (duracaoConfiavel && isFinite(dur) && posicaoRetomar >= dur - 5) { posicaoRetomar = 0; return; }
-  if (Math.abs(video.currentTime - posicaoRetomar) <= 1.5) { posicaoRetomar = 0; return; }
-  if (retomarTentativas++ > 4) { posicaoRetomar = 0; return; }
-  try { video.currentTime = posicaoRetomar; } catch { /* ainda não seekável */ }
-}
-video.addEventListener('loadeddata', aplicarRetomada);
-video.addEventListener('canplay', aplicarRetomada);
-video.addEventListener('seeked', aplicarRetomada);
-video.addEventListener('timeupdate', () => {
-  if (filmeAtual == null || video.paused) return;
-  const t = Date.now();
-  if (t - ultimoSalvo < 10000) return;
-  ultimoSalvo = t;
-  salvarProgresso();
-});
-video.addEventListener('pause', () => salvarProgresso());
-video.addEventListener('ended', () => {
-  if (filmeAtual == null) return;
-  reproducaoConcluida = true;
-  const id = filmeAtual;
-  fetch(`/api/filmes/${id}/concluir`, { method: 'POST', keepalive: true }).catch(() => {});
-  ofereceProximo(id);
-});
-
-// ─── Próximo episódio ────────────────────────────────────────────────
-let proximoTimer = null, aguardandoProximo = false;
-function cancelarProximo() {
-  if (proximoTimer) { clearTimeout(proximoTimer); proximoTimer = null; }
-  aguardandoProximo = false;
-}
-async function ofereceProximo(id) {
-  let prox;
-  try {
-    const r = await fetch(`/api/filmes/${id}/proximo`);
-    if (r.status !== 200) return;
-    prox = await r.json();
-  } catch { return; }
-  if (filmeAtual !== id || !prox) return;
-
-  cancelarProximo();
-  aguardandoProximo = true;  // o poll não deve dar play() no episódio que já acabou
-  try { video.pause(); } catch {}
-  let resta = 8;
-  const tick = () => {
-    mostrarMsg(`Próximo: ${prox.titulo}\nem ${resta}s`);
-    if (resta-- <= 0) {
-      cancelarProximo();
-      fetch(`/api/player/selecionar/${prox.id}`, { method: 'POST' }).catch(() => {});
-    } else {
-      proximoTimer = setTimeout(tick, 1000);
-    }
+  var estadoAnterior = {
+    filmeId: null, playing: false, volume: 1,
+    seekVersion: 0, pararVersion: 0, seekAbsVersion: 0, legendaVersion: 0, legendaIdx: -1
   };
-  tick();
-}
+  var filmeAtual = null;
+  var posicaoRetomar = 0;
+  var retomarTentativas = 0;
+  var ultimoSalvo = 0;
+  var reproducaoConcluida = false;
+  var duracaoConfiavel = false;   // no HLS a duracao cresce durante o transcode
+  var aguardandoProximo = false;  // conta regressiva do proximo episodio rodando
+  var proximoTimer = null;
+  var hls = null;
+  var checarFalhas = 0;
 
-// ─── Legendas (faixa escolhida pelo celular via player state) ─────────
-function removerLegendas() {
-  video.querySelectorAll('track').forEach(t => t.remove());
-}
-async function carregarLegendas(filmeId) {
-  let faixas;
-  try { faixas = await fetch(`/api/filmes/${filmeId}/legendas`).then(r => r.ok ? r.json() : []); }
-  catch { return; }
-  if (filmeAtual !== filmeId) return;
-  removerLegendas();
-  faixas.filter(x => x.convertivel).forEach(x => {
-    const tr = document.createElement('track');
-    tr.kind = 'subtitles';
-    tr.src = `/api/filmes/${filmeId}/legenda/${x.idx}`;
-    tr.srclang = x.idioma || 'und';
-    tr.label = x.titulo || x.idioma || `Legenda ${x.idx + 1}`;
-    video.appendChild(tr);
-  });
-  // Filme novo sempre começa sem legenda (o servidor zera _legendaIdx=-1 em Selecionar);
-  // se o celular pedir CC depois, o canal legendaVersion aplica no poll.
-  aplicarLegenda(-1);
-}
-function aplicarLegenda(idx) {
-  const tt = video.textTracks;
-  for (let i = 0; i < tt.length; i++) tt[i].mode = (i === idx) ? 'showing' : 'disabled';
-}
+  // HLS so se o navegador aguentar. Em TV antiga o hls.min.js nem parseia -> window.Hls
+  // fica undefined e caimos pro arquivo direto/original.
+  var TEM_HLS = (typeof window.Hls !== 'undefined' && window.Hls.isSupported && window.Hls.isSupported())
+    || (video.canPlayType && video.canPlayType('application/vnd.apple.mpegurl') !== '');
 
-function salvarProgresso() {
-  if (filmeAtual == null || reproducaoConcluida || !(video.currentTime > 15)) return;
-  fetch(`/api/filmes/${filmeAtual}/progresso`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+  function get(url, cb) {
+    var x = new XMLHttpRequest();
+    x.open('GET', url, true);
+    x.onreadystatechange = function () {
+      if (x.readyState !== 4) return;
+      if (x.status >= 200 && x.status < 300) {
+        var d = null; try { d = JSON.parse(x.responseText); } catch (e) {}
+        cb(null, d);
+      } else { cb(x.status || 'erro', null); }
+    };
+    x.send();
+  }
+  function send(method, url) {
+    var x = new XMLHttpRequest(); x.open(method, url, true); x.send();
+  }
+  function sendJson(method, url, obj) {
+    var x = new XMLHttpRequest();
+    x.open(method, url, true);
+    x.setRequestHeader('Content-Type', 'application/json');
+    x.send(JSON.stringify(obj));
+  }
+  function esc(s) {
+    s = String(s == null ? '' : s);
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function mostrarMsg(txt) {
+    var m = document.getElementById('msg');
+    m.innerHTML = '<span>' + txt + '</span>';
+    m.style.display = 'block';
+    document.getElementById('barra').className = 'hide';
+  }
+  function esconderMsg() { document.getElementById('msg').style.display = 'none'; }
+
+  // ─── legendas ────────────────────────────────────────────────────────
+  function removerLegendas() {
+    var tr = video.getElementsByTagName('track');
+    while (tr.length) video.removeChild(tr[0]);
+  }
+  function carregarLegendas(id) {
+    get(API + '/' + id + '/legendas', function (err, faixas) {
+      if (err || !faixas || filmeAtual !== id) return;
+      removerLegendas();
+      for (var i = 0; i < faixas.length; i++) {
+        if (!faixas[i].convertivel) continue;
+        var t = document.createElement('track');
+        t.kind = 'subtitles';
+        t.setAttribute('src', API + '/' + id + '/legenda/' + faixas[i].idx);
+        t.setAttribute('srclang', faixas[i].idioma || 'und');
+        t.setAttribute('label', faixas[i].titulo || faixas[i].idioma || ('Legenda ' + (faixas[i].idx + 1)));
+        video.appendChild(t);
+      }
+      aplicarLegenda(-1);
+    });
+  }
+  function aplicarLegenda(idx) {
+    var tt = video.textTracks;
+    if (!tt) return;
+    for (var i = 0; i < tt.length; i++) tt[i].mode = (i === idx) ? 'showing' : 'disabled';
+  }
+
+  // ─── proximo episodio ────────────────────────────────────────────────
+  function cancelarProximo() {
+    if (proximoTimer) { clearInterval(proximoTimer); proximoTimer = null; }
+    aguardandoProximo = false;
+  }
+  function ofereceProximo(id) {
+    get(API + '/' + id + '/proximo', function (err, prox) {
+      if (err || !prox || filmeAtual !== id) return;
+      cancelarProximo();
+      aguardandoProximo = true;
+      try { video.pause(); } catch (e) {}
+      var resta = 8;
+      function tick() {
+        mostrarMsg('Proximo: ' + esc(prox.rotulo || prox.titulo) + '\nem ' + resta + 's');
+        if (resta-- <= 0) {
+          cancelarProximo();
+          send('POST', PLAYER + '/selecionar/' + prox.id);  // o servidor troca o estado -> poll pega
+        }
+      }
+      tick();
+      proximoTimer = setInterval(tick, 1000);
+    });
+  }
+
+  // ─── progresso / retomada ────────────────────────────────────────────
+  function aplicarRetomada() {
+    if (!(posicaoRetomar > 5)) return;
+    var dur = video.duration;
+    if (duracaoConfiavel && isFinite(dur) && posicaoRetomar >= dur - 5) { posicaoRetomar = 0; return; }
+    if (Math.abs(video.currentTime - posicaoRetomar) <= 1.5) { posicaoRetomar = 0; return; }
+    if (retomarTentativas++ > 4) { posicaoRetomar = 0; return; }
+    try { video.currentTime = posicaoRetomar; } catch (e) {}
+  }
+  function salvarProgresso() {
+    if (filmeAtual == null || reproducaoConcluida || !(video.currentTime > 15)) return;
+    sendJson('PUT', API + '/' + filmeAtual + '/progresso', {
       posicao: video.currentTime,
-      duracao: duracaoConfiavel && isFinite(video.duration) && video.duration > 0 ? video.duration : null
-    }),
-    keepalive: true
-  }).catch(() => {});
-}
+      duracao: (duracaoConfiavel && isFinite(video.duration) && video.duration > 0) ? video.duration : null
+    });
+  }
 
-function mostrarMsg(texto) {
-  msg.textContent = texto;
-  msg.style.display = 'flex';
-  video.style.display = 'none';
-}
+  video.onloadeddata = aplicarRetomada;
+  video.oncanplay = aplicarRetomada;
+  video.onseeked = aplicarRetomada;
+  video.ontimeupdate = function () {
+    var d = isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+    if (d) document.getElementById('barrafill').style.width = (Math.min(100, 100 * video.currentTime / d)) + '%';
+    if (filmeAtual == null || video.paused) return;
+    var t = (new Date()).getTime();
+    if (t - ultimoSalvo < 10000) return;
+    ultimoSalvo = t;
+    salvarProgresso();
+  };
+  video.onpause = function () { salvarProgresso(); };
+  video.onended = function () {
+    if (filmeAtual == null) return;
+    reproducaoConcluida = true;
+    var id = filmeAtual;
+    send('POST', API + '/' + id + '/concluir');
+    ofereceProximo(id);
+  };
 
-function mostrarVideo() {
-  msg.style.display = 'none';
-  video.style.display = 'block';
-}
+  // ─── carregar um filme ───────────────────────────────────────────────
+  function destruirHls() { if (hls) { try { hls.destroy(); } catch (e) {} hls = null; } }
 
-// nunca lança: erro transitório vira 'preparando'; muitas falhas seguidas -> 'erro'.
-let checarFalhas = 0;
-async function checarStatus(filmeId) {
-  try {
-    const res = await fetch(`/api/filmes/${filmeId}/stream-status`);
-    if (!res.ok) throw new Error('http ' + res.status);
-    const data = await res.json();
+  function carregarFilme(id) {
+    mostrarMsg('Preparando video...');
+    destruirHls();
+    cancelarProximo();
+    removerLegendas();
+
+    filmeAtual = id;
+    posicaoRetomar = 0;
+    retomarTentativas = 0;
+    ultimoSalvo = 0;
     checarFalhas = 0;
-    return data.status;
-  } catch {
-    return (++checarFalhas > 12) ? 'erro' : 'preparando';
+    reproducaoConcluida = false;
+    duracaoConfiavel = false;
+
+    document.getElementById('titulo').innerHTML = '';
+
+    get(API + '/' + id + '/progresso', function (e0, prog) {
+      if (!e0 && prog && prog.posicaoSegundos) posicaoRetomar = prog.posicaoSegundos;
+      if (filmeAtual !== id) return;
+
+      if (TEM_HLS) prepararComHls(id);
+      else prepararDireto(id);
+    });
   }
-}
 
-let hls = null;
+  // TV antiga: pergunta so "da pra tocar direto?" (nao dispara transcode). Senao, arquivo original.
+  function prepararDireto(id) {
+    get(API + '/' + id + '/pode-direto', function (err, pd) {
+      if (filmeAtual !== id) return;
+      var t = posicaoRetomar > 5 ? Math.floor(posicaoRetomar) : 0;
+      var frag = t ? ('#t=' + t) : '';
+      carregarLegendas(id);
+      if (!err && pd && pd.compativel) {
+        duracaoConfiavel = true;
+        video.src = API + '/' + id + '/stream' + frag;
+      } else {
+        video.src = API + '/' + id + '/original' + frag;
+      }
+      tocarAgora();
+    });
+  }
 
-function destruirHls() {
-  if (hls) { hls.destroy(); hls = null; }
-}
+  // TV moderna / navegador com HLS: usa stream-status (dispara transcode se precisar).
+  function prepararComHls(id) {
+    var inicio = (new Date()).getTime();
+    var prep = setInterval(function () {
+      var s = Math.round(((new Date()).getTime() - inicio) / 1000);
+      mostrarMsg('Preparando video... ' + s + 's' + (s > 45 ? '\n(a primeira vez demora mais)' : ''));
+    }, 1000);
 
-async function carregarFilme(filmeId, ehRetry) {
-  mostrarMsg('Preparando vídeo…');
-  destruirHls();
-  cancelarProximo();
-  removerLegendas();
+    function passo() {
+      get(API + '/' + id + '/stream-status', function (err, data) {
+        if (filmeAtual !== id) { clearInterval(prep); return; }
+        var status = err ? ((++checarFalhas > 12) ? 'erro' : 'preparando') : data.status;
+        if (!err) checarFalhas = 0;
 
-  filmeAtual = filmeId;
-  ultimoSalvo = 0;
-  posicaoRetomar = 0;
-  retomarTentativas = 0;
-  checarFalhas = 0;
-  if (!ehRetry) hlsRetries = 0;  // retry preserva o contador
-  duracaoConfiavel = false;
-  reproducaoConcluida = false;
-  const prog = await fetch(`/api/filmes/${filmeId}/progresso`).then(r => r.ok ? r.json() : null).catch(() => null);
-  if (prog && prog.posicaoSegundos) posicaoRetomar = prog.posicaoSegundos;
+        if (status === 'preparando') { setTimeout(passo, 1500); return; }
+        clearInterval(prep);
 
-  const inicioPrep = Date.now();
-  const prepTimer = setInterval(() => {
-    const s = Math.round((Date.now() - inicioPrep) / 1000);
-    mostrarMsg(`Preparando vídeo… ${s}s` + (s > 45 ? '\n(a primeira vez demora mais)' : ''));
-  }, 1000);
-  let status;
-  try {
-    status = await checarStatus(filmeId);
-    while (status === 'preparando') {
-      await new Promise(r => setTimeout(r, 1500));
-      if (filmeAtual !== filmeId) return;  // celular trocou/parou durante a espera
-      status = await checarStatus(filmeId);
+        if (status === 'erro') { mostrarMsg('Falha ao preparar o video.'); return; }
+
+        var t = posicaoRetomar > 5 ? Math.floor(posicaoRetomar) : 0;
+        carregarLegendas(id);
+
+        if (status === 'compativel') {
+          duracaoConfiavel = true;
+          video.src = API + '/' + id + '/stream' + (t ? ('#t=' + t) : '');
+          tocarAgora();
+          return;
+        }
+        // precisa de HLS
+        var url = API + '/' + id + '/hls/playlist.m3u8';
+        if (typeof window.Hls !== 'undefined' && window.Hls.isSupported()) {
+          hls = new window.Hls(t ? { startPosition: t } : {});
+          hls.loadSource(url);
+          hls.attachMedia(video);
+          hls.on(window.Hls.Events.MANIFEST_PARSED, tocarAgora);
+          hls.on(window.Hls.Events.ERROR, function (_e, d) {
+            if (d && d.fatal && d.type === window.Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
+          });
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = t ? (url + '#t=' + t) : url;
+          tocarAgora();
+        } else {
+          video.src = API + '/' + id + '/original' + (t ? ('#t=' + t) : '');
+          tocarAgora();
+        }
+      });
     }
-  } finally {
-    clearInterval(prepTimer);
-  }
-  if (status === 'erro') {
-    mostrarMsg('Falha ao preparar o vídeo.');
-    return;
+    passo();
   }
 
-  video.volume = estadoAnterior.volume;
-  const t = posicaoRetomar > 5 ? Math.floor(posicaoRetomar) : 0;  // retoma sem pulo
-  carregarLegendas(filmeId);
-
-  if (status === 'compativel') {
-    duracaoConfiavel = true;
-    video.src = `/api/filmes/${filmeId}/stream${t ? `#t=${t}` : ''}`;
-    mostrarVideo();
-    video.play();
-    return;
+  function tocarAgora() {
+    esconderMsg();
+    document.getElementById('barra').className = '';
+    video.volume = estadoAnterior.volume;
+    try { video.load(); } catch (e) {}
+    try {
+      var p = video.play();
+      if (p && p.then) p.then(function () {}, function () {});
+    } catch (e) {}
   }
 
-  const playlistUrl = `/api/filmes/${filmeId}/hls/playlist.m3u8`;
-  if (window.Hls && Hls.isSupported()) {
-    hls = new Hls(t ? { startPosition: t } : {});
-    hls.loadSource(playlistUrl);
-    hls.attachMedia(video);
-    hls.on(Hls.Events.MANIFEST_PARSED, () => { mostrarVideo(); video.play(); });
-    hls.on(Hls.Events.ERROR, (_e, data) => {
-      if (!data.fatal) return;
-      if (data.type === Hls.ErrorTypes.MEDIA_ERROR) { hls.recoverMediaError(); return; }
-      if (data.type === Hls.ErrorTypes.NETWORK_ERROR && filmeAtual === filmeId && hlsRetries++ < 3) {
-        setTimeout(() => { if (filmeAtual === filmeId) carregarFilme(filmeId, true); }, 1500);
+  function pararTudo() {
+    salvarProgresso();
+    cancelarProximo();
+    removerLegendas();
+    destruirHls();
+    filmeAtual = null;
+    try { video.pause(); } catch (e) {}
+    video.removeAttribute('src');
+    try { video.load(); } catch (e) {}
+    document.getElementById('titulo').innerHTML = '';
+    mostrarMsg('Abra o <b>/controle</b> no celular pra escolher o que assistir.');
+  }
+
+  // ─── nome do que esta tocando (some depois de uns segundos) ───────────
+  var tituloTimer = null;
+  function mostrarTitulo(txt) {
+    var el = document.getElementById('titulo');
+    el.innerHTML = esc(txt);
+    if (tituloTimer) clearTimeout(tituloTimer);
+    tituloTimer = setTimeout(function () { document.getElementById('titulo').innerHTML = ''; }, 6000);
+  }
+  function nomeDoFilme(id, cb) {
+    get(API + '/' + id, function (err, f) {
+      if (err || !f) { cb(''); return; }
+      if (f.ehEpisodio) {
+        var t = f.serie + ' · ' + f.rotulo;
+        if (f.titulo && f.titulo !== f.rotulo && !/^[0-9]+$/.test(f.titulo)) t += ' · ' + f.titulo;
+        cb(t);
+      } else {
+        cb(f.titulo + (f.anoLancamento ? ' (' + f.anoLancamento + ')' : ''));
       }
     });
-  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-    video.src = t ? `${playlistUrl}#t=${t}` : playlistUrl;
-    mostrarVideo();
-    video.play();
-  } else {
-    mostrarMsg('Este navegador não suporta HLS.');
   }
-}
 
-async function poll() {
-  try {
-    const res = await fetch('/api/player/state');
-    const estado = await res.json();
+  // ─── poll do estado ──────────────────────────────────────────────────
+  function poll() {
+    get(PLAYER + '/state', function (err, estado) {
+      if (!err && estado) aplicarEstado(estado);
+      setTimeout(poll, 1000);
+    });
+  }
 
+  function aplicarEstado(estado) {
     if (estado.pararVersion !== estadoAnterior.pararVersion && estado.filmeId === null) {
+      if (filmeAtual != null) pararTudo();
+    } else if (estado.filmeId !== null && estado.filmeId !== filmeAtual) {
       salvarProgresso();
-      cancelarProximo();
-      removerLegendas();
-      filmeAtual = null;
-      destruirHls();
-      video.pause();
-      video.removeAttribute('src');
-      mostrarMsg('Aguardando seleção pelo controle remoto (celular)…');
-    } else if (estado.filmeId !== null && estado.filmeId !== estadoAnterior.filmeId) {
-      salvarProgresso();  // guarda o filme anterior antes de trocar
-      await carregarFilme(estado.filmeId);
-    } else if (estado.filmeId !== null && !aguardandoProximo) {
-      if (estado.playing && video.paused) video.play();
+      var novo = estado.filmeId;
+      nomeDoFilme(novo, function (nome) { if (filmeAtual === novo && nome) mostrarTitulo(nome); });
+      carregarFilme(novo);
+    } else if (estado.filmeId !== null && filmeAtual === estado.filmeId && !aguardandoProximo && !reproducaoConcluida) {
+      // retomar = so play(), NUNCA tocarAgora() (que faz load() e volta pro zero)
+      if (estado.playing && video.paused) {
+        try { var pp = video.play(); if (pp && pp.then) pp.then(function () {}, function () {}); } catch (e) {}
+      }
       if (!estado.playing && !video.paused) video.pause();
     }
 
-    if (estado.volume !== estadoAnterior.volume) video.volume = estado.volume;
-    if (estado.legendaVersion !== estadoAnterior.legendaVersion) aplicarLegenda(estado.legendaIdx);
-
-    if (estado.seekVersion !== estadoAnterior.seekVersion) {
-      video.currentTime = Math.max(0, video.currentTime + estado.seekDelta);
-    }
-    if (estado.seekAbsVersion !== estadoAnterior.seekAbsVersion) {
-      try { video.currentTime = Math.max(0, estado.seekAbsPos); } catch { /* ainda não seekável */ }
+    if (filmeAtual != null) {
+      if (estado.volume !== estadoAnterior.volume) video.volume = estado.volume;
+      if (estado.legendaVersion !== estadoAnterior.legendaVersion) aplicarLegenda(estado.legendaIdx);
+      if (estado.seekVersion !== estadoAnterior.seekVersion) {
+        video.currentTime = Math.max(0, video.currentTime + estado.seekDelta);
+      }
+      if (estado.seekAbsVersion !== estadoAnterior.seekAbsVersion) {
+        try { video.currentTime = Math.max(0, estado.seekAbsPos); } catch (e) {}
+      }
     }
 
     estadoAnterior = estado;
-  } catch { /* rede instável, tenta de novo no próximo ciclo */ }
-  finally {
-    setTimeout(poll, 1000);
   }
-}
 
-poll();
+  // reporta a posicao pro /controle desenhar a barra, e serve de keepalive do transcode
+  setInterval(function () {
+    if (filmeAtual == null || !isFinite(video.currentTime)) return;
+    sendJson('POST', PLAYER + '/posicao', {
+      pos: video.currentTime,
+      dur: isFinite(video.duration) ? video.duration : 0
+    });
+    send('POST', API + '/' + filmeAtual + '/assistindo');
+  }, 2000);
+
+  poll();
+})();
 </script>
 </body>
 </html>

@@ -45,8 +45,6 @@ main{padding:16px 24px;max-width:1000px;margin:0 auto}
 .row.assistido .rtit{color:#8a8a8a}
 .row .rprog{position:absolute;left:12px;right:12px;bottom:1px;height:2px;background:#2a2a2a;border-radius:1px;overflow:hidden}
 .row .rprog>div{height:100%;background:#e50914}
-.cast-btn{background:none;border:none;color:#666;font-size:14px;cursor:pointer;padding:2px 4px;line-height:1}
-.cast-btn:hover{color:#fff}
 .grupo{margin-bottom:2px}
 .grupo-hd{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:6px;cursor:pointer;user-select:none;font-size:14px;font-weight:600;color:#ddd}
 .grupo-hd:hover{background:#181818}
@@ -81,16 +79,6 @@ main{padding:16px 24px;max-width:1000px;margin:0 auto}
 .header-links a{color:#888;text-decoration:none}
 .header-links a:hover{color:#fff}
 .scan-msg{position:fixed;bottom:20px;right:20px;background:#2ecc40;color:#000;padding:10px 16px;border-radius:6px;font-size:13px;display:none}
-.remote{position:fixed;left:0;right:0;bottom:0;background:#111;border-top:1px solid #222;padding:10px 16px;display:none;flex-direction:column;gap:8px;z-index:50}
-.remote.active{display:flex}
-.remote-l1{display:flex;align-items:baseline;gap:10px}
-.remote .titulo{font-size:12px;color:#ccc;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.remote-time{font-size:11px;color:#aaa;font-variant-numeric:tabular-nums;white-space:nowrap}
-.remote-prog{height:8px;background:#333;border-radius:4px;cursor:pointer;overflow:hidden}
-.remote-prog-fill{height:100%;background:#e50914;width:0;transition:width .3s linear}
-.remote-l2{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.remote button{padding:8px 12px}
-.remote input[type=range]{width:100px}
 </style>
 </head>
 <body>
@@ -140,20 +128,6 @@ main{padding:16px 24px;max-width:1000px;margin:0 auto}
 
 <script src="/vendor/hls.min.js"></script>
 
-<div class="remote" id="remote">
-  <div class="remote-l1">
-    <span class="titulo" id="remoteTitulo"></span>
-    <span class="remote-time" id="remoteTime"></span>
-  </div>
-  <div class="remote-prog" id="remoteProg" onclick="remoteScrub(event)"><div class="remote-prog-fill" id="remoteProgFill"></div></div>
-  <div class="remote-l2">
-    <button onclick="remoteSeek(-10)">« 10s</button>
-    <button onclick="remotePlayPause()" id="remotePlayPauseBtn">⏸</button>
-    <button onclick="remoteSeek(10)">10s »</button>
-    <button onclick="remoteCC()" id="remoteCCBtn" style="display:none">CC</button>
-    <input type="range" id="remoteVolume" min="0" max="1" step="0.05" oninput="remoteVolume(this.value)">
-    <button onclick="remoteParar()">⏹ Parar</button>
-  </div>
 </div>
 
 <script>
@@ -349,7 +323,6 @@ function rowHtml(f, episodio) {
       ${!episodio && f.anoLancamento ? `<span class="rano">${f.anoLancamento}</span>` : ''}
       ${retomar}
       <span class="badge ${f.assistido ? 'on' : ''}" onclick="event.stopPropagation(); toggleAssistido(${f.id})">${f.assistido ? '✓ Assistido' : 'Marcar'}</span>
-      <button class="cast-btn" title="Enviar para a TV" onclick="event.stopPropagation(); enviarParaTv(${f.id})">📺</button>
       ${barraProgresso(f)}
     </div>`;
 }
@@ -366,7 +339,6 @@ function continuarRowHtml(c) {
     <div class="row" onclick="play(${c.id})" title="${attr(c.titulo)}">
       <span class="rtit">${nome}</span>
       <span class="resume">▶ ${info}</span>
-      <button class="cast-btn" title="Enviar para a TV" onclick="event.stopPropagation(); enviarParaTv(${c.id})">📺</button>
       ${barraProgresso(c)}
     </div>`;
 }
@@ -713,112 +685,6 @@ document.addEventListener('keydown', e => {
 });
 configurarProgresso();
 load();
-
-// ─── Controle remoto (TV) ─────────────────────────────────────────────
-const PLAYER_API = '/api/player';
-let ultimoEstadoRemoto = null;
-let remoteTimer = null;
-
-function mmss(s) {
-  s = Math.max(0, Math.round(s || 0));
-  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
-  return (h ? h + ':' + String(m).padStart(2, '0') : String(m)) + ':' + String(sec).padStart(2, '0');
-}
-
-async function enviarParaTv(id) {
-  await fetch(`${PLAYER_API}/selecionar/${id}`, { method: 'POST' });
-  pollRemote();
-}
-
-async function remotePlayPause() {
-  await fetch(`${PLAYER_API}/play-pause`, { method: 'POST' });
-  pollRemote();
-}
-
-async function remoteSeek(delta) {
-  await fetch(`${PLAYER_API}/seek`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ delta })
-  });
-  pollRemote();
-}
-
-async function remoteScrub(e) {
-  const dur = (ultimoEstadoRemoto && ultimoEstadoRemoto.duracaoSegundos) || 0;
-  const bar = document.getElementById('remoteProg').getBoundingClientRect();
-  if (!dur || !bar.width) return;
-  const frac = Math.max(0, Math.min(1, (e.clientX - bar.left) / bar.width));
-  await fetch(`${PLAYER_API}/seek-abs`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pos: frac * dur })
-  });
-  pollRemote();
-}
-
-async function remoteVolume(valor) {
-  await fetch(`${PLAYER_API}/volume`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ valor: Number(valor) })
-  });
-}
-
-async function remoteParar() {
-  await fetch(`${PLAYER_API}/parar`, { method: 'POST' });
-  pollRemote();
-}
-
-// CC: cicla entre desligado → faixa 0 → faixa 1 → … → desligado, mandando pra TV.
-let remoteLegendas = [], remoteLegendasDe = null;
-async function remoteCarregarLegendas(id) {
-  if (remoteLegendasDe === id) return;
-  remoteLegendasDe = id;
-  try { remoteLegendas = (await fetch(`${API}/${id}/legendas`).then(r => r.json())).filter(x => x.convertivel); }
-  catch { remoteLegendas = []; }
-  document.getElementById('remoteCCBtn').style.display = remoteLegendas.length ? '' : 'none';
-}
-async function remoteCC() {
-  if (!remoteLegendas.length) return;
-  const atual = (ultimoEstadoRemoto && ultimoEstadoRemoto.legendaIdx);
-  const idxAtual = remoteLegendas.findIndex(x => x.idx === atual);
-  const prox = idxAtual + 1 >= remoteLegendas.length ? -1 : remoteLegendas[idxAtual + 1].idx;
-  await fetch(`${PLAYER_API}/legenda`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ idx: prox })
-  });
-  pollRemote();
-}
-
-async function pollRemote() {
-  if (remoteTimer) { clearTimeout(remoteTimer); remoteTimer = null; }
-  try {
-    const res = await fetch(`${PLAYER_API}/state`);
-    const estado = await res.json();
-    ultimoEstadoRemoto = estado;
-
-    const bar = document.getElementById('remote');
-    if (estado.filmeId === null) {
-      bar.classList.remove('active');
-      remoteLegendasDe = null;
-      document.getElementById('remoteCCBtn').style.display = 'none';
-    } else {
-      bar.classList.add('active');
-      remoteCarregarLegendas(estado.filmeId);
-      const f = filmes.find(x => x.id === estado.filmeId);
-      document.getElementById('remoteTitulo').textContent = f ? `📺 ${f.titulo}` : '📺 Reproduzindo…';
-      document.getElementById('remotePlayPauseBtn').textContent = estado.playing ? '⏸' : '▶';
-      document.getElementById('remoteVolume').value = estado.volume;
-      const pos = estado.posSegundos || 0, dur = estado.duracaoSegundos || 0;
-      document.getElementById('remoteProgFill').style.width = dur ? Math.min(100, 100 * pos / dur) + '%' : '0';
-      document.getElementById('remoteTime').textContent = dur ? `${mmss(pos)} / ${mmss(dur)}` : (pos ? mmss(pos) : '');
-    }
-  } catch { /* ignora falha pontual de rede */ }
-  finally {
-    const ativo = document.getElementById('remote').classList.contains('active');
-    remoteTimer = setTimeout(pollRemote, ativo ? 1000 : 3000);
-  }
-}
-
-pollRemote();
 </script>
 </body>
 </html>
