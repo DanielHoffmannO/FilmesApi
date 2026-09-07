@@ -29,9 +29,10 @@ transcodificação sob demanda e aceleração por hardware (VPU do RK3399/RK3588
 - **Continuar de onde parou** — guarda a posição de cada filme e retoma sem pulo.
 - **Próximo episódio** — no fim de um episódio, oferece o próximo da série com contagem regressiva.
 - **Legendas embutidas** — extrai as faixas de texto pra WebVTT e serve como `<track>` (menu CC nativo).
-- **Controle pela TV via celular** — a TV abre uma página "burra" (`tv.html`) e o celular vira o controle.
+- **Celular vira controle remoto** — a TV abre uma página "burra" (`tv.html`), o celular abre
+  `controle.html` e comanda: navegar, play/pause, seek, volume, **brilho do vídeo**, legenda.
 - **Pôster e sinopse** — enriquecimento opcional via [TMDB](https://www.themoviedb.org/).
-- **Três interfaces web** + página de status. Sem app pra instalar.
+- **Três telas web** (assistir / controlar / TV) + página de status. Sem app pra instalar.
 
 ---
 
@@ -118,10 +119,9 @@ Cada tela tem **um** papel:
 
 | URL | Onde | Pra quê |
 |---|---|---|
-| `/` (`index.html`) | celular / PC | **Assistir ali mesmo.** Catálogo em lista compacta, busca, filtros, "continuar assistindo", player com legenda e próximo-episódio. Não controla TV nenhuma. Navegador velho cai pra `/feia.html`. |
-| `/controle.html` | celular | **Só controla.** Navega o catálogo e comanda o que toca na TV (`/api/player/*`) — play/pause, seek, volume, legenda, próximo, parar. Sem `<video>`. |
+| `/` (`index.html`) | celular / PC | **Assistir ali mesmo.** Catálogo em lista compacta, busca, filtros, "continuar assistindo", player com legenda e próximo-episódio. Não controla TV nenhuma. Navegador velho cai pra `/tv.html`. |
+| `/controle.html` | celular | **Só controla.** Navega o catálogo e comanda o que toca na TV (`/api/player/*`) — play/pause, seek, volume, brilho, legenda, próximo, parar. Sem `<video>`. |
 | `/tv.html` | a TV | **Recebe e toca.** ES5, roda em TV antiga (arquivo direto) e moderna (HLS). Fica esperando o `/controle` escolher algo. |
-| `/feia.html` | TV antiga | Catálogo standalone navegável pelo **controle físico da TV** (ES5, setas). Alternativa ao `/tv.html` + `/controle` quando o celular não está por perto. |
 | `/status.html` | — | Diagnóstico: temperatura da placa, fila de transcode, uso do cache HLS, estado da VPU. |
 | `/swagger` | — | Documentação interativa da API. |
 
@@ -280,7 +280,7 @@ filmes ainda sem metadados (roda ~30s depois do boot e reprocessa a cada scan).
 | Método | Rota | Descrição |
 |---|---|---|
 | `GET` | `/api/filmes/{id}/stream-status` | `compativel` / `preparando` / `disponivel` / erro `500`. |
-| `GET` | `/api/filmes/{id}/pode-direto` | `{compativel: bool}` sem disparar transcode (usado pela `feia.html`). |
+| `GET` | `/api/filmes/{id}/pode-direto` | `{compativel: bool}` sem disparar transcode (o `tv.html` numa TV antiga usa). |
 | `GET` | `/api/filmes/{id}/stream` | Stream direto (só quando compatível), com `Range`. |
 | `GET` | `/api/filmes/{id}/original` | Sempre o arquivo original, sem transcodificar (VLC etc.). |
 | `GET` | `/api/filmes/{id}/hls/playlist.m3u8` | Manifesto HLS (dispara/reusa o transcode). `202` enquanto prepara. |
@@ -331,7 +331,7 @@ src/FilmesApi/
 │   └── ProcessRunner.cs          executa ffmpeg com timeout + detector de travamento
 ├── Models/                       entidades EF + DTOs
 ├── Data/AppDbContext.cs          Filmes + Progressos (SQLite)
-├── wwwroot/                      index.html · feia.html · tv.html · status.html · vendor/hls.min.js
+├── wwwroot/                      index.html · controle.html · tv.html · status.html · vendor/hls.min.js
 └── Program.cs                    DI, pipeline, "auto-migração" no boot
 
 tests/FilmesApi.Tests/          corpus do MediaNomeParser + downmix 5.1→estéreo do HLS

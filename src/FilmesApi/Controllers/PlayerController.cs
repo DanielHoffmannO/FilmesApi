@@ -37,6 +37,14 @@ public class PlayerController : ControllerBase
         return Ok(_state.Snapshot());
     }
 
+    /// <summary>Brilho do vídeo na TV (filtro CSS, 0.3–2.0). Não é o brilho do painel.</summary>
+    [HttpPost("brilho")]
+    public IActionResult SetBrilho([FromBody] BrilhoRequest req)
+    {
+        _state.SetBrilho(req.Valor);
+        return Ok(_state.Snapshot());
+    }
+
     [HttpPost("seek")]
     public IActionResult Seek([FromBody] SeekRequest req)
     {

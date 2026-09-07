@@ -79,13 +79,17 @@ Recognized extensions: `.mp4 .mkv .avi .mov .wmv .flv .webm`
 
 ## 🖥️ The screens
 
-| URL | For |
-|---|---|
-| `/` (`index.html`) | Main UI — catalog with posters, filters, collapsible series, resume, player with subtitles and next-episode, plus a floating bar to control the TV. |
-| `/feia.html` | Minimal UI for **old smart TVs** (ES5, no flexbox/grid, D-pad navigation). |
-| `/tv.html` | What runs **on the TV** — no catalog, driven by the phone via `/api/player/*`. |
-| `/status.html` | Diagnostics: board temperature, transcode queue, HLS cache usage, VPU state. |
-| `/swagger` | Interactive API docs. |
+Each screen has **one** job:
+
+| URL | Where | For |
+|---|---|---|
+| `/` (`index.html`) | phone / PC | **Watch here.** Compact-list catalog, search, filters, resume, player with subtitles and next-episode. Doesn't control any TV. Old browsers fall back to `/tv.html`. |
+| `/controle.html` | phone | **Remote only.** Browse the catalog and drive what plays on the TV (`/api/player/*`) — play/pause, seek, volume, brightness, subtitles, next, stop. No `<video>`. |
+| `/tv.html` | the TV | **Receives and plays.** ES5, runs on old TVs (direct file) and new ones (HLS). Waits for `/controle` to pick something. |
+| `/status.html` | — | Diagnostics: board temperature, transcode queue, HLS cache usage, VPU state. |
+| `/swagger` | — | Interactive API docs. |
+
+> One TV for now — the player state is single (`PlayerStateService`). Multi-TV discovery / pairing comes later.
 
 ---
 
