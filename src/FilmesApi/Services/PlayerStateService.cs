@@ -11,6 +11,7 @@ public class PlayerStateService
     private bool _playing;
     private double _volume = 1.0;
     private double _brilho = 1.0;   // filtro CSS brightness() no <video> da TV (não mexe no painel)
+    private bool _zoom;             // true = vídeo preenche a tela cortando as bordas ("tela cheia")
     private int _seekVersion;
     private double _seekDelta;
     private int _pararVersion;
@@ -31,6 +32,7 @@ public class PlayerStateService
                 playing = _playing,
                 volume = _volume,
                 brilho = _brilho,
+                zoom = _zoom,
                 seekVersion = _seekVersion,
                 seekDelta = _seekDelta,
                 pararVersion = _pararVersion,
@@ -91,6 +93,13 @@ public class PlayerStateService
     public void SetBrilho(double brilho)
     {
         lock (_lock) { _brilho = Math.Clamp(brilho, 0.3, 2.0); }
+    }
+
+    /// <summary>Alterna "tela cheia" na TV: o vídeo preenche a tela cortando as barras pretas
+    /// (zoom / object-fit: cover). Persiste entre filmes.</summary>
+    public void AlternarZoom()
+    {
+        lock (_lock) { _zoom = !_zoom; }
     }
 
     public void Seek(double deltaSegundos)
