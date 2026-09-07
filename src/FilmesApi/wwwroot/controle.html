@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0d">
+<title>Controle</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🎛️%3C/text%3E%3C/svg%3E">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,-apple-system,sans-serif;background:#0d0d0d;color:#eee;-webkit-tap-highlight-color:transparent}
+button{font:inherit;cursor:pointer}
+
+/* ─── catálogo ─── */
+header{position:sticky;top:0;background:#111;border-bottom:1px solid #222;padding:10px 14px calc(10px + env(safe-area-inset-top));z-index:10}
+.hrow{display:flex;gap:8px;align-items:center}
+h1{font-size:16px;font-weight:600;flex:1}
+.search{flex:1;background:#1a1a1a;border:1px solid #333;color:#eee;padding:9px 12px;border-radius:20px;font-size:15px;min-width:0}
+.search:focus{outline:none;border-color:#e50914}
+.filters{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.fbtn{background:none;border:1px solid #333;color:#888;padding:5px 11px;border-radius:16px;font-size:12px}
+.fbtn.active{border-color:#e50914;color:#fff}
+
+main{padding:10px 6px 90px;max-width:760px;margin:0 auto}
+.secao-title{font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.5px;margin:16px 8px 4px}
+.secao-title:first-child{margin-top:4px}
+.count{color:#555;font-weight:400}
+.row{display:flex;align-items:center;gap:10px;padding:12px 12px;border-radius:8px;position:relative}
+.row:active{background:#1e1e1e}
+.rtit{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:15px}
+.rep{color:#8a8a8a;font-variant-numeric:tabular-nums;margin-right:8px}
+.rano{font-size:12px;color:#777}
+.resume{font-size:12px;color:#e50914;white-space:nowrap}
+.row.assistido .rtit{color:#8a8a8a}
+.rprog{position:absolute;left:12px;right:12px;bottom:2px;height:2px;background:#2a2a2a;border-radius:1px;overflow:hidden}
+.rprog>div{height:100%;background:#e50914}
+.badge{font-size:11px;color:#888;border:1px solid #333;border-radius:4px;padding:3px 8px;white-space:nowrap}
+.badge.on{background:#2ecc40;color:#000;border-color:#2ecc40}
+.grupo-hd{display:flex;align-items:center;gap:8px;padding:12px;font-size:15px;font-weight:600;color:#ddd;border-radius:8px}
+.grupo-hd:active{background:#1e1e1e}
+.grupo-hd .caret{width:12px;color:#888;font-size:12px}
+.grupo.collapsed .grupo-body{display:none}
+.grupo-body{padding-left:16px}
+.empty{text-align:center;color:#777;padding:60px 20px;font-size:15px}
+.empty .ico{font-size:44px;display:block;margin-bottom:10px;opacity:.6}
+
+/* pílula "tocando na TV" — leva de volta ao controle */
+.nowbar{position:fixed;left:0;right:0;bottom:0;background:#e50914;color:#fff;padding:14px 16px calc(14px + env(safe-area-inset-bottom));display:none;align-items:center;gap:10px;z-index:20;font-size:14px}
+.nowbar.show{display:flex}
+.nowbar .nn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nowbar .np{font-size:20px}
+
+/* ─── painel de controle ─── */
+.painel{position:fixed;inset:0;background:#0d0d0d;z-index:40;display:none;flex-direction:column;padding:calc(12px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom))}
+.painel.show{display:flex}
+.pvoltar{align-self:flex-start;background:#1a1a1a;border:1px solid #333;color:#eee;padding:8px 14px;border-radius:8px;font-size:14px}
+.pcorpo{flex:1;display:flex;flex-direction:column;justify-content:center;gap:22px}
+.ptitulo{font-size:22px;font-weight:600;text-align:center;line-height:1.35}
+.pserie{display:block;font-size:14px;color:#999;font-weight:400;margin-bottom:2px}
+.pconn{text-align:center;font-size:12px;color:#e0a030;min-height:16px}
+
+.pprog{height:10px;background:#2a2a2a;border-radius:5px;overflow:hidden}
+.pprog>div{height:100%;background:#e50914;width:0}
+.ptempo{display:flex;justify-content:space-between;font-size:13px;color:#aaa;font-variant-numeric:tabular-nums;margin-top:8px}
+
+.ptransport{display:flex;align-items:center;justify-content:center;gap:14px}
+.ptransport button{background:#1a1a1a;border:1px solid #333;color:#fff;border-radius:50%;font-size:20px}
+.pskip{width:64px;height:64px}
+.pplay{width:88px;height:88px;font-size:34px;background:#e50914;border-color:#e50914}
+
+.pextra{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.pextra button{background:#1a1a1a;border:1px solid #333;color:#ddd;padding:11px 16px;border-radius:10px;font-size:14px}
+.pextra button.parar{border-color:#733;color:#f88}
+.pextra button.prox{background:#e50914;border-color:#e50914;color:#fff}
+
+.pvol{display:flex;align-items:center;gap:12px}
+.pvol span{font-size:18px}
+.pvol input{flex:1;accent-color:#e50914;height:28px}
+</style>
+</head>
+<body>
+
+<div class="painel" id="painel">
+  <button class="pvoltar" onclick="verCatalogo()">‹ Catálogo</button>
+  <div class="pcorpo">
+    <div class="ptitulo" id="pTitulo"><span class="pserie" id="pSerie"></span><span id="pNome">—</span></div>
+    <div class="pconn" id="pConn"></div>
+    <div>
+      <div class="pprog" id="pProg" onclick="scrub(event)"><div id="pProgFill"></div></div>
+      <div class="ptempo"><span id="pCur">0:00</span><span id="pDur">0:00</span></div>
+    </div>
+    <div class="ptransport">
+      <button class="pskip" onclick="rSeek(-10)">«10</button>
+      <button class="pplay" id="pPlay" onclick="rPlayPause()">⏸</button>
+      <button class="pskip" onclick="rSeek(10)">10»</button>
+    </div>
+    <div class="pvol">
+      <span>🔈</span>
+      <input type="range" id="pVol" min="0" max="1" step="0.05" oninput="rVol(this.value)">
+      <span>🔊</span>
+    </div>
+    <div class="pextra">
+      <button id="pCC" onclick="rCC()" style="display:none">CC</button>
+      <button class="prox" id="pProx" onclick="rProximo()" style="display:none">▶ Próximo</button>
+      <button class="parar" onclick="rParar()">⏹ Parar</button>
+    </div>
+  </div>
+</div>
+
+<header>
+  <div class="hrow">
+    <input class="search" id="busca" type="search" placeholder="Buscar…" oninput="render()">
+    <button class="fbtn" onclick="carregar()" title="Recarregar">↻</button>
+  </div>
+  <div class="filters" id="filters">
+    <button class="fbtn active" data-g="tipo" data-v="all">Tudo</button>
+    <button class="fbtn" data-g="tipo" data-v="filme">Filmes</button>
+    <button class="fbtn" data-g="tipo" data-v="serie">Séries</button>
+    <button class="fbtn active" data-g="visto" data-v="all">Todos</button>
+    <button class="fbtn" data-g="visto" data-v="nao-assistido">Não vistos</button>
+  </div>
+</header>
+
+<main>
+  <div id="grid"></div>
+  <div class="empty" id="empty" style="display:none"></div>
+</main>
+
+<div class="nowbar" id="nowbar" onclick="verControle()">
+  <span class="np">📺</span>
+  <span class="nn" id="nowNome">Reproduzindo…</span>
+  <span>controlar ›</span>
+</div>
+
+<script>
+const API = '/api/filmes';
+const PLAYER = '/api/player';
+let filmes = [], continuar = [];
+let filtroTipo = 'all', filtroVisto = 'all';
+const abertos = new Set();
+let estado = null;              // último /api/player/state
+let verCat = false;            // usuário voltou ao catálogo com algo tocando
+let legendas = [], legendasDe = null;
+let ultimaPos = -1, ultimaPosEm = 0;   // p/ detectar "TV não responde"
+
+const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const attr = s => esc(s).replace(/"/g, '&quot;');
+const pad2 = n => String(n).padStart(2, '0');
+
+function mmss(s) {
+  s = Math.max(0, Math.round(s || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  return (h ? h + ':' + pad2(m) : String(m)) + ':' + pad2(sec);
+}
+function formatarTempo(seg) {
+  seg = Math.max(0, Math.round(seg || 0));
+  const h = Math.floor(seg / 3600), m = Math.round((seg % 3600) / 60);
+  return h ? `${h}h${m}min` : `${m}min`;
+}
+function pct(item) {
+  if (!item.posicaoSegundos || !item.duracaoSegundos) return 0;
+  return Math.min(100, Math.round(100 * item.posicaoSegundos / item.duracaoSegundos));
+}
+function tituloEpisodio(f) {
+  let s = String(f.titulo || '')
+    .replace(/\bS\d{1,2}\s*E\d{1,3}\b/ig, ' ')
+    .replace(/^\s*\d{1,3}[\s.\-–—):\]]+/, '')
+    .replace(/\s+/g, ' ').trim();
+  if (f.serie && s.toLowerCase() === f.serie.toLowerCase()) s = '';
+  return s;
+}
+
+// ─── catálogo ────────────────────────────────────────────────────────
+async function carregar() {
+  try {
+    const [rF, rC] = await Promise.all([fetch(API), fetch(`${API}/continuar`)]);
+    filmes = rF.ok ? await rF.json() : [];
+    continuar = rC.ok ? await rC.json() : [];
+    render();
+  } catch {
+    document.getElementById('empty').textContent = 'Sem conexão com o servidor.';
+    document.getElementById('empty').style.display = 'block';
+  }
+}
+
+function render() {
+  const grid = document.getElementById('grid'), empty = document.getElementById('empty');
+  const q = document.getElementById('busca').value.trim().toLowerCase();
+  const filtered = filmes.filter(f => {
+    if (filtroVisto === 'nao-assistido' && f.assistido) return false;
+    if (filtroTipo === 'filme' && f.ehEpisodio) return false;
+    if (filtroTipo === 'serie' && !f.ehEpisodio) return false;
+    if (q && !((f.titulo + ' ' + (f.serie || '') + ' ' + (f.pasta || '')).toLowerCase().includes(q))) return false;
+    return true;
+  });
+
+  if (!filtered.length) {
+    grid.innerHTML = '';
+    empty.innerHTML = filmes.length
+      ? `<span class="ico">🔍</span>Nada encontrado.`
+      : `<span class="ico">🎬</span>Catálogo vazio.`;
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  const porPasta = new Map();
+  for (const f of filmes) porPasta.set(f.pasta, (porPasta.get(f.pasta) || 0) + 1);
+
+  const soltos = [], pastas = new Map(), series = new Map();
+  const push = (m, k, v) => { (m.get(k) || m.set(k, []).get(k)).push(v); };
+  for (const f of filtered) {
+    if (f.ehEpisodio) { push(series, f.serie, f); continue; }
+    if (f.pasta !== 'Sem pasta' && porPasta.get(f.pasta) > 1) push(pastas, f.pasta, f);
+    else soltos.push(f);
+  }
+  for (const [p, itens] of pastas) {
+    const princ = itens.filter(f => !f.ehExtra);
+    if (princ.length === 1) { soltos.push(princ[0]); pastas.delete(p); }
+  }
+  soltos.sort((a, b) => a.titulo.localeCompare(b.titulo, 'pt-BR'));
+  for (const arr of series.values())
+    arr.sort((a, b) => (a.temporada - b.temporada) || (a.episodio - b.episodio)
+      || a.titulo.localeCompare(b.titulo, 'pt-BR', { numeric: true }));
+
+  const grupo = (key, label, rows) => {
+    const ab = abertos.has(key);
+    return `<div class="grupo ${ab ? '' : 'collapsed'}" data-key="${attr(key)}">
+      <div class="grupo-hd" onclick="toggleGrupo(this)"><span class="caret">${ab ? '▾' : '▸'}</span>${label}</div>
+      <div class="grupo-body">${rows}</div></div>`;
+  };
+
+  const contVis = continuar.filter(c => {
+    if (!q) return true;
+    const f = filmes.find(x => x.id === c.id);
+    return (c.titulo + ' ' + (f ? (f.serie || '') : '')).toLowerCase().includes(q);
+  });
+
+  let html = '';
+  if (filtroTipo === 'all' && filtroVisto === 'all' && contVis.length) {
+    html += `<div class="secao-title">▶ Continuar <span class="count">(${contVis.length})</span></div>`;
+    html += contVis.map(contRow).join('');
+  }
+
+  const totF = soltos.length + [...pastas.values()].reduce((s, a) => s + a.length, 0);
+  if (totF) {
+    html += `<div class="secao-title">🎬 Filmes <span class="count">(${totF})</span></div>`;
+    html += soltos.map(f => row(f)).join('');
+    html += [...pastas.keys()].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(p =>
+      grupo('f:' + p, `📁 ${esc(p)} <span class="count">(${pastas.get(p).length})</span>`,
+        pastas.get(p).map(f => row(f)).join(''))).join('');
+  }
+
+  const nomes = [...series.keys()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  if (nomes.length) {
+    html += `<div class="secao-title">📺 Séries <span class="count">(${nomes.length})</span></div>`;
+    html += nomes.map(n => {
+      const itens = series.get(n);
+      return grupo('s:' + n, `${esc(n)} <span class="count">(${itens.length} ${itens.length === 1 ? 'ep' : 'eps'})</span>`,
+        itens.map(f => row(f, true)).join(''));
+    }).join('');
+  }
+  grid.innerHTML = html;
+}
+
+function toggleGrupo(el) {
+  const g = el.parentNode;
+  g.classList.toggle('collapsed');
+  const ab = !g.classList.contains('collapsed');
+  ab ? abertos.add(g.dataset.key) : abertos.delete(g.dataset.key);
+  el.querySelector('.caret').textContent = ab ? '▾' : '▸';
+}
+
+function row(f, ep) {
+  const ret = f.posicaoSegundos ? `<span class="resume">▶ ${formatarTempo(f.posicaoSegundos)}</span>` : '';
+  let tit;
+  if (ep) {
+    const cod = f.temporada != null ? `S${pad2(f.temporada)}E${pad2(f.episodio)}` : (f.rotulo || '');
+    const nome = tituloEpisodio(f);
+    tit = (cod || nome) ? `${cod ? `<span class="rep">${esc(cod)}</span>` : ''}${esc(nome)}` : esc(f.titulo);
+  } else {
+    tit = esc(f.titulo);
+  }
+  const prog = pct(f) ? `<div class="rprog"><div style="width:${pct(f)}%"></div></div>` : '';
+  return `<div class="row ${f.assistido ? 'assistido' : ''}" onclick="selecionar(${f.id})">
+    <span class="rtit">${tit}</span>
+    ${!ep && f.anoLancamento ? `<span class="rano">${f.anoLancamento}</span>` : ''}
+    ${ret}
+    <span class="badge ${f.assistido ? 'on' : ''}" onclick="event.stopPropagation();marcar(${f.id})">${f.assistido ? '✓' : '○'}</span>
+    ${prog}</div>`;
+}
+function contRow(c) {
+  const f = filmes.find(x => x.id === c.id);
+  const nome = (f && f.ehEpisodio)
+    ? `<span class="rep">${esc(f.serie)} · S${pad2(f.temporada)}E${pad2(f.episodio)}</span>${esc(tituloEpisodio(f))}`
+    : esc(c.titulo);
+  const info = c.duracaoSegundos ? `${pct(c)}%` : formatarTempo(c.posicaoSegundos);
+  const prog = pct(c) ? `<div class="rprog"><div style="width:${pct(c)}%"></div></div>` : '';
+  return `<div class="row" onclick="selecionar(${c.id})">
+    <span class="rtit">${nome}</span><span class="resume">▶ ${info}</span>${prog}</div>`;
+}
+
+async function marcar(id) {
+  await fetch(`${API}/${id}/assistido`, { method: 'PUT' });
+  const f = filmes.find(x => x.id === id);
+  if (f) f.assistido = !f.assistido;
+  render();
+}
+
+document.getElementById('filters').addEventListener('click', e => {
+  const b = e.target.closest('.fbtn');
+  if (!b || !b.dataset.g) return;
+  document.querySelectorAll(`.fbtn[data-g="${b.dataset.g}"]`).forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  if (b.dataset.g === 'tipo') filtroTipo = b.dataset.v; else filtroVisto = b.dataset.v;
+  render();
+});
+
+// ─── controle ────────────────────────────────────────────────────────
+async function selecionar(id) {
+  verCat = false;
+  await fetch(`${PLAYER}/selecionar/${id}`, { method: 'POST' }).catch(() => {});
+  ultimaPos = -1; ultimaPosEm = Date.now();
+  poll();
+}
+function verCatalogo() { verCat = true; aplicarUI(); }
+function verControle() { verCat = false; aplicarUI(); }
+
+async function rPlayPause() { await fetch(`${PLAYER}/play-pause`, { method: 'POST' }).catch(() => {}); poll(); }
+async function rSeek(d) {
+  await fetch(`${PLAYER}/seek`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ delta: d }) }).catch(() => {});
+  poll();
+}
+async function rVol(v) {
+  await fetch(`${PLAYER}/volume`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ valor: Number(v) }) }).catch(() => {});
+}
+async function scrub(e) {
+  const dur = (estado && estado.duracaoSegundos) || 0;
+  const r = document.getElementById('pProg').getBoundingClientRect();
+  if (!dur || !r.width) return;
+  const frac = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+  await fetch(`${PLAYER}/seek-abs`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pos: frac * dur }) }).catch(() => {});
+  poll();
+}
+async function rParar() {
+  await fetch(`${PLAYER}/parar`, { method: 'POST' }).catch(() => {});
+  verCat = false;
+  poll();
+}
+async function rProximo() {
+  if (!estado || estado.filmeId == null) return;
+  try {
+    const r = await fetch(`${API}/${estado.filmeId}/proximo`);
+    if (r.status !== 200) return;
+    const prox = await r.json();
+    await fetch(`${PLAYER}/selecionar/${prox.id}`, { method: 'POST' });
+    ultimaPos = -1; ultimaPosEm = Date.now();
+    poll();
+  } catch {}
+}
+
+async function carregarLegendas(id) {
+  if (legendasDe === id) return;
+  legendasDe = id;
+  try { legendas = (await fetch(`${API}/${id}/legendas`).then(r => r.json())).filter(x => x.convertivel); }
+  catch { legendas = []; }
+  document.getElementById('pCC').style.display = legendas.length ? '' : 'none';
+}
+async function rCC() {
+  if (!legendas.length) return;
+  const atual = estado ? estado.legendaIdx : -1;
+  const i = legendas.findIndex(x => x.idx === atual);
+  const prox = (i + 1 >= legendas.length) ? -1 : legendas[i + 1].idx;
+  await fetch(`${PLAYER}/legenda`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idx: prox }) }).catch(() => {});
+  poll();
+}
+
+function nomeDe(id) {
+  const f = filmes.find(x => x.id === id);
+  if (!f) return { serie: '', nome: 'Reproduzindo…' };
+  if (f.ehEpisodio) {
+    const cod = f.temporada != null ? `S${pad2(f.temporada)}E${pad2(f.episodio)}` : (f.rotulo || '');
+    const n = tituloEpisodio(f);
+    return { serie: f.serie, nome: (cod + (n ? ' · ' + n : '')) || f.titulo };
+  }
+  return { serie: '', nome: f.titulo + (f.anoLancamento ? ` (${f.anoLancamento})` : '') };
+}
+
+let pollTimer = null;
+async function poll() {
+  if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+  try {
+    estado = await fetch(`${PLAYER}/state`).then(r => r.json());
+    if (estado.filmeId != null) {
+      carregarLegendas(estado.filmeId);
+      const pos = estado.posSegundos || 0;
+      if (pos !== ultimaPos) { ultimaPos = pos; ultimaPosEm = Date.now(); }
+    }
+    atualizarPainel();
+    aplicarUI();
+  } catch {}
+  const ativo = estado && estado.filmeId != null;
+  pollTimer = setTimeout(poll, ativo ? 1000 : 3000);
+}
+
+function aplicarUI() {
+  const tocando = estado && estado.filmeId != null;
+  document.getElementById('painel').classList.toggle('show', tocando && !verCat);
+  document.getElementById('nowbar').classList.toggle('show', tocando && verCat);
+  if (tocando && verCat) {
+    document.getElementById('nowNome').textContent = nomeDe(estado.filmeId).nome;
+  }
+}
+
+function atualizarPainel() {
+  if (!estado || estado.filmeId == null) return;
+  const { serie, nome } = nomeDe(estado.filmeId);
+  document.getElementById('pSerie').textContent = serie;
+  document.getElementById('pNome').textContent = nome;
+  document.getElementById('pPlay').textContent = estado.playing ? '⏸' : '▶';
+  const vol = document.getElementById('pVol');
+  if (document.activeElement !== vol) vol.value = estado.volume;
+
+  const pos = estado.posSegundos || 0, dur = estado.duracaoSegundos || 0;
+  document.getElementById('pProgFill').style.width = dur ? Math.min(100, 100 * pos / dur) + '%' : '0';
+  document.getElementById('pCur').textContent = mmss(pos);
+  document.getElementById('pDur').textContent = dur ? mmss(dur) : '--:--';
+
+  // "a TV pegou?" — se está tocando mas a posição não anda há >12s
+  const conn = document.getElementById('pConn');
+  if (estado.playing && Date.now() - ultimaPosEm > 12000) {
+    conn.textContent = '⚠ A TV não respondeu. Abra /tv nela.';
+  } else if (dur === 0 && Date.now() - ultimaPosEm > 8000) {
+    conn.textContent = '⏳ esperando a TV…';
+  } else {
+    conn.textContent = '';
+  }
+
+  // botão "próximo" só pra episódio
+  const f = filmes.find(x => x.id === estado.filmeId);
+  document.getElementById('pProx').style.display = (f && f.ehEpisodio) ? '' : 'none';
+}
+
+carregar();
+poll();
+setInterval(() => { if (!estado || estado.filmeId == null) carregar(); }, 20000);
+</script>
+</body>
+</html>
