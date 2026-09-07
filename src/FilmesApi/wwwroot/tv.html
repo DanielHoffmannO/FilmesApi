@@ -94,6 +94,7 @@ html, body { width: 100%; height: 100%; background: #000; color: #fff; overflow:
   var proximoTimer = null;
   var hls = null;
   var checarFalhas = 0;
+  var hlsRetries = 0;
 
   // HLS so se o navegador aguentar. Em TV antiga o hls.min.js nem parseia -> window.Hls
   // fica undefined e caimos pro arquivo direto/original.
@@ -232,6 +233,12 @@ html, body { width: 100%; height: 100%; background: #000; color: #fff; overflow:
     cancelarProximo();
     removerLegendas();
 
+    // esvazia o <video> do filme anterior ANTES de carregar o novo — senao o
+    // src/MediaSource velho briga com o novo e a troca so pega depois de um F5.
+    try { video.pause(); } catch (e) {}
+    video.removeAttribute('src');
+    try { video.load(); } catch (e) {}
+
     filmeAtual = id;
     posicaoRetomar = 0;
     retomarTentativas = 0;
@@ -300,12 +307,18 @@ html, body { width: 100%; height: 100%; background: #000; color: #fff; overflow:
         var url = API + '/' + id + '/hls/playlist.m3u8';
         if (typeof window.Hls !== 'undefined' && window.Hls.isSupported()) {
           hls = new window.Hls(t ? { startPosition: t } : {});
-          hls.loadSource(url);
-          hls.attachMedia(video);
+          // listeners ANTES do loadSource: manifesto em cache pode parsear antes.
           hls.on(window.Hls.Events.MANIFEST_PARSED, tocarAgora);
           hls.on(window.Hls.Events.ERROR, function (_e, d) {
-            if (d && d.fatal && d.type === window.Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
+            if (!d || !d.fatal || filmeAtual !== id) return;
+            if (d.type === window.Hls.ErrorTypes.MEDIA_ERROR) { hls.recoverMediaError(); return; }
+            // erro fatal de rede: segmento sumiu (transcode reiniciou) — recarrega o filme.
+            if (d.type === window.Hls.ErrorTypes.NETWORK_ERROR && hlsRetries++ < 3) {
+              setTimeout(function () { if (filmeAtual === id) carregarFilme(id); }, 1500);
+            }
           });
+          hls.attachMedia(video);
+          hls.loadSource(url);
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
           video.src = t ? (url + '#t=' + t) : url;
           tocarAgora();
@@ -324,7 +337,8 @@ html, body { width: 100%; height: 100%; background: #000; color: #fff; overflow:
     video.volume = estadoAnterior.volume;
     aplicarBrilho(estadoAnterior.brilho);
     aplicarZoomClasse(estadoAnterior.zoom);
-    try { video.load(); } catch (e) {}
+    // NUNCA video.load() com hls.js ativo — derruba o MediaSource e trava. No caminho
+    // direto o <video> ja carrega sozinho quando o src muda.
     try {
       var p = video.play();
       if (p && p.then) p.then(function () {}, function () {});
@@ -379,10 +393,11 @@ html, body { width: 100%; height: 100%; background: #000; color: #fff; overflow:
     } else if (estado.filmeId !== null && estado.filmeId !== filmeAtual) {
       salvarProgresso();
       var novo = estado.filmeId;
+      hlsRetries = 0;   // filme novo, zera o contador de retry de rede do HLS
       nomeDoFilme(novo, function (nome) { if (filmeAtual === novo && nome) mostrarTitulo(nome); });
       carregarFilme(novo);
     } else if (estado.filmeId !== null && filmeAtual === estado.filmeId && !aguardandoProximo && !reproducaoConcluida) {
-      // retomar = so play(), NUNCA tocarAgora() (que faz load() e volta pro zero)
+      // retomar = so play() (nunca recarrega o filme do zero)
       if (estado.playing && video.paused) {
         try { var pp = video.play(); if (pp && pp.then) pp.then(function () {}, function () {}); } catch (e) {}
       }
