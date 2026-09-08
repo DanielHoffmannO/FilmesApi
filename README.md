@@ -29,10 +29,10 @@ transcodificação sob demanda e aceleração por hardware (VPU do RK3399/RK3588
 - **Continuar de onde parou** — guarda a posição de cada filme e retoma sem pulo.
 - **Próximo episódio** — no fim de um episódio, oferece o próximo da série com contagem regressiva.
 - **Legendas embutidas** — extrai as faixas de texto pra WebVTT e serve como `<track>` (menu CC nativo).
-- **Celular vira controle remoto** — a TV abre uma página "burra" (`tv.html`), o celular abre
-  `controle.html` e comanda: navegar, play/pause, seek, volume, **brilho do vídeo**, legenda.
+- **Tela pra smart TV antiga** (`tv.html`) — catálogo navegável pelo controle da própria TV, em
+  ES5 puro, sem HLS (toca o arquivo direto). Roda naquele navegador que não abre site nenhum.
 - **Pôster e sinopse** — enriquecimento opcional via [TMDB](https://www.themoviedb.org/).
-- **Três telas web** (assistir / controlar / TV) + página de status. Sem app pra instalar.
+- **Duas telas web** (assistir / TV) + página de status. Sem app pra instalar.
 
 ---
 
@@ -119,13 +119,10 @@ Cada tela tem **um** papel:
 
 | URL | Onde | Pra quê |
 |---|---|---|
-| `/` (`index.html`) | celular / PC | **Assistir ali mesmo.** Catálogo em lista compacta, busca, filtros, "continuar assistindo", player com legenda e próximo-episódio. Não controla TV nenhuma. Navegador velho cai pra `/tv.html`. |
-| `/controle.html` | celular | **Só controla.** Navega o catálogo e comanda o que toca na TV (`/api/player/*`) — play/pause, seek, volume, brilho, legenda, próximo, parar. Sem `<video>`. |
-| `/tv.html` | a TV | **Recebe e toca.** ES5, roda em TV antiga (arquivo direto) e moderna (HLS). Fica esperando o `/controle` escolher algo. |
+| `/` (`index.html`) | celular / PC | Catálogo em lista compacta, busca, filtros, "continuar assistindo", player com HLS, legenda e próximo-episódio. Navegador velho cai pra `/tv.html`. |
+| `/tv.html` | smart TV antiga | Catálogo **standalone** navegável pelo controle da TV (ES5, setas + OK, sem HLS — toca o arquivo direto). É o que roda naquela TV que não abre a `index.html`. |
 | `/status.html` | — | Diagnóstico: temperatura da placa, fila de transcode, uso do cache HLS, estado da VPU. |
 | `/swagger` | — | Documentação interativa da API. |
-
-> Uma TV só por enquanto — o estado do player é único (`PlayerStateService`). Descoberta / pareamento de várias TVs fica pra depois.
 
 ---
 
@@ -288,16 +285,6 @@ filmes ainda sem metadados (roda ~30s depois do boot e reprocessa a cada scan).
 | `GET` | `/api/filmes/{id}/legendas` | Faixas de legenda embutidas. |
 | `GET` | `/api/filmes/{id}/legenda/{idx}` | Uma faixa de texto convertida pra WebVTT. |
 
-### Controle remoto do player da TV — `/api/player`
-
-| Método | Rota | Descrição |
-|---|---|---|
-| `GET` | `/state` | Estado atual (a `tv.html` faz poll disso). |
-| `POST` | `/selecionar/{filmeId}` | TV começa a tocar este filme. |
-| `POST` | `/play-pause` · `/parar` | Transporte. |
-| `POST` | `/seek` `{delta}` · `/seek-abs` `{pos}` · `/volume` `{valor}` · `/legenda` `{idx}` | Comandos. |
-| `POST` | `/posicao` `{pos, dur}` | A TV reporta a posição (pro celular desenhar a barra). |
-
 ### Diagnóstico
 
 | Método | Rota | Descrição |
@@ -314,7 +301,6 @@ src/FilmesApi/
 │   ├── CatalogoController.cs     listar/criar/remover, scan da pasta, próximo episódio
 │   ├── ProgressoController.cs    "continuar de onde parou", concluir
 │   ├── ReproducaoController.cs   stream direto vs HLS, playlist/segments, legendas, keepalive
-│   ├── PlayerController.cs       /api/player — controle remoto da TV (estado compartilhado)
 │   └── StatusController.cs       /api/status
 ├── Services/
 │   ├── FilmeService.cs           CRUD + scan da pasta de mídia
@@ -327,11 +313,10 @@ src/FilmesApi/
 │   ├── TmdbService.cs            busca no TMDB
 │   ├── MetadataService.cs        enriquecimento em background (BackgroundService)
 │   ├── PreTranscodeService.cs    passada noturna (BackgroundService)
-│   ├── PlayerStateService.cs     estado do "player da TV" (singleton)
 │   └── ProcessRunner.cs          executa ffmpeg com timeout + detector de travamento
 ├── Models/                       entidades EF + DTOs
 ├── Data/AppDbContext.cs          Filmes + Progressos (SQLite)
-├── wwwroot/                      index.html · controle.html · tv.html · status.html · vendor/hls.min.js
+├── wwwroot/                      index.html · tv.html · status.html · vendor/hls.min.js
 └── Program.cs                    DI, pipeline, "auto-migração" no boot
 
 tests/FilmesApi.Tests/          corpus do MediaNomeParser + downmix 5.1→estéreo do HLS
