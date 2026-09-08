@@ -28,7 +28,6 @@ builder.Services.AddSingleton<RkmppCapabilityService>();
 builder.Services.AddSingleton<ThermalService>();
 builder.Services.AddSingleton<HlsTranscodeService>();
 builder.Services.AddSingleton<SubtitleService>();
-builder.Services.AddSingleton<PlayerStateService>();
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<TmdbService>();
 builder.Services.AddHostedService<PreTranscodeService>();

@@ -29,9 +29,10 @@ on-demand transcoding and hardware acceleration (RK3399/RK3588 VPU) when availab
 - **Resume playback** — remembers each movie's position and resumes without a jump.
 - **Next episode** — at the end of an episode, offers the next one with a countdown.
 - **Embedded subtitles** — extracts text tracks to WebVTT and serves them as `<track>` (native CC menu).
-- **Control the TV from your phone** — the TV opens a "dumb" page (`tv.html`); the phone is the remote.
+- **Old smart TV screen** (`tv.html`) — standalone catalog you navigate with the TV's own remote,
+  pure ES5, no HLS (plays the raw file). Runs on that browser that won't open any website.
 - **Poster & synopsis** — optional enrichment via [TMDB](https://www.themoviedb.org/).
-- **Three web UIs** + a status page. No app to install.
+- **Two web UIs** (watch / TV) + a status page. No app to install.
 
 ---
 
@@ -79,17 +80,12 @@ Recognized extensions: `.mp4 .mkv .avi .mov .wmv .flv .webm`
 
 ## 🖥️ The screens
 
-Each screen has **one** job:
-
 | URL | Where | For |
 |---|---|---|
-| `/` (`index.html`) | phone / PC | **Watch here.** Compact-list catalog, search, filters, resume, player with subtitles and next-episode. Doesn't control any TV. Old browsers fall back to `/tv.html`. |
-| `/controle.html` | phone | **Remote only.** Browse the catalog and drive what plays on the TV (`/api/player/*`) — play/pause, seek, volume, brightness, subtitles, next, stop. No `<video>`. |
-| `/tv.html` | the TV | **Receives and plays.** ES5, runs on old TVs (direct file) and new ones (HLS). Waits for `/controle` to pick something. |
+| `/` (`index.html`) | phone / PC | Compact-list catalog, search, filters, resume, player with HLS, subtitles and next-episode. Old browsers fall back to `/tv.html`. |
+| `/tv.html` | old smart TV | **Standalone** catalog navigable with the TV's own remote (ES5, arrows + OK, no HLS — plays the raw file). This is what runs on the TV that can't open `index.html`. |
 | `/status.html` | — | Diagnostics: board temperature, transcode queue, HLS cache usage, VPU state. |
 | `/swagger` | — | Interactive API docs. |
-
-> One TV for now — the player state is single (`PlayerStateService`). Multi-TV discovery / pairing comes later.
 
 ---
 
@@ -183,9 +179,6 @@ See the [Portuguese README](README.md) for the full config table with descriptio
 **Streaming:** `GET /api/filmes/{id}/stream-status`, `.../pode-direto`, `.../stream`,
 `.../original`, `.../hls/playlist.m3u8`, `.../hls/{seg}.ts`, `.../legendas`,
 `.../legenda/{idx}`.
-
-**TV remote (`/api/player`):** `GET /state`, `POST /selecionar/{id}`, `/play-pause`,
-`/parar`, `/seek`, `/seek-abs`, `/volume`, `/legenda`, `/posicao`.
 
 **Diagnostics:** `GET /api/status`. Full details at `/swagger`.
 

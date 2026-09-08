@@ -28,9 +28,10 @@ transcodificación bajo demanda y aceleración por hardware (VPU del RK3399/RK35
 - **Continuar donde quedaste** — recuerda la posición de cada película y retoma sin salto.
 - **Próximo episodio** — al terminar un episodio, ofrece el siguiente con cuenta regresiva.
 - **Subtítulos embebidos** — extrae las pistas de texto a WebVTT y las sirve como `<track>`.
-- **Controla la TV desde el celular** — la TV abre una página "tonta" (`tv.html`); el celular es el control.
+- **Pantalla para smart TV vieja** (`tv.html`) — catálogo standalone que navegás con el control
+  de la propia TV, ES5 puro, sin HLS (reproduce el archivo directo). Corre en ese navegador que no abre ningún sitio.
 - **Póster y sinopsis** — enriquecimiento opcional vía [TMDB](https://www.themoviedb.org/).
-- **Tres interfaces web** + una página de estado. Sin app que instalar.
+- **Dos interfaces web** (ver / TV) + una página de estado. Sin app que instalar.
 
 ---
 
@@ -78,17 +79,12 @@ Extensiones reconocidas: `.mp4 .mkv .avi .mov .wmv .flv .webm`
 
 ## 🖥️ Las pantallas
 
-Cada pantalla tiene **un** rol:
-
 | URL | Dónde | Para |
 |---|---|---|
-| `/` (`index.html`) | celular / PC | **Ver ahí mismo.** Catálogo en lista compacta, búsqueda, filtros, continuar, reproductor con subtítulos y próximo-episodio. No controla ninguna TV. Navegador viejo cae a `/tv.html`. |
-| `/controle.html` | celular | **Solo controla.** Navega el catálogo y comanda lo que suena en la TV (`/api/player/*`) — play/pausa, seek, volumen, brillo, subtítulos, siguiente, parar. Sin `<video>`. |
-| `/tv.html` | la TV | **Recibe y reproduce.** ES5, corre en TV vieja (archivo directo) y nueva (HLS). Espera que `/controle` elija algo. |
+| `/` (`index.html`) | celular / PC | Catálogo en lista compacta, búsqueda, filtros, continuar, reproductor con HLS, subtítulos y próximo-episodio. Navegador viejo cae a `/tv.html`. |
+| `/tv.html` | smart TV vieja | Catálogo **standalone** navegable con el control de la propia TV (ES5, flechas + OK, sin HLS — reproduce el archivo directo). Es lo que corre en la TV que no abre la `index.html`. |
 | `/status.html` | — | Diagnóstico: temperatura de la placa, cola de transcode, uso del caché HLS, estado de la VPU. |
 | `/swagger` | — | Documentación interactiva de la API. |
-
-> Una TV por ahora — el estado del reproductor es único (`PlayerStateService`). Descubrimiento / emparejamiento de varias TVs queda para después.
 
 ---
 
@@ -183,9 +179,6 @@ Ver el [README en portugués](README.md) para la tabla completa con descripcione
 **Streaming:** `GET /api/filmes/{id}/stream-status`, `.../pode-direto`, `.../stream`,
 `.../original`, `.../hls/playlist.m3u8`, `.../hls/{seg}.ts`, `.../legendas`,
 `.../legenda/{idx}`.
-
-**Control remoto de la TV (`/api/player`):** `GET /state`, `POST /selecionar/{id}`,
-`/play-pause`, `/parar`, `/seek`, `/seek-abs`, `/volume`, `/legenda`, `/posicao`.
 
 **Diagnóstico:** `GET /api/status`. Detalles completos en `/swagger`.
 
