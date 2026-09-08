@@ -58,15 +58,27 @@ body.playing #player { display: block; position: fixed; top: 0; left: 0; right: 
   white-space: nowrap; overflow: hidden; z-index: 2;
 }
 #titulo:empty { display: none; }
-#phint {
-  position: absolute; bottom: 22px; left: 0; right: 0;
-  text-align: center; font-size: 19px; color: #bbb;
-  background: rgba(0,0,0,.55); padding: 8px; z-index: 2;
-}
-#phint.hide { display: none; }
-#barra { position: absolute; left: 0; right: 0; bottom: 0; height: 8px; background: rgba(255,255,255,.15); z-index: 2; }
+#barra { position: absolute; left: 0; right: 0; bottom: 0; height: 6px; background: rgba(255,255,255,.15); z-index: 2; }
 #barra > div { height: 100%; width: 0; background: #e50914; }
 #barra.hide { display: none; }
+
+/* HUD: controles na tela, navegáveis por seta + OK (teclado USB / controle).
+   Aparece ao apertar qualquer tecla durante o filme e some sozinho. */
+#hud {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,.82); padding: 20px 30px 26px; z-index: 5;
+}
+#hud.hide { display: none; }
+#hudbar { height: 12px; background: #444; border: 1px solid #777; }
+#hudbar > div { height: 100%; width: 0; background: #e50914; }
+#hudtime { margin: 10px 0 16px; font-size: 22px; color: #fff; font-weight: bold; }
+#hudbtns a {
+  display: inline-block; color: #fff; text-decoration: none;
+  padding: 12px 20px; margin: 0 8px 8px 0; font-size: 24px;
+  border: 2px solid #444; background: #1a1a1a;
+}
+#hudbtns a.sel { background: #e50914; border-color: #fff; }
+#hudhint { margin-top: 8px; font-size: 17px; color: #999; }
 </style>
 </head>
 <body>
@@ -93,8 +105,20 @@ body.playing #player { display: block; position: fixed; top: 0; left: 0; right: 
   <video id="video" autoplay></video>
   <div id="titulo"></div>
   <div id="pmsg"></div>
-  <div id="phint">&#8592; &#8594; 15s &middot; OK pausa &middot; Verde = tela cheia &middot; Vermelho = legenda &middot; Voltar = lista</div>
   <div id="barra" class="hide"><div id="barrafill"></div></div>
+  <div id="hud" class="hide">
+    <div id="hudbar"><div id="hudfill"></div></div>
+    <div id="hudtime">0:00 / 0:00</div>
+    <div id="hudbtns">
+      <a href="#" data-a="seek-">&#171; 15s</a>
+      <a href="#" data-a="pp">&#10073;&#10073; Pausar</a>
+      <a href="#" data-a="seek+">15s &#187;</a>
+      <a href="#" data-a="fs">&#9974; Tela cheia</a>
+      <a href="#" data-a="cc">CC Legenda</a>
+      <a href="#" data-a="sair">&#10005; Sair</a>
+    </div>
+    <div id="hudhint">&#8592; &#8594; escolhe &middot; OK confirma &middot; &#8593; &#8595; pula 15s &middot; Voltar fecha</div>
+  </div>
 </div>
 
 <script src="/vendor/hls.min.js"></script>
@@ -126,7 +150,7 @@ body.playing #player { display: block; position: fixed; top: 0; left: 0; right: 
   var checarFalhas = 0;
   var hlsRetries = 0;
   var fsTentado = false;    // ja tentou entrar em fullscreen depois do 1o gesto?
-  var phintTimer = null;
+  var tituloTimer = null;
 
   var estadoAnterior = {
     filmeId: null, playing: false, volume: 1, brilho: 1, zoom: false,
@@ -472,13 +496,14 @@ body.playing #player { display: block; position: fixed; top: 0; left: 0; right: 
   video.ontimeupdate = function () {
     var d = isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
     if (d) document.getElementById('barrafill').style.width = (Math.min(100, 100 * video.currentTime / d)) + '%';
+    if (hudVisivel()) atualizarHud();
     if (filmeAtual == null || video.paused) return;
     var t = (new Date()).getTime();
     if (t - ultimoSalvo < 10000) return;
     ultimoSalvo = t;
     salvarProgresso();
   };
-  video.onpause = function () { salvarProgresso(); };
+  video.onpause = function () { salvarProgresso(); if (hudVisivel()) atualizarHud(); };
   video.onended = function () {
     if (filmeAtual == null) return;
     reproducaoConcluida = true;
@@ -495,12 +520,63 @@ body.playing #player { display: block; position: fixed; top: 0; left: 0; right: 
   }
   function mostrarTitulo(txt) {
     document.getElementById('titulo').innerHTML = esc(txt);
-    if (phintTimer) clearTimeout(phintTimer);
-    document.getElementById('phint').className = '';
-    phintTimer = setTimeout(function () {
-      document.getElementById('titulo').innerHTML = '';
-      document.getElementById('phint').className = 'hide';
-    }, 7000);
+    if (tituloTimer) clearTimeout(tituloTimer);
+    tituloTimer = setTimeout(function () { document.getElementById('titulo').innerHTML = ''; }, 7000);
+  }
+
+  // ─── HUD (controles na tela) ─────────────────────────────────────────
+  var hudLinks = [];
+  var hudIdx = 1;   // começa no botão "Pausar"
+  var hudTimer = null;
+
+  function hudVisivel() { return document.getElementById('hud').className !== 'hide'; }
+  function esconderHud() {
+    document.getElementById('hud').className = 'hide';
+    if (hudTimer) { clearTimeout(hudTimer); hudTimer = null; }
+  }
+  function mostrarHud() {
+    if (!hudLinks.length) hudLinks = document.getElementById('hudbtns').getElementsByTagName('a');
+    document.getElementById('hud').className = '';
+    atualizarHud();
+    focarHud(hudIdx);
+    if (hudTimer) clearTimeout(hudTimer);
+    hudTimer = setTimeout(esconderHud, 6000);
+  }
+  function adiarHud() { if (hudVisivel()) { if (hudTimer) clearTimeout(hudTimer); hudTimer = setTimeout(esconderHud, 6000); } }
+  function focarHud(n) {
+    if (n < 0) n = 0; if (n >= hudLinks.length) n = hudLinks.length - 1;
+    hudIdx = n;
+    for (var i = 0; i < hudLinks.length; i++) hudLinks[i].className = (i === n) ? 'sel' : '';
+  }
+  function atualizarHud() {
+    var d = isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+    document.getElementById('hudfill').style.width = d ? (Math.min(100, 100 * video.currentTime / d) + '%') : '0';
+    document.getElementById('hudtime').innerHTML = mmss(video.currentTime) + ' / ' + (d ? mmss(d) : '--:--');
+    // rótulo do botão play/pause
+    for (var i = 0; i < hudLinks.length; i++) {
+      if (hudLinks[i].getAttribute('data-a') === 'pp')
+        hudLinks[i].innerHTML = video.paused ? '&#9654; Tocar' : '&#10073;&#10073; Pausar';
+    }
+  }
+  function ativarHud(el) {
+    var a = el.getAttribute('data-a');
+    if (a === 'seek-') { video.currentTime = Math.max(0, video.currentTime - 15); }
+    else if (a === 'seek+') {
+      var d = video.duration;
+      video.currentTime = isFinite(d) ? Math.min(d - 1, video.currentTime + 15) : video.currentTime + 15;
+    }
+    else if (a === 'pp') { if (video.paused) { try { video.play(); } catch (e) {} } else { video.pause(); } }
+    else if (a === 'fs') { alternarFullscreen(); }
+    else if (a === 'cc') { alternarLegenda(); }
+    else if (a === 'sair') { esconderHud(); pararLocal(); return; }
+    atualizarHud();
+    adiarHud();
+  }
+  function mmss(s) {
+    s = Math.max(0, Math.round(s || 0));
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+    var mm = (h && m < 10) ? ('0' + m) : m;
+    return (h ? (h + ':' + mm) : m) + ':' + (ss < 10 ? ('0' + ss) : ss);
   }
   function nomeDoFilme(id, cb) {
     get(API + '/' + id, function (err, f) {
@@ -521,6 +597,7 @@ body.playing #player { display: block; position: fixed; top: 0; left: 0; right: 
 
   function carregarFilme(id) {
     mostrarPlayer();
+    esconderHud();
     pmsg('Preparando video...');
     destruirHls();
     cancelarProximo();
@@ -622,6 +699,7 @@ body.playing #player { display: block; position: fixed; top: 0; left: 0; right: 
   function pararLocal() {
     salvarProgresso();
     cancelarProximo();
+    esconderHud();
     removerLegendas();
     destruirHls();
     filmeAtual = null;
@@ -710,24 +788,35 @@ body.playing #player { display: block; position: fixed; top: 0; left: 0; right: 
     function stop() { if (e.preventDefault) e.preventDefault(); return false; }
 
     if (t === 'voltar') {
-      if (tocando) { pararLocal(); return stop(); }
+      if (tocando) {
+        if (hudVisivel()) { esconderHud(); return stop(); }  // 1a vez: fecha a HUD
+        pararLocal();                                         // 2a: volta pra lista
+        return stop();
+      }
       return true;
     }
 
     if (tocando) {
       if (aguardandoProximo) { if (t === 'ok') { cancelarProximo(); return stop(); } return true; }
+
+      // atalhos diretos (se o controle tiver esses botões)
       if (t === 'verde') { alternarFullscreen(); return stop(); }
       if (t === 'vermelho') { alternarLegenda(); return stop(); }
-      if (t === 'esq') { video.currentTime = Math.max(0, video.currentTime - 15); return stop(); }
-      if (t === 'dir') {
-        var d = video.duration;
-        video.currentTime = isFinite(d) ? Math.min(d - 1, video.currentTime + 15) : video.currentTime + 15;
-        return stop();
+
+      // 1a tecla acende a HUD (não faz nada além disso)
+      if (!hudVisivel()) { mostrarHud(); return stop(); }
+
+      // HUD na tela: ← → navegam os botões, OK ativa, ↑ ↓ pulam 15s
+      adiarHud();
+      if (t === 'esq') { focarHud(hudIdx - 1); return stop(); }
+      if (t === 'dir') { focarHud(hudIdx + 1); return stop(); }
+      if (t === 'cima') { video.currentTime = Math.max(0, video.currentTime - 15); atualizarHud(); return stop(); }
+      if (t === 'baixo') {
+        var d0 = video.duration;
+        video.currentTime = isFinite(d0) ? Math.min(d0 - 1, video.currentTime + 15) : video.currentTime + 15;
+        atualizarHud(); return stop();
       }
-      if (t === 'ok') {
-        if (video.paused) { try { video.play(); } catch (er) {} } else { video.pause(); }
-        return stop();
-      }
+      if (t === 'ok') { ativarHud(hudLinks[hudIdx]); return stop(); }
       return true;
     }
 
@@ -748,6 +837,15 @@ body.playing #player { display: block; position: fixed; top: 0; left: 0; right: 
     e = e || window.event;
     var t = e.target || e.srcElement;
     if (t && t.tagName === 'A') { ativar(t); return false; }
+  };
+  document.getElementById('hudbtns').onclick = function (e) {
+    e = e || window.event;
+    var t = e.target || e.srcElement;
+    while (t && t !== this && !t.getAttribute('data-a')) t = t.parentNode;
+    if (t && t.getAttribute('data-a')) { ativarHud(t); return false; }
+  };
+  document.getElementById('video').onclick = function () {
+    if (document.body.className === 'playing') { if (hudVisivel()) esconderHud(); else mostrarHud(); }
   };
 
   load();
