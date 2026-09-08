@@ -7,100 +7,136 @@
 <title>Filmes — TV</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📺%3C/text%3E%3C/svg%3E">
 <style>
-/* ES5, sem flexbox/grid: roda em TV antiga. So recebe e toca — quem navega e o /controle.html no celular. */
+/* ES5, sem flexbox/grid: roda em TV antiga. Recebe do /controle.html E tem navegação
+   própria pelo controle físico (setas + OK) quando o celular não está por perto. */
 * { margin: 0; padding: 0; }
-html, body { width: 100%; height: 100%; background: #000; color: #fff; overflow: hidden;
+html, body { width: 100%; height: 100%; background: #000; color: #fff;
   font-family: Arial, Helvetica, sans-serif; }
+body { padding: 4% 5%; font-size: 27px; line-height: 1.4; overflow-y: auto; }  /* margem de overscan */
+body.playing { padding: 0; overflow: hidden; }
+body.playing #list { display: none; }
+
+/* ─── lista ─── */
+h2 { font-size: 28px; color: #aaa; margin: 22px 0 10px; border-bottom: 2px solid #333; padding-bottom: 6px; }
+h2:first-child { margin-top: 0; }
+a.item, a.grp {
+  display: block; color: #fff; text-decoration: none;
+  padding: 13px 18px; border: 2px solid #333; margin-bottom: 8px; background: #111;
+}
+a.grp { font-size: 28px; margin: 22px 0 8px; background: #1a1a1a; }
+a.item.sel, a.grp.sel, #bar a.sel { background: #e50914; border-color: #fff; outline: 0; }
+.eps { margin-left: 22px; }
+.ano { color: #bbb; font-size: 21px; }
+.visto { color: #2ecc40; font-size: 21px; }
+#msg { color: #bbb; margin: 16px 0; }
+#bar { margin-bottom: 18px; padding-bottom: 14px; border-bottom: 2px solid #333; }
+#bar a { display: inline-block; color: #fff; text-decoration: none;
+  padding: 9px 15px; border: 2px solid #333; background: #111; margin: 0 8px 8px 0; }
+#bar a.on { border-color: #e50914; }
+#bar .lbl { color: #666; font-size: 17px; margin: 0 4px 0 10px; text-transform: uppercase; }
+#bar .sep { color: #444; margin: 0 4px; }
+
+/* ─── player ─── */
+#player { display: none; }
+body.playing #player { display: block; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #000; z-index: 100; }
 #video {
   position: absolute; top: 0; left: 0; right: 0; bottom: 0;
   width: 100%; height: 100%;
-  object-fit: contain;   /* letterbox certo em qualquer resolução (TV muito velha sem
-                            object-fit só estica — 16:9 em painel 16:9 quase não muda) */
+  object-fit: contain;         /* letterbox certo; TV muito velha sem object-fit só estica */
   background: #000;
 }
-/* "tela cheia" pedida pelo controle: preenche cortando as bordas */
-#video.zoom { object-fit: cover; }
-#msg {
-  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-  text-align: center; padding: 8%;
-  font-size: 30px; color: #ccc;
+#video.zoom { object-fit: cover; }   /* "zoom" do controle: preenche cortando as bordas */
+#pmsg {
+  position: absolute; top: 0; left: 0; right: 0;
+  padding: 10px 16px; font-size: 24px; text-align: center; color: #ddd;
+  background: rgba(0,0,0,.7); z-index: 3;
 }
-/* centraliza a mensagem sem flexbox */
-#msg span { display: inline-block; margin-top: 20%; white-space: pre-line; }
+#pmsg:empty { display: none; }
 #titulo {
   position: absolute; top: 0; left: 0; right: 0;
-  padding: 14px 24px; font-size: 26px; color: #fff;
-  background: rgba(0,0,0,.6);
-  white-space: nowrap; overflow: hidden;
+  padding: 12px 22px; font-size: 25px; color: #fff; background: rgba(0,0,0,.6);
+  white-space: nowrap; overflow: hidden; z-index: 2;
 }
 #titulo:empty { display: none; }
-#barra {
-  position: absolute; left: 0; right: 0; bottom: 0;
-  height: 8px; background: rgba(255,255,255,.15);
+#phint {
+  position: absolute; bottom: 22px; left: 0; right: 0;
+  text-align: center; font-size: 19px; color: #bbb;
+  background: rgba(0,0,0,.55); padding: 8px; z-index: 2;
 }
+#phint.hide { display: none; }
+#barra { position: absolute; left: 0; right: 0; bottom: 0; height: 8px; background: rgba(255,255,255,.15); z-index: 2; }
 #barra > div { height: 100%; width: 0; background: #e50914; }
 #barra.hide { display: none; }
 </style>
 </head>
 <body>
 
-<video id="video" autoplay></video>
-<div id="titulo"></div>
-<div id="barra" class="hide"><div id="barrafill"></div></div>
-<div id="msg"><span>Abra o <b>/controle</b> no celular pra escolher o que assistir.</span></div>
+<div id="list">
+  <div id="bar">
+    <span class="lbl">Tipo</span>
+    <a href="#" data-fg="tipo" data-fv="all" class="on">Tudo</a>
+    <a href="#" data-fg="tipo" data-fv="filme">Filmes</a>
+    <a href="#" data-fg="tipo" data-fv="serie">Series</a>
+    <span class="sep">|</span>
+    <span class="lbl">Status</span>
+    <a href="#" data-fg="visto" data-fv="all" class="on">Todos</a>
+    <a href="#" data-fg="visto" data-fv="nao">Nao assistidos</a>
+    <a href="#" data-fg="visto" data-fv="sim">Assistidos</a>
+    <span class="sep">|</span>
+    <a href="#" id="reload">Recarregar</a>
+  </div>
+  <div id="msg">Carregando...</div>
+  <div id="grid"></div>
+</div>
+
+<div id="player">
+  <video id="video" autoplay></video>
+  <div id="titulo"></div>
+  <div id="pmsg"></div>
+  <div id="phint">&#8592; &#8594; 15s &middot; OK pausa &middot; Verde = tela cheia &middot; Vermelho = legenda &middot; Voltar = lista</div>
+  <div id="barra" class="hide"><div id="barrafill"></div></div>
+</div>
 
 <script src="/vendor/hls.min.js"></script>
 <script>
-/* ES5 puro, XMLHttpRequest, sem Promise/arrow/template. */
+/* ES5 puro, XMLHttpRequest. */
 (function () {
   var API = '/api/filmes';
   var PLAYER = '/api/player';
   var video = document.getElementById('video');
+
+  // ─── estado ──────────────────────────────────────────────────────────
+  var filmes = [];
+  var continuar = [];
+  var filtroTipo = 'all';   // all | filme | serie
+  var filtroVisto = 'all';  // all | sim | nao
+  var links = [];           // itens navegaveis atuais (lista)
+  var idx = 0;
+  var gruposAbertos = {};
+
+  var filmeAtual = null;
+  var posicaoRetomar = 0;
+  var retomarTentativas = 0;
+  var ultimoSalvo = 0;
+  var reproducaoConcluida = false;
+  var duracaoConfiavel = false;
+  var aguardandoProximo = false;
+  var proximoTimer = null;
+  var hls = null;
+  var checarFalhas = 0;
+  var hlsRetries = 0;
+  var fsTentado = false;    // ja tentou entrar em fullscreen depois do 1o gesto?
+  var phintTimer = null;
 
   var estadoAnterior = {
     filmeId: null, playing: false, volume: 1, brilho: 1, zoom: false,
     seekVersion: 0, pararVersion: 0, seekAbsVersion: 0, legendaVersion: 0, legendaIdx: -1
   };
 
-  // "tela cheia" = classe CSS (zoom/cover) + tenta o fullscreen nativo (alguns navegadores
-  // de TV recusam fora de gesto do usuario — a classe CSS ja resolve o essencial).
-  function aplicarZoomClasse(on) { video.className = on ? 'zoom' : ''; }
-  function aplicarZoom(on) {
-    aplicarZoomClasse(on);
-    try {
-      var el = document.documentElement;
-      if (on) {
-        var rf = el.requestFullscreen || el.webkitRequestFullscreen || el.webkitRequestFullScreen || el.mozRequestFullScreen;
-        if (rf) { var r = rf.call(el); if (r && r.then) r.then(function () {}, function () {}); }
-      } else {
-        var ef = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen;
-        if (ef && (document.fullscreenElement || document.webkitFullscreenElement)) ef.call(document);
-      }
-    } catch (e) {}
-  }
-
-  // brilho = filtro CSS no <video> (TV muito velha sem suporte a filter ignora, sem erro)
-  function aplicarBrilho(b) {
-    video.style.filter = 'brightness(' + (b || 1) + ')';
-    video.style.webkitFilter = 'brightness(' + (b || 1) + ')';
-  }
-  var filmeAtual = null;
-  var posicaoRetomar = 0;
-  var retomarTentativas = 0;
-  var ultimoSalvo = 0;
-  var reproducaoConcluida = false;
-  var duracaoConfiavel = false;   // no HLS a duracao cresce durante o transcode
-  var aguardandoProximo = false;  // conta regressiva do proximo episodio rodando
-  var proximoTimer = null;
-  var hls = null;
-  var checarFalhas = 0;
-  var hlsRetries = 0;
-
-  // HLS so se o navegador aguentar. Em TV antiga o hls.min.js nem parseia -> window.Hls
-  // fica undefined e caimos pro arquivo direto/original.
   var TEM_HLS = (typeof window.Hls !== 'undefined' && window.Hls.isSupported && window.Hls.isSupported())
     || (video.canPlayType && video.canPlayType('application/vnd.apple.mpegurl') !== '');
 
+  // ─── http ────────────────────────────────────────────────────────────
   function get(url, cb) {
     var x = new XMLHttpRequest();
     x.open('GET', url, true);
@@ -113,9 +149,7 @@ html, body { width: 100%; height: 100%; background: #000; color: #fff; overflow:
     };
     x.send();
   }
-  function send(method, url) {
-    var x = new XMLHttpRequest(); x.open(method, url, true); x.send();
-  }
+  function send(method, url) { var x = new XMLHttpRequest(); x.open(method, url, true); x.send(); }
   function sendJson(method, url, obj) {
     var x = new XMLHttpRequest();
     x.open(method, url, true);
@@ -123,19 +157,245 @@ html, body { width: 100%; height: 100%; background: #000; color: #fff; overflow:
     x.send(JSON.stringify(obj));
   }
   function esc(s) {
-    s = String(s == null ? '' : s);
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function formatarTempo(seg) {
+    seg = Math.max(0, Math.round(seg || 0));
+    var h = Math.floor(seg / 3600), m = Math.round((seg % 3600) / 60);
+    return h ? (h + 'h ' + m + 'min') : (m + 'min');
   }
 
-  function mostrarMsg(txt) {
-    var m = document.getElementById('msg');
-    m.innerHTML = '<span>' + txt + '</span>';
-    m.style.display = 'block';
-    document.getElementById('barra').className = 'hide';
+  // ─── fullscreen ──────────────────────────────────────────────────────
+  // requestFullscreen SO funciona dentro de um gesto do usuario (tecla/clique) — por
+  // isso o botao do celular nao consegue: a ordem chega por poll, sem gesto. Aqui,
+  // qualquer tecla do controle serve de gesto: entra em tela cheia no 1o toque.
+  function pedirFullscreen() {
+    var el = document.documentElement;
+    var rf = el.requestFullscreen || el.webkitRequestFullscreen || el.webkitRequestFullScreen
+      || el.mozRequestFullScreen || el.msRequestFullscreen;
+    if (rf) { try { var r = rf.call(el); if (r && r.then) r.then(function () {}, function () {}); } catch (e) {} }
   }
-  function esconderMsg() { document.getElementById('msg').style.display = 'none'; }
+  function emFullscreen() {
+    return !!(document.fullscreenElement || document.webkitFullscreenElement
+      || document.webkitIsFullScreen || document.mozFullScreen);
+  }
+  function sairFullscreen() {
+    var ef = document.exitFullscreen || document.webkitExitFullscreen
+      || document.mozCancelFullScreen || document.msExitFullscreen;
+    if (ef) { try { ef.call(document); } catch (e) {} }
+  }
+  function alternarFullscreen() { if (emFullscreen()) sairFullscreen(); else pedirFullscreen(); }
 
-  // ─── legendas ────────────────────────────────────────────────────────
+  // ─── brilho / zoom (comandos do celular) ─────────────────────────────
+  function aplicarBrilho(b) {
+    video.style.filter = 'brightness(' + (b || 1) + ')';
+    video.style.webkitFilter = 'brightness(' + (b || 1) + ')';
+  }
+  function aplicarZoom(on) { video.className = on ? 'zoom' : ''; }
+
+  // ─── catalogo ────────────────────────────────────────────────────────
+  function load() {
+    var msg = document.getElementById('msg');
+    msg.style.display = 'block';
+    msg.innerHTML = 'Carregando...';
+    get(API, function (err, data) {
+      if (err) { msg.innerHTML = 'Falha ao carregar (erro ' + err + ').'; return; }
+      filmes = data || [];
+      get(API + '/continuar', function (e2, d2) {
+        continuar = (!e2 && d2) ? d2 : [];
+        render();
+      });
+    });
+  }
+
+  function itemHtml(m, rotulo) {
+    return '<a class="item" href="#" data-id="' + m.id + '">' +
+      esc(rotulo || m.titulo) +
+      (m.anoLancamento ? ' <span class="ano">(' + m.anoLancamento + ')</span>' : '') +
+      (m.assistido ? ' <span class="visto">&#10003; assistido</span>' : '') + '</a>';
+  }
+  function grpHtml(chave, label, itensHtml) {
+    var aberto = !!gruposAbertos[chave];
+    return '<a class="grp" href="#" data-g="' + esc(chave) + '" data-label="' + label + '">' +
+      (aberto ? '▾ ' : '▸ ') + label + '</a>' +
+      '<div class="eps" data-g="' + esc(chave) + '" style="display:' + (aberto ? 'block' : 'none') + '">' +
+      itensHtml + '</div>';
+  }
+
+  function render() {
+    var grid = document.getElementById('grid');
+    var msg = document.getElementById('msg');
+    var i, j;
+
+    var porPasta = {};
+    for (i = 0; i < filmes.length; i++) { var pp = filmes[i].pasta; porPasta[pp] = (porPasta[pp] || 0) + 1; }
+
+    var list = [];
+    for (i = 0; i < filmes.length; i++) {
+      var f = filmes[i];
+      if (filtroVisto === 'sim' && !f.assistido) continue;
+      if (filtroVisto === 'nao' && f.assistido) continue;
+      if (filtroTipo === 'filme' && f.ehEpisodio) continue;
+      if (filtroTipo === 'serie' && !f.ehEpisodio) continue;
+      list.push(f);
+    }
+    if (!list.length) {
+      grid.innerHTML = '';
+      msg.style.display = 'block';
+      msg.innerHTML = filmes.length ? 'Nada nesse filtro.' : 'Nenhum filme. Rode o Scan no celular.';
+      buildNav();
+      return;
+    }
+    msg.style.display = 'none';
+
+    var filmesSoltos = [], pfMap = {}, pfOrdem = [], serieMap = {}, serieOrdem = [];
+    for (i = 0; i < list.length; i++) {
+      var m = list[i];
+      if (m.ehEpisodio) {
+        if (!serieMap[m.serie]) { serieMap[m.serie] = []; serieOrdem.push(m.serie); }
+        serieMap[m.serie].push(m);
+        continue;
+      }
+      var pa = m.pasta;
+      if (pa !== 'Sem pasta' && porPasta[pa] > 1) {
+        if (!pfMap[pa]) { pfMap[pa] = []; pfOrdem.push(pa); }
+        pfMap[pa].push(m);
+      } else { filmesSoltos.push(m); }
+    }
+    for (i = 0; i < pfOrdem.length; i++) {
+      var arr0 = pfMap[pfOrdem[i]], princ = [];
+      for (j = 0; j < arr0.length; j++) if (!arr0[j].ehExtra) princ.push(arr0[j]);
+      if (princ.length === 1) { filmesSoltos.push(princ[0]); delete pfMap[pfOrdem[i]]; pfOrdem.splice(i, 1); i--; }
+    }
+    filmesSoltos.sort(function (a, b) {
+      var x = String(a.titulo).toLowerCase(), y = String(b.titulo).toLowerCase();
+      return x < y ? -1 : (x > y ? 1 : 0);
+    });
+    serieOrdem.sort(); pfOrdem.sort();
+    for (i = 0; i < serieOrdem.length; i++) {
+      serieMap[serieOrdem[i]].sort(function (a, b) {
+        return (a.temporada - b.temporada) || (a.episodio - b.episodio) ||
+          (String(a.titulo) < String(b.titulo) ? -1 : 1);
+      });
+    }
+
+    var totalFilmes = filmesSoltos.length;
+    for (i = 0; i < pfOrdem.length; i++) totalFilmes += pfMap[pfOrdem[i]].length;
+
+    var html = '';
+    if (filtroTipo === 'all' && filtroVisto === 'all' && continuar.length) {
+      html += '<h2>Continuar assistindo</h2><div class="movies">';
+      for (i = 0; i < continuar.length; i++) {
+        var c = continuar[i];
+        var pct = c.duracaoSegundos ? Math.round(100 * c.posicaoSegundos / c.duracaoSegundos) : 0;
+        html += '<a class="item" href="#" data-id="' + c.id + '">' + esc(c.titulo) +
+          ' <span class="ano">(' + (pct ? (pct + '%') : formatarTempo(c.posicaoSegundos)) + ')</span></a>';
+      }
+      html += '</div>';
+    }
+    if (totalFilmes) {
+      html += '<h2>Filmes (' + totalFilmes + ')</h2>';
+      if (filmesSoltos.length) {
+        html += '<div class="movies">';
+        for (i = 0; i < filmesSoltos.length; i++) html += itemHtml(filmesSoltos[i]);
+        html += '</div>';
+      }
+      for (i = 0; i < pfOrdem.length; i++) {
+        var parr = pfMap[pfOrdem[i]], peps = '';
+        for (j = 0; j < parr.length; j++) peps += itemHtml(parr[j]);
+        html += grpHtml('f:' + pfOrdem[i], esc(pfOrdem[i]) + ' (' + parr.length + ' arquivos)', peps);
+      }
+    }
+    for (i = 0; i < serieOrdem.length; i++) {
+      var sarr = serieMap[serieOrdem[i]], seps = '';
+      if (i === 0) html += '<h2>Series (' + serieOrdem.length + ')</h2>';
+      for (j = 0; j < sarr.length; j++) seps += itemHtml(sarr[j], sarr[j].rotulo);
+      html += grpHtml('s:' + serieOrdem[i],
+        esc(serieOrdem[i]) + ' (' + sarr.length + (sarr.length === 1 ? ' episodio)' : ' episodios)'), seps);
+    }
+    grid.innerHTML = html;
+    buildNav();
+  }
+
+  function buildNav() {
+    var bar = document.getElementById('bar').getElementsByTagName('a');
+    var grid = document.getElementById('grid');
+    links = [];
+    var i, j;
+    for (i = 0; i < bar.length; i++) links.push(bar[i]);
+    var nodes = grid.childNodes;
+    for (i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      if (n.nodeType !== 1) continue;
+      var cn = n.className || '';
+      if (cn.indexOf('grp') !== -1) { links.push(n); }
+      else if (cn.indexOf('eps') !== -1) {
+        if (n.style.display !== 'none') {
+          var eps = n.getElementsByClassName('item');
+          for (j = 0; j < eps.length; j++) links.push(eps[j]);
+        }
+      } else if (cn.indexOf('movies') !== -1) {
+        var mv = n.getElementsByClassName('item');
+        for (j = 0; j < mv.length; j++) links.push(mv[j]);
+      }
+    }
+    if (idx >= links.length) idx = links.length - 1;
+    if (idx < 0) idx = 0;
+    focar(idx);
+  }
+  function toggleGrp(el) {
+    var g = el.getAttribute('data-g');
+    var boxes = document.getElementById('grid').getElementsByClassName('eps');
+    for (var i = 0; i < boxes.length; i++) {
+      if (boxes[i].getAttribute('data-g') === g) {
+        var aberto = boxes[i].style.display !== 'none';
+        boxes[i].style.display = aberto ? 'none' : 'block';
+        if (aberto) delete gruposAbertos[g]; else gruposAbertos[g] = 1;
+        el.innerHTML = (aberto ? '▸ ' : '▾ ') + el.getAttribute('data-label');
+      }
+    }
+    buildNav();
+    var n = links.indexOf(el);
+    if (n >= 0) focar(n);
+  }
+  function focar(n) {
+    for (var i = 0; i < links.length; i++) links[i].className = links[i].className.replace(/ ?sel/, '');
+    idx = Math.max(0, Math.min(n, links.length - 1));
+    var el = links[idx];
+    if (!el) return;
+    el.className += ' sel';
+    try { el.focus(); } catch (e) {}
+    // so rola quando o item esta fora da area visivel (senao o scroll joga o titulo
+    // pra fora logo na abertura, quando o foco esta na barra de filtros)
+    if (el.getBoundingClientRect && el.scrollIntoView) {
+      var r = el.getBoundingClientRect();
+      var h = window.innerHeight || document.documentElement.clientHeight;
+      if (r.top < 40 || r.bottom > h - 16) el.scrollIntoView();
+    } else if (el.scrollIntoView) { el.scrollIntoView(); }
+  }
+  function ativar(el) {
+    if (!el) return;
+    if (el.className && el.className.indexOf('grp') !== -1) { toggleGrp(el); return; }
+    var fg = el.getAttribute('data-fg');
+    if (fg) {
+      var fv = el.getAttribute('data-fv');
+      if (fg === 'tipo') filtroTipo = fv; else filtroVisto = fv;
+      var bar = document.getElementById('bar').getElementsByTagName('a');
+      for (var i = 0; i < bar.length; i++) {
+        if (bar[i].getAttribute('data-fg') !== fg) continue;
+        bar[i].className = bar[i].className.replace(/ ?on/, '');
+        if (bar[i].getAttribute('data-fv') === fv) bar[i].className += ' on';
+      }
+      render();
+      return;
+    }
+    if (el.id === 'reload') { load(); return; }
+    var id = el.getAttribute('data-id');
+    // seleção local: manda pro servidor (o poll pega e carrega) — assim o celular vê também
+    if (id) send('POST', PLAYER + '/selecionar/' + id);
+  }
+
+  // ─── player: legendas / progresso / proximo ──────────────────────────
   function removerLegendas() {
     var tr = video.getElementsByTagName('track');
     while (tr.length) video.removeChild(tr[0]);
@@ -156,13 +416,20 @@ html, body { width: 100%; height: 100%; background: #000; color: #fff; overflow:
       aplicarLegenda(-1);
     });
   }
-  function aplicarLegenda(idx) {
+  function aplicarLegenda(i) {
     var tt = video.textTracks;
     if (!tt) return;
-    for (var i = 0; i < tt.length; i++) tt[i].mode = (i === idx) ? 'showing' : 'disabled';
+    for (var k = 0; k < tt.length; k++) tt[k].mode = (k === i) ? 'showing' : 'disabled';
+  }
+  function alternarLegenda() {
+    var tt = video.textTracks, algum = false, k;
+    if (!tt || !tt.length) return;
+    for (k = 0; k < tt.length; k++) if (tt[k].mode === 'showing') algum = true;
+    for (k = 0; k < tt.length; k++) tt[k].mode = 'disabled';
+    if (!algum) tt[0].mode = 'showing';
+    pmsgFlash('Legenda: ' + (algum ? 'off' : (tt[0].label || 'on')));
   }
 
-  // ─── proximo episodio ────────────────────────────────────────────────
   function cancelarProximo() {
     if (proximoTimer) { clearInterval(proximoTimer); proximoTimer = null; }
     aguardandoProximo = false;
@@ -175,18 +442,14 @@ html, body { width: 100%; height: 100%; background: #000; color: #fff; overflow:
       try { video.pause(); } catch (e) {}
       var resta = 8;
       function tick() {
-        mostrarMsg('Proximo: ' + esc(prox.rotulo || prox.titulo) + '\nem ' + resta + 's');
-        if (resta-- <= 0) {
-          cancelarProximo();
-          send('POST', PLAYER + '/selecionar/' + prox.id);  // o servidor troca o estado -> poll pega
-        }
+        pmsg('Proximo: ' + esc(prox.rotulo || prox.titulo) + '  em ' + resta + 's  (OK = agora, Voltar = cancela)');
+        if (resta-- <= 0) { cancelarProximo(); send('POST', PLAYER + '/selecionar/' + prox.id); }
       }
       tick();
       proximoTimer = setInterval(tick, 1000);
     });
   }
 
-  // ─── progresso / retomada ────────────────────────────────────────────
   function aplicarRetomada() {
     if (!(posicaoRetomar > 5)) return;
     var dur = video.duration;
@@ -224,41 +487,62 @@ html, body { width: 100%; height: 100%; background: #000; color: #fff; overflow:
     ofereceProximo(id);
   };
 
-  // ─── carregar um filme ───────────────────────────────────────────────
+  // ─── mensagens do player ─────────────────────────────────────────────
+  function pmsg(txt) { document.getElementById('pmsg').innerHTML = txt; }
+  function pmsgFlash(txt) {
+    pmsg(txt);
+    setTimeout(function () { if (document.getElementById('pmsg').innerHTML === txt) pmsg(''); }, 3000);
+  }
+  function mostrarTitulo(txt) {
+    document.getElementById('titulo').innerHTML = esc(txt);
+    if (phintTimer) clearTimeout(phintTimer);
+    document.getElementById('phint').className = '';
+    phintTimer = setTimeout(function () {
+      document.getElementById('titulo').innerHTML = '';
+      document.getElementById('phint').className = 'hide';
+    }, 7000);
+  }
+  function nomeDoFilme(id, cb) {
+    get(API + '/' + id, function (err, f) {
+      if (err || !f) { cb(''); return; }
+      if (f.ehEpisodio) {
+        var t = f.serie + ' · ' + f.rotulo;
+        if (f.titulo && f.titulo !== f.rotulo && !/^[0-9]+$/.test(f.titulo)) t += ' · ' + f.titulo;
+        cb(t);
+      } else { cb(f.titulo + (f.anoLancamento ? ' (' + f.anoLancamento + ')' : '')); }
+    });
+  }
+
+  // ─── carregar / trocar filme ─────────────────────────────────────────
   function destruirHls() { if (hls) { try { hls.destroy(); } catch (e) {} hls = null; } }
 
+  function mostrarPlayer() { document.body.className = 'playing'; }
+  function mostrarLista() { document.body.className = ''; }
+
   function carregarFilme(id) {
-    mostrarMsg('Preparando video...');
+    mostrarPlayer();
+    pmsg('Preparando video...');
     destruirHls();
     cancelarProximo();
     removerLegendas();
 
-    // esvazia o <video> do filme anterior ANTES de carregar o novo — senao o
-    // src/MediaSource velho briga com o novo e a troca so pega depois de um F5.
+    // esvazia o <video> do filme anterior ANTES do novo — senao a troca so pega com F5
     try { video.pause(); } catch (e) {}
     video.removeAttribute('src');
     try { video.load(); } catch (e) {}
 
     filmeAtual = id;
-    posicaoRetomar = 0;
-    retomarTentativas = 0;
-    ultimoSalvo = 0;
-    checarFalhas = 0;
-    reproducaoConcluida = false;
-    duracaoConfiavel = false;
-
+    posicaoRetomar = 0; retomarTentativas = 0; ultimoSalvo = 0;
+    checarFalhas = 0; reproducaoConcluida = false; duracaoConfiavel = false;
     document.getElementById('titulo').innerHTML = '';
 
     get(API + '/' + id + '/progresso', function (e0, prog) {
       if (!e0 && prog && prog.posicaoSegundos) posicaoRetomar = prog.posicaoSegundos;
       if (filmeAtual !== id) return;
-
-      if (TEM_HLS) prepararComHls(id);
-      else prepararDireto(id);
+      if (TEM_HLS) prepararComHls(id); else prepararDireto(id);
     });
   }
 
-  // TV antiga: pergunta so "da pra tocar direto?" (nao dispara transcode). Senao, arquivo original.
   function prepararDireto(id) {
     get(API + '/' + id + '/pode-direto', function (err, pd) {
       if (filmeAtual !== id) return;
@@ -275,12 +559,11 @@ html, body { width: 100%; height: 100%; background: #000; color: #fff; overflow:
     });
   }
 
-  // TV moderna / navegador com HLS: usa stream-status (dispara transcode se precisar).
   function prepararComHls(id) {
     var inicio = (new Date()).getTime();
     var prep = setInterval(function () {
       var s = Math.round(((new Date()).getTime() - inicio) / 1000);
-      mostrarMsg('Preparando video... ' + s + 's' + (s > 45 ? '\n(a primeira vez demora mais)' : ''));
+      pmsg('Preparando video... ' + s + 's' + (s > 45 ? '  (a primeira vez demora mais)' : ''));
     }, 1000);
 
     function passo() {
@@ -288,11 +571,9 @@ html, body { width: 100%; height: 100%; background: #000; color: #fff; overflow:
         if (filmeAtual !== id) { clearInterval(prep); return; }
         var status = err ? ((++checarFalhas > 12) ? 'erro' : 'preparando') : data.status;
         if (!err) checarFalhas = 0;
-
         if (status === 'preparando') { setTimeout(passo, 1500); return; }
         clearInterval(prep);
-
-        if (status === 'erro') { mostrarMsg('Falha ao preparar o video.'); return; }
+        if (status === 'erro') { pmsg('Falha ao preparar o video.'); return; }
 
         var t = posicaoRetomar > 5 ? Math.floor(posicaoRetomar) : 0;
         carregarLegendas(id);
@@ -303,16 +584,13 @@ html, body { width: 100%; height: 100%; background: #000; color: #fff; overflow:
           tocarAgora();
           return;
         }
-        // precisa de HLS
         var url = API + '/' + id + '/hls/playlist.m3u8';
         if (typeof window.Hls !== 'undefined' && window.Hls.isSupported()) {
           hls = new window.Hls(t ? { startPosition: t } : {});
-          // listeners ANTES do loadSource: manifesto em cache pode parsear antes.
           hls.on(window.Hls.Events.MANIFEST_PARSED, tocarAgora);
           hls.on(window.Hls.Events.ERROR, function (_e, d) {
             if (!d || !d.fatal || filmeAtual !== id) return;
             if (d.type === window.Hls.ErrorTypes.MEDIA_ERROR) { hls.recoverMediaError(); return; }
-            // erro fatal de rede: segmento sumiu (transcode reiniciou) — recarrega o filme.
             if (d.type === window.Hls.ErrorTypes.NETWORK_ERROR && hlsRetries++ < 3) {
               setTimeout(function () { if (filmeAtual === id) carregarFilme(id); }, 1500);
             }
@@ -332,20 +610,16 @@ html, body { width: 100%; height: 100%; background: #000; color: #fff; overflow:
   }
 
   function tocarAgora() {
-    esconderMsg();
+    pmsg('');
     document.getElementById('barra').className = '';
     video.volume = estadoAnterior.volume;
     aplicarBrilho(estadoAnterior.brilho);
-    aplicarZoomClasse(estadoAnterior.zoom);
-    // NUNCA video.load() com hls.js ativo — derruba o MediaSource e trava. No caminho
-    // direto o <video> ja carrega sozinho quando o src muda.
-    try {
-      var p = video.play();
-      if (p && p.then) p.then(function () {}, function () {});
-    } catch (e) {}
+    aplicarZoom(estadoAnterior.zoom);
+    // sem video.load() aqui — com hls.js derruba o MediaSource; no direto o src ja carrega
+    try { var p = video.play(); if (p && p.then) p.then(function () {}, function () {}); } catch (e) {}
   }
 
-  function pararTudo() {
+  function pararLocal() {
     salvarProgresso();
     cancelarProximo();
     removerLegendas();
@@ -355,49 +629,29 @@ html, body { width: 100%; height: 100%; background: #000; color: #fff; overflow:
     video.removeAttribute('src');
     try { video.load(); } catch (e) {}
     document.getElementById('titulo').innerHTML = '';
-    mostrarMsg('Abra o <b>/controle</b> no celular pra escolher o que assistir.');
+    pmsg('');
+    mostrarLista();
+    send('POST', PLAYER + '/parar');   // avisa o celular
+    buildNav();
   }
 
-  // ─── nome do que esta tocando (some depois de uns segundos) ───────────
-  var tituloTimer = null;
-  function mostrarTitulo(txt) {
-    var el = document.getElementById('titulo');
-    el.innerHTML = esc(txt);
-    if (tituloTimer) clearTimeout(tituloTimer);
-    tituloTimer = setTimeout(function () { document.getElementById('titulo').innerHTML = ''; }, 6000);
-  }
-  function nomeDoFilme(id, cb) {
-    get(API + '/' + id, function (err, f) {
-      if (err || !f) { cb(''); return; }
-      if (f.ehEpisodio) {
-        var t = f.serie + ' · ' + f.rotulo;
-        if (f.titulo && f.titulo !== f.rotulo && !/^[0-9]+$/.test(f.titulo)) t += ' · ' + f.titulo;
-        cb(t);
-      } else {
-        cb(f.titulo + (f.anoLancamento ? ' (' + f.anoLancamento + ')' : ''));
-      }
-    });
-  }
-
-  // ─── poll do estado ──────────────────────────────────────────────────
+  // ─── poll do estado (celular controla) ───────────────────────────────
   function poll() {
     get(PLAYER + '/state', function (err, estado) {
       if (!err && estado) aplicarEstado(estado);
       setTimeout(poll, 1000);
     });
   }
-
   function aplicarEstado(estado) {
     if (estado.pararVersion !== estadoAnterior.pararVersion && estado.filmeId === null) {
-      if (filmeAtual != null) pararTudo();
+      if (filmeAtual != null) pararLocal();
     } else if (estado.filmeId !== null && estado.filmeId !== filmeAtual) {
       salvarProgresso();
       var novo = estado.filmeId;
-      hlsRetries = 0;   // filme novo, zera o contador de retry de rede do HLS
+      hlsRetries = 0;
       nomeDoFilme(novo, function (nome) { if (filmeAtual === novo && nome) mostrarTitulo(nome); });
       carregarFilme(novo);
     } else if (estado.filmeId !== null && filmeAtual === estado.filmeId && !aguardandoProximo && !reproducaoConcluida) {
-      // retomar = so play() (nunca recarrega o filme do zero)
       if (estado.playing && video.paused) {
         try { var pp = video.play(); if (pp && pp.then) pp.then(function () {}, function () {}); } catch (e) {}
       }
@@ -416,20 +670,87 @@ html, body { width: 100%; height: 100%; background: #000; color: #fff; overflow:
         try { video.currentTime = Math.max(0, estado.seekAbsPos); } catch (e) {}
       }
     }
-
     estadoAnterior = estado;
   }
 
-  // reporta a posicao pro /controle desenhar a barra, e serve de keepalive do transcode
+  // reporta posicao pro /controle + keepalive do transcode
   setInterval(function () {
     if (filmeAtual == null || !isFinite(video.currentTime)) return;
-    sendJson('POST', PLAYER + '/posicao', {
-      pos: video.currentTime,
-      dur: isFinite(video.duration) ? video.duration : 0
-    });
+    sendJson('POST', PLAYER + '/posicao', { pos: video.currentTime, dur: isFinite(video.duration) ? video.duration : 0 });
     send('POST', API + '/' + filmeAtual + '/assistindo');
   }, 2000);
 
+  // ─── teclado / controle fisico ───────────────────────────────────────
+  // keyCode nas TVs antigas, e.key nas novas (que as vezes mandam keyCode 0).
+  function tecla(e) {
+    var k = e.keyCode;
+    if (k === 8 || k === 27 || k === 461 || k === 10009 || k === 166) return 'voltar';
+    if (k === 37) return 'esq'; if (k === 38) return 'cima';
+    if (k === 39) return 'dir'; if (k === 40) return 'baixo';
+    if (k === 13 || k === 32) return 'ok';
+    if (k === 403) return 'vermelho'; if (k === 404) return 'verde';
+    switch (e.key) {
+      case 'Escape': case 'Backspace': case 'GoBack': case 'BrowserBack': return 'voltar';
+      case 'ArrowLeft': return 'esq'; case 'ArrowUp': return 'cima';
+      case 'ArrowRight': return 'dir'; case 'ArrowDown': return 'baixo';
+      case 'Enter': case ' ': return 'ok';
+      case 'ColorF0Red': case 'Red': return 'vermelho';
+      case 'ColorF1Green': case 'Green': return 'verde';
+    }
+    return '';
+  }
+
+  document.onkeydown = function (e) {
+    e = e || window.event;
+    var t = tecla(e);
+    // 1o gesto do usuario -> entra em tela cheia (unico jeito que o navegador aceita)
+    if (!fsTentado && t) { fsTentado = true; pedirFullscreen(); }
+    if (!t) return true;
+    var tocando = (document.body.className === 'playing');
+    function stop() { if (e.preventDefault) e.preventDefault(); return false; }
+
+    if (t === 'voltar') {
+      if (tocando) { pararLocal(); return stop(); }
+      return true;
+    }
+
+    if (tocando) {
+      if (aguardandoProximo) { if (t === 'ok') { cancelarProximo(); return stop(); } return true; }
+      if (t === 'verde') { alternarFullscreen(); return stop(); }
+      if (t === 'vermelho') { alternarLegenda(); return stop(); }
+      if (t === 'esq') { video.currentTime = Math.max(0, video.currentTime - 15); return stop(); }
+      if (t === 'dir') {
+        var d = video.duration;
+        video.currentTime = isFinite(d) ? Math.min(d - 1, video.currentTime + 15) : video.currentTime + 15;
+        return stop();
+      }
+      if (t === 'ok') {
+        if (video.paused) { try { video.play(); } catch (er) {} } else { video.pause(); }
+        return stop();
+      }
+      return true;
+    }
+
+    // lista
+    if (t === 'cima' || t === 'esq') { focar(idx - 1); return stop(); }
+    if (t === 'baixo' || t === 'dir') { focar(idx + 1); return stop(); }
+    if (t === 'ok') { ativar(links[idx]); return stop(); }
+    return true;
+  };
+
+  document.getElementById('grid').onclick = function (e) {
+    e = e || window.event;
+    var t = e.target || e.srcElement;
+    while (t && t !== this && (!t.className || (t.className.indexOf('item') === -1 && t.className.indexOf('grp') === -1))) t = t.parentNode;
+    if (t && t !== this) { ativar(t); return false; }
+  };
+  document.getElementById('bar').onclick = function (e) {
+    e = e || window.event;
+    var t = e.target || e.srcElement;
+    if (t && t.tagName === 'A') { ativar(t); return false; }
+  };
+
+  load();
   poll();
 })();
 </script>
