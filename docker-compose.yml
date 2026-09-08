@@ -7,19 +7,23 @@ services:
     volumes:
       - ./data:/data          # SQLite + cache HLS/legendas
       - ./media:/media:ro     # Pasta com seus filmes/séries (só leitura)
+      - /mnt/backup/media:/media/extra   # espaço extra no HD WD 1TB (870GB livres)
     environment:
       - ASPNETCORE_URLS=http://+:8080
       - ConnectionStrings__Default=Data Source=/data/filmes.db
       - MediaPath=/media
       # ─── opcionais (ver README) ──────────────────────────────
       # - TmdbApiKey=sua_chave_v3_do_themoviedb.org   # pôster + sinopse
-      # - ThermalPauseCelsius=72                       # segura o transcode acima disso
       # - PreTranscodeEnabled=true                     # pré-transcode noturno
-    # VPU do RK3399/RK3588 — descomente se a placa tiver (ver README):
-    # devices:
-    #   - /dev/mpp_service
-    #   - /dev/rga
-    #   - /dev/dri
+    # VPU do RK3399/RK3588:
+    devices:
+      - /dev/mpp_service       # VPU do RK3399/RK3588, encode/decode de hardware
+      - /dev/rga               # scaler/blitter de hardware
+      - /dev/dri               # renderD/card, usado por alguns caminhos do rkmpp
+    # Limita a 4 dos 6 núcleos: transcodificação em software (libx264, quando o
+    # arquivo não é compatível com a VPU) já consumiu 500%+ de CPU sozinha, o que
+    # engasgava os outros serviços do servidor. Sempre sobram 2 núcleos livres.
+    cpus: "4.0"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 30s
