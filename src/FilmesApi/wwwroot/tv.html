@@ -149,10 +149,17 @@ video { width: 100%; height: auto; background: #000; }
   <div id="phint">&#8592; &#8594; 15s &middot; OK pausa &middot; Vermelho = legenda &middot; Voltar = lista</div>
 </div>
 
+<script src="/vendor/hls.min.js"></script>
+
 <script>
-/* ES5 puro, XMLHttpRequest, sem Promise. Feito pra navegador de smart TV antiga. */
+/* ES5 puro, XMLHttpRequest, sem Promise. Feito pra navegador de smart TV antiga.
+   Excecao: se a TV aguentar MediaSource (window.Hls carregou e Hls.isSupported()),
+   usamos hls.js pra sempre ter audio AAC transcodificado — o <video> nativo de
+   muita TV nao decodifica EAC3/DTS, so o passthrough de /original nao basta. */
 (function () {
   var API = '/api/filmes';
+  var hls = null;
+  var pollTimer = null;
   var filmes = [];
   var continuar = [];
   var filtroTipo = 'all';   // all | filme | serie
@@ -428,6 +435,58 @@ video { width: 100%; height: auto; background: #000; }
   }
 
   // ---- player ----
+  function pararPoll() {
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+  }
+
+  function destruirHls() {
+    if (hls) { try { hls.destroy(); } catch (e) {} hls = null; }
+  }
+
+  function iniciarHls(id, url, tAlvo) {
+    var v = document.getElementById('video');
+    destruirHls();
+    hls = new window.Hls(tAlvo ? { startPosition: tAlvo } : {});
+    hls.on(window.Hls.Events.MANIFEST_PARSED, function () { try { v.play(); } catch (e) {} });
+    hls.on(window.Hls.Events.ERROR, function (_e, d) {
+      if (!d || !d.fatal || filmeAtual !== id) return;
+      if (d.type === window.Hls.ErrorTypes.MEDIA_ERROR) { hls.recoverMediaError(); return; }
+      // erro fatal de rede: segmento sumiu (transcode reiniciou) — recarrega o filme.
+      destruirHls();
+      setTimeout(function () { if (filmeAtual === id) tocar(id); }, 1500);
+    });
+    hls.attachMedia(v);
+    hls.loadSource(url);
+  }
+
+  // Poll de /stream-status ate sair de "preparando", igual ao index.html. So entra
+  // aqui quando a TV tem hls.js (Hls.isSupported()) — TV sem MediaSource nem chega.
+  function pollStatusEtocar(id) {
+    get(API + '/' + id + '/stream-status', function (err, d) {
+      if (filmeAtual !== id) return;  // trocou de filme enquanto esperava
+      var pmsg = document.getElementById('pmsg');
+      var status = (!err && d) ? d.status : null;
+
+      if (status === 'erro') { pmsg.innerHTML = 'Falha ao preparar o video.'; return; }
+      if (status === null || status === 'preparando') {
+        pmsg.innerHTML = 'Preparando video...';
+        pollTimer = setTimeout(function () { pollStatusEtocar(id); }, 1500);
+        return;
+      }
+
+      pmsg.innerHTML = '';
+      var v = document.getElementById('video');
+      var t = posicaoRetomar > 5 ? Math.floor(posicaoRetomar) : 0;
+      if (status === 'compativel') {
+        v.src = API + '/' + id + '/stream' + (t ? ('#t=' + t) : '');
+        try { v.load(); v.play(); } catch (e) {}
+      } else {
+        iniciarHls(id, API + '/' + id + '/hls/playlist.m3u8', t);
+      }
+      carregarLegendas(id);
+    });
+  }
+
   function removerLegendas() {
     var v = document.getElementById('video');
     var tr = v.getElementsByTagName('track');
@@ -481,6 +540,8 @@ video { width: 100%; height: auto; background: #000; }
 
   function tocar(id) {
     cancelarProximo();
+    pararPoll();
+    destruirHls();
     removerLegendas();
     document.getElementById('list').className = 'hide';
     document.getElementById('player').className = 'on';
@@ -501,12 +562,19 @@ video { width: 100%; height: auto; background: #000; }
     retomarTentativas = 0;
     reproducaoConcluida = false;
 
+    var temHls = !!(window.Hls && window.Hls.isSupported && window.Hls.isSupported());
+
     // pega o ponto de retomada ANTES de setar o src (senao o loadedmetadata perde a corrida)
     get(API + '/' + id + '/progresso', function (err, d) {
       if (!err && d && d.posicaoSegundos) posicaoRetomar = d.posicaoSegundos;
 
-      // TV antiga nao roda HLS de qualquer jeito: so pergunta se da pra tocar direto
-      // (sem disparar transcode), senao serve o arquivo original.
+      if (temHls) {
+        pollStatusEtocar(id);
+        return;
+      }
+
+      // TV sem MediaSource: so pergunta se da pra tocar direto (sem disparar
+      // transcode), senao serve o arquivo original.
       get(API + '/' + id + '/pode-direto', function (e2, pd) {
         pmsg.innerHTML = '';
         var frag = posicaoRetomar > 5 ? ('#t=' + Math.floor(posicaoRetomar)) : '';
@@ -579,6 +647,8 @@ video { width: 100%; height: auto; background: #000; }
 
   function fecharPlayer() {
     cancelarProximo();
+    pararPoll();
+    destruirHls();
     removerLegendas();
     // grava o progresso e so entao recarrega a lista, senao o "continuar
     // assistindo" volta antes do PUT e fica desatualizado.
