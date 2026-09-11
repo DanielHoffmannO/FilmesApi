@@ -86,7 +86,17 @@ _ = Task.Run(() =>
 
 // ─── Pipeline ───────────────────────────────────────────────────────────
 if (app.Configuration.GetValue<bool>("AllowAnyOrigin")) app.UseCors();
-app.UseStaticFiles();
+// index.html/tv.html carregam o app inteiro inline (sem JS separado pra cache-bust) —
+// sem isso, TV agressiva em cache pode ignorar um F5 e continuar rodando código velho
+// mesmo depois de um fix no servidor.
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        if (ctx.File.Name.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
+            ctx.Context.Response.Headers.CacheControl = "no-cache";
+    }
+});
 app.UseSwagger();
 app.UseSwaggerUI(c => c.RoutePrefix = "swagger");
 app.MapControllers();
