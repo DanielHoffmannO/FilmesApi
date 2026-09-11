@@ -160,6 +160,7 @@ video { width: 100%; height: auto; background: #000; }
   var API = '/api/filmes';
   var hls = null;
   var pollTimer = null;
+  var hlsRetries = 0;
   var filmes = [];
   var continuar = [];
   var filtroTipo = 'all';   // all | filme | serie
@@ -451,9 +452,15 @@ video { width: 100%; height: auto; background: #000; }
     hls.on(window.Hls.Events.ERROR, function (_e, d) {
       if (!d || !d.fatal || filmeAtual !== id) return;
       if (d.type === window.Hls.ErrorTypes.MEDIA_ERROR) { hls.recoverMediaError(); return; }
-      // erro fatal de rede: segmento sumiu (transcode reiniciou) — recarrega o filme.
       destruirHls();
-      setTimeout(function () { if (filmeAtual === id) tocar(id); }, 1500);
+      // erro fatal de rede: segmento sumiu (transcode reiniciou) — recarrega o filme.
+      // Limite de tentativas: senao um erro persistente (TV incompativel, etc.)
+      // fica tentando pra sempre sem avisar nada na tela.
+      if (d.type === window.Hls.ErrorTypes.NETWORK_ERROR && hlsRetries++ < 3) {
+        setTimeout(function () { if (filmeAtual === id) tocar(id, true); }, 1500);
+      } else {
+        document.getElementById('pmsg').innerHTML = 'Falha ao carregar o video (erro ' + d.type + ').';
+      }
     });
     hls.attachMedia(v);
     hls.loadSource(url);
@@ -538,11 +545,12 @@ video { width: 100%; height: auto; background: #000; }
     if (p) tocar(p.id);
   }
 
-  function tocar(id) {
+  function tocar(id, ehRetry) {
     cancelarProximo();
     pararPoll();
     destruirHls();
     removerLegendas();
+    if (!ehRetry) hlsRetries = 0;  // retry preserva o contador, senao o teto de 3 nunca conta
     document.getElementById('list').className = 'hide';
     document.getElementById('player').className = 'on';
     document.body.className = 'playing';
@@ -626,6 +634,14 @@ video { width: 100%; height: auto; background: #000; }
       send('POST', API + '/' + idFim + '/concluir');
       ofereceProximo(idFim);
     };
+
+    // Keepalive: avisa o backend que ainda tem alguem aqui, senao o transcode em
+    // andamento e abortado por inatividade (HlsOrphanTimeoutSeconds) — o hls.js so
+    // bate no servidor quando busca segmento novo, o que nao conta como "pedido
+    // de status" o tempo todo (buffer cheio, pausado, etc).
+    setInterval(function () {
+      if (filmeAtual != null) send('POST', API + '/' + filmeAtual + '/assistindo');
+    }, 20000);
   }
 
   // cb (opcional) roda quando o PUT termina — usado pelo fecharPlayer pra so
