@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.RegularExpressions;
 using FilmesApi.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -13,15 +12,12 @@ public partial class ReproducaoController : ControllerBase
     private readonly FilmeService _service;
     private readonly HlsTranscodeService _transcode;
     private readonly SubtitleService _legendas;
-    private readonly ILogger<ReproducaoController> _logger;
 
-    public ReproducaoController(FilmeService service, HlsTranscodeService transcode, SubtitleService legendas,
-        ILogger<ReproducaoController> logger)
+    public ReproducaoController(FilmeService service, HlsTranscodeService transcode, SubtitleService legendas)
     {
         _service = service;
         _transcode = transcode;
         _legendas = legendas;
-        _logger = logger;
     }
 
     /// <summary>Keepalive do player: "ainda tem alguém assistindo este filme". Sem isso, o
@@ -73,64 +69,30 @@ public partial class ReproducaoController : ControllerBase
         return ServirComRange(path!);
     }
 
-    /// <summary>Vídeo compatível mas áudio não (EAC3/DTS — comum em rip WEB-DL/HMAX): copia o
-    /// vídeo sem re-encode e transcodifica só o áudio pra AAC, num pipe MP4 fragmentado sem
-    /// cache em disco. Usado pela TV sem HLS nenhum (nem MSE nem nativo) quando /original
-    /// falharia em silêncio por causa do codec de áudio. Sem Range: é um stream ao vivo, não
-    /// um arquivo — a posição de retomada (<c>t</c>) vira <c>-ss</c> no início do ffmpeg.</summary>
-    [HttpGet("{id:int}/remux")]
-    public async Task<IActionResult> Remux(int id, [FromQuery] double t, CancellationToken ct)
+    /// <summary>Estado do cache de /remux: <c>preparando</c> dispara o job (video copy +
+    /// áudio→AAC) na primeira chamada; <c>disponivel</c> quando o .mp4 completo já está em
+    /// disco. Poll, igual ao /stream-status do HLS.</summary>
+    [HttpGet("{id:int}/remux-status")]
+    public async Task<IActionResult> RemuxStatus(int id)
     {
         var (path, erro) = await ResolverCaminhoAsync(id);
         if (erro is not null) return erro;
+        var status = _transcode.ObterStatusRemux(id, path!);
+        return Ok(new { status = status.ToString().ToLowerInvariant() });
+    }
 
-        // Só 1 remux por vez (é um pipe sem cache — cada tentativa roda o ffmpeg do zero).
-        // Sem isso, TV que insiste (F5 repetido) empilha um ffmpeg full-speed por request,
-        // e o antigo não morre na hora (ver o Register(ct) abaixo, pro motivo).
-        if (!_transcode.TryComecarRemux())
-            return Conflict(new { mensagem = "Já tem uma conversão de áudio rodando pra esta TV, aguarde." });
-
-        Process? proc = null;
-        try
-        {
-            proc = await _transcode.IniciarRemuxAsync(path!, t, ct);
-            if (proc is null) return NotFound();
-
-            // Kill assim que o request cancelar, sem esperar o próximo I/O do CopyToAsync
-            // notar — com MinResponseDataRate=null (de propósito, pra TV que pausa) o Kestrel
-            // não detecta desconexão por si só, e já vimos na prática o processo sobreviver
-            // minutos depois do cliente ter ido embora.
-            await using var killAoCancel = ct.Register(() =>
-            {
-                try { if (!proc.HasExited) proc.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
-            });
-
-            Response.ContentType = "video/mp4";
-            Response.Headers.CacheControl = "no-store";
-            var stderrTask = proc.StandardError.ReadToEndAsync(CancellationToken.None);
-            try
-            {
-                await proc.StandardOutput.BaseStream.CopyToAsync(Response.Body, ct);
-            }
-            catch (OperationCanceledException)
-            {
-                // cliente fechou o player / trocou de filme no meio — normal, não é erro.
-            }
-            finally
-            {
-                if (!proc.HasExited)
-                {
-                    try { proc.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
-                }
-            }
-            if (proc.HasExited && proc.ExitCode != 0)
-                _logger.LogWarning("Remux do filme {Id} terminou com erro (exit {Exit}): {Err}", id, proc.ExitCode, await stderrTask);
-            return new EmptyResult();
-        }
-        finally
-        {
-            _transcode.TerminarRemux();
-        }
+    /// <summary>Vídeo compatível mas áudio não (EAC3/DTS — comum em rip WEB-DL/HMAX): serve o
+    /// .mp4 já remuxado em cache (vídeo copiado, áudio em AAC) — arquivo completo com
+    /// Content-Length e Range normais, ao contrário de um pipe ao vivo que algumas TVs
+    /// recusam na hora por não saber o tamanho de antemão. Só chamar depois que
+    /// /remux-status responder "disponivel".</summary>
+    [HttpGet("{id:int}/remux")]
+    public IActionResult Remux(int id)
+    {
+        var caminho = _transcode.CaminhoRemux(id);
+        if (!System.IO.File.Exists(caminho))
+            return Conflict(new { mensagem = "Remux ainda não está pronto, consulte /remux-status." });
+        return ServirComRange(caminho);
     }
 
     /// <summary>Manifest HLS: dispara/reusa o job de transcodificação e serve a playlist assim que ela existir.</summary>
