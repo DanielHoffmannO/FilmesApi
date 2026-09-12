@@ -80,8 +80,8 @@ public partial class ReproducaoController : ControllerBase
     {
         var (path, erro) = await ResolverCaminhoAsync(id);
         if (erro is not null) return erro;
-        var status = _transcode.ObterStatusRemux(id, path!);
-        return Ok(new { status = status.ToString().ToLowerInvariant() });
+        var (status, progresso) = _transcode.ObterStatusRemux(id, path!);
+        return Ok(new { status = status.ToString().ToLowerInvariant(), progresso });
     }
 
     /// <summary>Vídeo compatível mas áudio não (EAC3/DTS — comum em rip WEB-DL/HMAX): serve o

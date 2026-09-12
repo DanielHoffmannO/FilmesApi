@@ -158,6 +158,8 @@ video { width: 100%; height: auto; background: #000; }
    muita TV nao decodifica EAC3/DTS, so o passthrough de /original nao basta. */
 (function () {
   var API = '/api/filmes';
+  var PLAYER = '/api/player';
+  var estadoRemotoAnterior = null;
   var hls = null;
   var pollTimer = null;
   var hlsRetries = 0;
@@ -543,7 +545,7 @@ video { width: 100%; height: auto; background: #000; }
 
       if (status === 'erro') { pmsg.innerHTML = msgErro; return; }
       if (status === null || status === 'preparando') {
-        pmsg.innerHTML = msgPreparando;
+        pmsg.innerHTML = typeof msgPreparando === 'function' ? msgPreparando(d) : msgPreparando;
         pollTimer = setTimeout(function () {
           pollStatus(id, url, intervaloMs, msgPreparando, msgErro, aoPronto);
         }, intervaloMs);
@@ -558,7 +560,9 @@ video { width: 100%; height: auto; background: #000; }
   // entao toca, como um arquivo normal (Content-Length + Range, ao contrario de um pipe
   // ao vivo que algumas TVs recusam na hora por nao saber o tamanho).
   function pollRemuxEtocar(id) {
-    pollStatus(id, API + '/' + id + '/remux-status', 2000, 'Preparando audio...', 'Falha ao preparar o audio.',
+    pollStatus(id, API + '/' + id + '/remux-status', 2000,
+      function (d) { return 'Preparando audio' + (d && d.progresso != null ? ' (' + d.progresso + '%)' : '...'); },
+      'Falha ao preparar o audio.',
       function () { tocarUrl(id, API + '/' + id + '/remux', false); });
   }
 
@@ -672,6 +676,10 @@ video { width: 100%; height: auto; background: #000; }
     destruirHls();
     removerLegendas();
     if (!ehRetry) hlsRetries = 0;  // retry preserva o contador, senao o teto de 3 nunca conta
+    // Avisa o controle.html o que esta tocando agora, nao importa se foi selecionado
+    // aqui no D-pad ou remotamente — fonte unica de verdade no servidor. Fire-and-forget,
+    // nao atrasa nem interfere na reproducao local.
+    if (!ehRetry) send('POST', PLAYER + '/selecionar/' + id);
     document.getElementById('list').className = 'hide';
     document.getElementById('player').className = 'on';
     document.body.className = 'playing';
@@ -743,6 +751,72 @@ video { width: 100%; height: auto; background: #000; }
     setInterval(function () {
       if (filmeAtual != null) send('POST', API + '/' + filmeAtual + '/assistindo');
     }, 20000);
+
+    // Reporta posicao pro controle.html desenhar a barra de progresso (nao precisa
+    // ser preciso — so o suficiente pra nao ficar visualmente parado).
+    setInterval(function () {
+      if (filmeAtual == null) return;
+      var x = new XMLHttpRequest();
+      x.open('POST', PLAYER + '/posicao', true);
+      x.setRequestHeader('Content-Type', 'application/json');
+      x.send(JSON.stringify({
+        pos: v.currentTime,
+        dur: isFinite(v.duration) && v.duration > 0 ? v.duration : 0
+      }));
+    }, 2000);
+  }
+
+  // ---- controle remoto (celular, controle.html) ----
+  // Poll independente do pollTimer de status do video: precisa continuar rodando mesmo
+  // com a lista na tela (senao nunca pegaria um "selecionar" vindo do celular). So chama
+  // as MESMAS funcoes que o D-pad local ja usa (tocar/fecharPlayer/video.play etc.) —
+  // a logica de reproducao (HLS/nativo/remux/watchdog/keepalive) nao muda em nada.
+  function pollRemoto() {
+    get(PLAYER + '/state', function (err, estado) {
+      if (!err && estado) aplicarEstadoRemoto(estado);
+      setTimeout(pollRemoto, 1500);
+    });
+  }
+
+  function aplicarEstadoRemoto(estado) {
+    var anterior = estadoRemotoAnterior;
+    estadoRemotoAnterior = estado;
+    if (!anterior) return;  // 1o poll: so guarda a base, nao reage a versao "zerada" do boot
+
+    if (estado.pararVersion !== anterior.pararVersion && filmeAtual !== null) {
+      fecharPlayer();
+      return;
+    }
+    if (estado.filmeId !== null && estado.filmeId !== filmeAtual) {
+      tocar(estado.filmeId);
+      return;
+    }
+    if (filmeAtual === null) return;
+
+    var v = document.getElementById('video');
+    if (estado.playing && v.paused) { try { v.play(); } catch (e) {} }
+    if (!estado.playing && !v.paused) { try { v.pause(); } catch (e) {} }
+    if (estado.volume !== anterior.volume) v.volume = estado.volume;
+    if (estado.seekVersion !== anterior.seekVersion) {
+      try { v.currentTime = Math.max(0, v.currentTime + estado.seekDelta); } catch (e) {}
+    }
+    if (estado.seekAbsVersion !== anterior.seekAbsVersion) {
+      try { v.currentTime = Math.max(0, estado.seekAbsPos); } catch (e) {}
+    }
+    if (estado.legendaVersion !== anterior.legendaVersion) aplicarLegendaRemota(estado.legendaIdx);
+  }
+
+  // Casa o idx (indice da faixa no arquivo original) com o <track> certo — carregarLegendas
+  // criou eles na mesma ordem de /legendas, com a url terminando em /legenda/{idx}.
+  function aplicarLegendaRemota(idx) {
+    var v = document.getElementById('video');
+    var tt = v.textTracks;
+    var tracks = v.getElementsByTagName('track');
+    for (var i = 0; i < tt.length; i++) {
+      var src = tracks[i] ? tracks[i].getAttribute('src') : '';
+      var m = src && src.match(/\/legenda\/(\d+)$/);
+      tt[i].mode = (m && Number(m[1]) === idx) ? 'showing' : 'disabled';
+    }
   }
 
   // cb (opcional) roda quando o PUT termina — usado pelo fecharPlayer pra so
@@ -768,6 +842,7 @@ video { width: 100%; height: auto; background: #000; }
     pararWatchdog();
     destruirHls();
     removerLegendas();
+    send('POST', PLAYER + '/parar');  // avisa o controle.html, mesma ideia do selecionar acima
     // grava o progresso e so entao recarrega a lista, senao o "continuar
     // assistindo" volta antes do PUT e fica desatualizado.
     salvarProgresso(function () { load(); });
@@ -865,6 +940,7 @@ video { width: 100%; height: auto; background: #000; }
 
   configurarProgresso();
   load();
+  pollRemoto();
 })();
 </script>
 </body>
