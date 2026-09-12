@@ -37,9 +37,12 @@ public partial class ReproducaoController : ControllerBase
     {
         var (path, erro) = await ResolverCaminhoAsync(id);
         if (erro is not null) return erro;
-        var compativel = await _transcode.PodeStreamDiretoAsync(path!, ct);
-        var remuxavel = !compativel && await _transcode.PrecisaSoRemuxAudioAsync(path!, ct);
-        return Ok(new { compativel, remuxavel });
+        var compat = await _transcode.AnalisarCompatibilidadeAsync(path!, ct);
+        return Ok(new
+        {
+            compativel = compat == CompatibilidadeDireta.Compativel,
+            remuxavel = compat == CompatibilidadeDireta.SoAudioIncompativel,
+        });
     }
 
     /// <summary>Estado do vídeo: <c>compativel</c> / <c>preparando</c> / <c>disponivel</c> /
@@ -92,6 +95,7 @@ public partial class ReproducaoController : ControllerBase
         var caminho = _transcode.CaminhoRemux(id);
         if (!System.IO.File.Exists(caminho))
             return Conflict(new { mensagem = "Remux ainda não está pronto, consulte /remux-status." });
+        _transcode.RegistrarAcessoRemux(id);
         return ServirComRange(caminho);
     }
 
