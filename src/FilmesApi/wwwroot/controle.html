@@ -6,38 +6,45 @@
 <title>Controle da TV</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📱%3C/text%3E%3C/svg%3E">
 <style>
+/* Mesmo visual do index.html (celular/desktop) — só a lista principal some daqui,
+   fica só "achar o filme e mandar pra TV" + o controle remoto embaixo. */
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:system-ui,sans-serif;background:#0d0d0d;color:#eee;min-height:100vh;padding-bottom:120px}
-header{background:#111;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #222;position:sticky;top:0;z-index:5}
-h1{font-size:18px;font-weight:600}
+body{font-family:system-ui,sans-serif;background:#0d0d0d;color:#eee;min-height:100vh;padding-bottom:96px}
+header{background:#111;padding:16px 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #222}
+h1{font-size:20px;font-weight:600}
 header a{color:#888;text-decoration:none;font-size:13px}
-main{padding:10px 14px;max-width:640px;margin:0 auto}
-.secao-title{font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.6px;margin:14px 0 6px}
-.row{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:8px;background:#161616;margin-bottom:6px}
-.row.tocando{outline:2px solid #e50914}
-.row .rtit{flex:1;min-width:0}
-.row .rtit .t{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
-.row .rtit .sub{font-size:11px;color:#888}
-.row .rprog{height:2px;background:#2a2a2a;border-radius:1px;margin-top:6px;overflow:hidden}
+header a:hover{color:#fff}
+main{padding:16px 24px;max-width:640px;margin:0 auto}
+.secao-title{font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px;padding:0 12px}
+#grid{display:flex;flex-direction:column}
+.row{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:6px;position:relative}
+.row.tocando{background:#181818}
+.row .rtit{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}
+.row .rano{font-size:12px;color:#777;font-variant-numeric:tabular-nums;white-space:nowrap}
+.row .badge{font-size:11px;color:#888;border:1px solid #333;border-radius:3px;padding:1px 7px;white-space:nowrap}
+.row.assistido .rtit{color:#8a8a8a}
+.row .rprog{position:absolute;left:12px;right:12px;bottom:1px;height:2px;background:#2a2a2a;border-radius:1px;overflow:hidden}
 .row .rprog>div{height:100%;background:#e50914}
-.enviar{background:#222;color:#eee;border:1px solid #333;border-radius:20px;padding:8px 14px;font-size:18px;line-height:1;flex:none}
-.enviar:active{background:#333}
-.grupo-hd{padding:11px 12px;border-radius:8px;background:#1a1a1a;font-size:14px;font-weight:600;color:#ddd;margin-bottom:2px}
-.grupo-hd .count{color:#666;font-weight:400;font-size:12px}
-.grupo-body{padding-left:10px;margin-bottom:6px}
-.msg{text-align:center;color:#777;padding:50px 20px;font-size:14px}
+.cast-btn{background:none;border:none;color:#666;font-size:18px;cursor:pointer;padding:2px 6px;line-height:1}
+.cast-btn:active{color:#fff}
+.grupo-hd{padding:9px 12px;border-radius:6px;font-size:14px;font-weight:600;color:#ddd;margin:14px 0 2px}
+.grupo-hd .count{font-size:12px;color:#666;font-weight:400}
+.grupo-body{padding-left:12px}
+.msg{text-align:center;color:#777;padding:60px 20px;font-size:15px}
 
-#barra{position:fixed;left:0;right:0;bottom:0;background:#111;border-top:1px solid #222;padding:10px 14px 14px;display:none;flex-direction:column;gap:8px;z-index:10}
-#barra.on{display:flex}
-.b-titulo{font-size:13px;color:#eee;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.b-prog{height:10px;background:#2a2a2a;border-radius:5px;position:relative}
-.b-prog>div{height:100%;background:#e50914;border-radius:5px;width:0}
-.b-time{display:flex;justify-content:space-between;font-size:11px;color:#999;font-variant-numeric:tabular-nums}
-.b-controles{display:flex;align-items:center;gap:10px}
-.b-controles button{background:#222;color:#eee;border:1px solid #333;border-radius:8px;padding:10px 12px;font-size:16px;flex:none}
-.b-controles button.on{border-color:#e50914;color:#e50914}
-.b-controles input[type=range]{flex:1}
-.b-controles .parar{margin-left:auto;color:#e50914;border-color:#e50914}
+/* ─── barra de controle remoto — igual à que existia no index.html ─── */
+.remote{position:fixed;left:0;right:0;bottom:0;background:#111;border-top:1px solid #222;padding:10px 16px;display:none;flex-direction:column;gap:8px;z-index:50}
+.remote.active{display:flex}
+.remote-l1{display:flex;align-items:baseline;gap:10px}
+.remote .titulo{font-size:12px;color:#ccc;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.remote-time{font-size:11px;color:#aaa;font-variant-numeric:tabular-nums;white-space:nowrap}
+.remote-prog{height:8px;background:#333;border-radius:4px;cursor:pointer;overflow:hidden}
+.remote-prog-fill{height:100%;background:#e50914;width:0;transition:width .3s linear}
+.remote-l2{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.remote button{background:#222;color:#eee;border:1px solid #333;border-radius:6px;padding:8px 12px;font-size:13px;cursor:pointer}
+.remote button:active{background:#333}
+.remote button.on{border-color:#e50914;color:#e50914}
+.remote input[type=range]{width:100px}
 </style>
 </head>
 <body>
@@ -52,35 +59,30 @@ main{padding:10px 14px;max-width:640px;margin:0 auto}
   <div id="grid"></div>
 </main>
 
-<div id="barra">
-  <div class="b-titulo" id="bTitulo"></div>
-  <div class="b-prog" id="bProg"><div id="bProgFill"></div></div>
-  <div class="b-time"><span id="bPos">0:00</span><span id="bDur">0:00</span></div>
-  <div class="b-controles">
-    <button onclick="remoto('seek',-10)">« 10s</button>
-    <button onclick="remoto('play-pause')" id="bPlayPause">⏸</button>
-    <button onclick="remoto('seek',10)">10s »</button>
-    <button onclick="cicarLegenda()" id="bCC" style="display:none">CC</button>
-    <input type="range" id="bVolume" min="0" max="1" step="0.05" oninput="remoto('volume', Number(this.value))">
-    <button class="parar" onclick="remoto('parar')">⏹</button>
+<div class="remote" id="remote">
+  <div class="remote-l1">
+    <span class="titulo" id="remoteTitulo"></span>
+    <span class="remote-time" id="remoteTime"></span>
+  </div>
+  <div class="remote-prog" id="remoteProg" onclick="remoteScrub(event)"><div class="remote-prog-fill" id="remoteProgFill"></div></div>
+  <div class="remote-l2">
+    <button onclick="remoteSeek(-10)">« 10s</button>
+    <button onclick="remotePlayPause()" id="remotePlayPauseBtn">⏸</button>
+    <button onclick="remoteSeek(10)">10s »</button>
+    <button onclick="remoteCC()" id="remoteCCBtn" style="display:none">CC</button>
+    <input type="range" id="remoteVolume" min="0" max="1" step="0.05" oninput="remoteVolume(this.value)">
+    <button onclick="remoteParar()">⏹ Parar</button>
   </div>
 </div>
 
 <script>
 const API = '/api/filmes';
-const PLAYER = '/api/player';
+const PLAYER_API = '/api/player';
 let filmes = [];
 let continuar = [];
-let estadoAnterior = null;
-let legendas = [], legendasDe = null;
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-function mmss(s) {
-  s = Math.max(0, Math.round(s || 0));
-  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
-  return (h ? h + ':' + String(m).padStart(2, '0') : String(m)) + ':' + String(sec).padStart(2, '0');
 }
 
 async function carregar() {
@@ -89,7 +91,7 @@ async function carregar() {
     filmes = await fetch(API).then(r => r.json());
     continuar = await fetch(API + '/continuar').then(r => r.json()).catch(() => []);
     msg.style.display = filmes.length ? 'none' : 'block';
-    if (!filmes.length) msg.textContent = 'Nenhum filme. Rode o Scan no celular (lista completa).';
+    if (!filmes.length) msg.textContent = 'Nenhum filme. Rode o Scan na lista completa.';
     render();
   } catch {
     msg.style.display = 'block';
@@ -97,16 +99,13 @@ async function carregar() {
   }
 }
 
-function itemHtml(f, rotulo) {
-  const pct = f.duracaoSegundos ? Math.min(100, 100 * (f.posicaoSegundos || 0) / f.duracaoSegundos) : 0;
-  const tocando = estadoAnterior && estadoAnterior.filmeId === f.id;
-  return `<div class="row${tocando ? ' tocando' : ''}" data-id="${f.id}">
-      <div class="rtit">
-        <span class="t">${esc(rotulo || f.titulo)}</span>
-        ${f.anoLancamento ? `<span class="sub">${f.anoLancamento}${f.assistido ? ' · assistido' : ''}</span>` : ''}
-        ${pct ? `<div class="rprog"><div style="width:${pct}%"></div></div>` : ''}
-      </div>
-      <button class="enviar" onclick="enviar(${f.id})" title="Enviar para a TV">📺</button>
+function rowHtml(f, rotulo) {
+  const tocando = ultimoEstadoRemoto && ultimoEstadoRemoto.filmeId === f.id;
+  return `<div class="row${tocando ? ' tocando' : ''}${f.assistido ? ' assistido' : ''}" onclick="enviarParaTv(${f.id})">
+      <span class="rtit">${esc(rotulo || f.titulo)}</span>
+      ${!rotulo && f.anoLancamento ? `<span class="rano">${f.anoLancamento}</span>` : ''}
+      ${f.assistido ? '<span class="badge">✓ assistido</span>' : ''}
+      <button class="cast-btn" title="Enviar para a TV" onclick="event.stopPropagation(); enviarParaTv(${f.id})">📺</button>
     </div>`;
 }
 
@@ -116,117 +115,136 @@ function render() {
 
   if (continuar.length) {
     html += '<div class="secao-title">Continuar assistindo</div>';
-    for (const c of continuar) html += itemHtml(c);
+    for (const c of continuar) html += rowHtml(c);
   }
 
-  const soltos = filmes.filter(f => !f.ehEpisodio);
+  const soltos = filmes.filter(f => !f.ehEpisodio).sort((a, b) => a.titulo.localeCompare(b.titulo));
   const series = {};
   for (const f of filmes) if (f.ehEpisodio) (series[f.serie] ??= []).push(f);
 
   if (soltos.length) {
     html += '<div class="secao-title">Filmes (' + soltos.length + ')</div>';
-    for (const f of soltos.sort((a, b) => a.titulo.localeCompare(b.titulo))) html += itemHtml(f);
+    for (const f of soltos) html += rowHtml(f);
   }
   const nomesSerie = Object.keys(series).sort();
-  if (nomesSerie.length) {
-    html += '<div class="secao-title">Séries</div>';
-    for (const nome of nomesSerie) {
-      const eps = series[nome].sort((a, b) => (a.temporada - b.temporada) || (a.episodio - b.episodio));
-      html += `<div class="grupo-hd">${esc(nome)} <span class="count">(${eps.length})</span></div><div class="grupo-body">`;
-      for (const ep of eps) html += itemHtml(ep, ep.rotulo);
-      html += '</div>';
-    }
+  for (const nome of nomesSerie) {
+    const eps = series[nome].sort((a, b) => (a.temporada - b.temporada) || (a.episodio - b.episodio));
+    html += `<div class="grupo-hd">${esc(nome)} <span class="count">(${eps.length})</span></div>`;
+    html += '<div class="grupo-body">';
+    for (const ep of eps) html += rowHtml(ep, ep.rotulo);
+    html += '</div>';
   }
-  grid.innerHTML = html;
+  grid.innerHTML = html || '<div class="msg">Nada encontrado.</div>';
 }
 
-function enviar(id) {
-  remoto('selecionar', id);
+// ─── Controle remoto (TV) — mesmo código que existia no index.html ────────
+let ultimoEstadoRemoto = null;
+let remoteTimer = null;
+
+function mmss(s) {
+  s = Math.max(0, Math.round(s || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : String(m)) + ':' + String(sec).padStart(2, '0');
 }
 
-async function remoto(acao, valor) {
-  let url = PLAYER + '/' + acao;
-  let opts = { method: 'POST' };
-  if (acao === 'selecionar') url += '/' + valor;
-  else if (acao === 'seek') opts = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ delta: valor }) };
-  else if (acao === 'volume') opts = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ valor }) };
-  try { await fetch(url, opts); } catch {}
-  pollEstado();
+async function enviarParaTv(id) {
+  await fetch(`${PLAYER_API}/selecionar/${id}`, { method: 'POST' });
+  pollRemote();
 }
 
-async function seekAbsoluto(fracao) {
-  const dur = (estadoAnterior && estadoAnterior.duracaoSegundos) || 0;
-  if (!dur) return;
+async function remotePlayPause() {
+  await fetch(`${PLAYER_API}/play-pause`, { method: 'POST' });
+  pollRemote();
+}
+
+async function remoteSeek(delta) {
+  await fetch(`${PLAYER_API}/seek`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ delta })
+  });
+  pollRemote();
+}
+
+async function remoteScrub(e) {
+  const dur = (ultimoEstadoRemoto && ultimoEstadoRemoto.duracaoSegundos) || 0;
+  const bar = document.getElementById('remoteProg').getBoundingClientRect();
+  if (!dur || !bar.width) return;
+  const frac = Math.max(0, Math.min(1, (e.clientX - bar.left) / bar.width));
+  await fetch(`${PLAYER_API}/seek-abs`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pos: frac * dur })
+  });
+  pollRemote();
+}
+
+async function remoteVolume(valor) {
+  await fetch(`${PLAYER_API}/volume`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ valor: Number(valor) })
+  });
+}
+
+async function remoteParar() {
+  await fetch(`${PLAYER_API}/parar`, { method: 'POST' });
+  pollRemote();
+}
+
+// CC: cicla entre desligado → faixa 0 → faixa 1 → … → desligado, mandando pra TV.
+let remoteLegendas = [], remoteLegendasDe = null;
+async function remoteCarregarLegendas(id) {
+  if (remoteLegendasDe === id) return;
+  remoteLegendasDe = id;
+  try { remoteLegendas = (await fetch(`${API}/${id}/legendas`).then(r => r.json())).filter(x => x.convertivel); }
+  catch { remoteLegendas = []; }
+  document.getElementById('remoteCCBtn').style.display = remoteLegendas.length ? '' : 'none';
+}
+async function remoteCC() {
+  if (!remoteLegendas.length) return;
+  const atual = (ultimoEstadoRemoto && ultimoEstadoRemoto.legendaIdx);
+  const idxAtual = remoteLegendas.findIndex(x => x.idx === atual);
+  const prox = idxAtual + 1 >= remoteLegendas.length ? -1 : remoteLegendas[idxAtual + 1].idx;
+  await fetch(`${PLAYER_API}/legenda`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ idx: prox })
+  });
+  pollRemote();
+}
+
+async function pollRemote() {
+  if (remoteTimer) { clearTimeout(remoteTimer); remoteTimer = null; }
   try {
-    await fetch(PLAYER + '/seek-abs', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pos: fracao * dur })
-    });
-  } catch {}
-  pollEstado();
-}
-document.getElementById('bProg').addEventListener('click', e => {
-  const r = e.currentTarget.getBoundingClientRect();
-  seekAbsoluto(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)));
-});
+    const res = await fetch(`${PLAYER_API}/state`);
+    const estado = await res.json();
+    const trocouFilme = !ultimoEstadoRemoto || ultimoEstadoRemoto.filmeId !== estado.filmeId;
+    ultimoEstadoRemoto = estado;
 
-async function carregarLegendas(id) {
-  if (legendasDe === id) return;
-  legendasDe = id;
-  try { legendas = (await fetch(`${API}/${id}/legendas`).then(r => r.json())).filter(x => x.convertivel); }
-  catch { legendas = []; }
-  document.getElementById('bCC').style.display = legendas.length ? '' : 'none';
-}
-async function cicarLegenda() {
-  if (!legendas.length) return;
-  const atual = estadoAnterior && estadoAnterior.legendaIdx;
-  const idxAtual = legendas.findIndex(x => x.idx === atual);
-  const prox = idxAtual + 1 >= legendas.length ? -1 : legendas[idxAtual + 1].idx;
-  try {
-    await fetch(PLAYER + '/legenda', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idx: prox })
-    });
-  } catch {}
-  pollEstado();
-}
-
-let pollTimer = null;
-async function pollEstado() {
-  if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
-  try {
-    const estado = await fetch(PLAYER + '/state').then(r => r.json());
-    const trocouFilme = !estadoAnterior || estadoAnterior.filmeId !== estado.filmeId;
-    estadoAnterior = estado;
-
-    const barra = document.getElementById('barra');
+    const bar = document.getElementById('remote');
     if (estado.filmeId === null) {
-      barra.classList.remove('on');
-      legendasDe = null;
+      bar.classList.remove('active');
+      remoteLegendasDe = null;
+      document.getElementById('remoteCCBtn').style.display = 'none';
+      if (trocouFilme) render();
     } else {
-      barra.classList.add('on');
-      carregarLegendas(estado.filmeId);
-      if (trocouFilme) {
-        const f = filmes.find(x => x.id === estado.filmeId) || continuar.find(x => x.id === estado.filmeId);
-        document.getElementById('bTitulo').textContent = f ? (f.rotulo || f.titulo) : ('Filme #' + estado.filmeId);
-        render();
-      }
-      document.getElementById('bPlayPause').textContent = estado.playing ? '⏸' : '▶';
-      document.getElementById('bPlayPause').className = estado.playing ? '' : 'on';
-      document.getElementById('bVolume').value = estado.volume;
-      document.getElementById('bCC').className = estado.legendaIdx >= 0 ? 'on' : '';
+      bar.classList.add('active');
+      remoteCarregarLegendas(estado.filmeId);
+      const f = filmes.find(x => x.id === estado.filmeId) || continuar.find(x => x.id === estado.filmeId);
+      document.getElementById('remoteTitulo').textContent = f ? `📺 ${f.rotulo || f.titulo}` : '📺 Reproduzindo…';
+      document.getElementById('remotePlayPauseBtn').textContent = estado.playing ? '⏸' : '▶';
+      document.getElementById('remoteVolume').value = estado.volume;
       const pos = estado.posSegundos || 0, dur = estado.duracaoSegundos || 0;
-      document.getElementById('bProgFill').style.width = dur ? Math.min(100, 100 * pos / dur) + '%' : '0';
-      document.getElementById('bPos').textContent = mmss(pos);
-      document.getElementById('bDur').textContent = dur ? mmss(dur) : '--:--';
+      document.getElementById('remoteProgFill').style.width = dur ? Math.min(100, 100 * pos / dur) + '%' : '0';
+      document.getElementById('remoteTime').textContent = dur ? `${mmss(pos)} / ${mmss(dur)}` : (pos ? mmss(pos) : '');
+      if (trocouFilme) render();
     }
   } catch { /* ignora falha pontual de rede */ }
   finally {
-    pollTimer = setTimeout(pollEstado, 1000);
+    const ativo = document.getElementById('remote').classList.contains('active');
+    remoteTimer = setTimeout(pollRemote, ativo ? 1000 : 3000);
   }
 }
 
 carregar();
-pollEstado();
+pollRemote();
 </script>
 </body>
 </html>
