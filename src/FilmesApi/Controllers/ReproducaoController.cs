@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 using FilmesApi.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -83,30 +84,53 @@ public partial class ReproducaoController : ControllerBase
         var (path, erro) = await ResolverCaminhoAsync(id);
         if (erro is not null) return erro;
 
-        var proc = await _transcode.IniciarRemuxAsync(path!, t, ct);
-        if (proc is null) return NotFound();
+        // Só 1 remux por vez (é um pipe sem cache — cada tentativa roda o ffmpeg do zero).
+        // Sem isso, TV que insiste (F5 repetido) empilha um ffmpeg full-speed por request,
+        // e o antigo não morre na hora (ver o Register(ct) abaixo, pro motivo).
+        if (!_transcode.TryComecarRemux())
+            return Conflict(new { mensagem = "Já tem uma conversão de áudio rodando pra esta TV, aguarde." });
 
-        Response.ContentType = "video/mp4";
-        Response.Headers.CacheControl = "no-store";
-        var stderrTask = proc.StandardError.ReadToEndAsync(CancellationToken.None);
+        Process? proc = null;
         try
         {
-            await proc.StandardOutput.BaseStream.CopyToAsync(Response.Body, ct);
-        }
-        catch (OperationCanceledException)
-        {
-            // cliente fechou o player / trocou de filme no meio — normal, não é erro.
+            proc = await _transcode.IniciarRemuxAsync(path!, t, ct);
+            if (proc is null) return NotFound();
+
+            // Kill assim que o request cancelar, sem esperar o próximo I/O do CopyToAsync
+            // notar — com MinResponseDataRate=null (de propósito, pra TV que pausa) o Kestrel
+            // não detecta desconexão por si só, e já vimos na prática o processo sobreviver
+            // minutos depois do cliente ter ido embora.
+            await using var killAoCancel = ct.Register(() =>
+            {
+                try { if (!proc.HasExited) proc.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+            });
+
+            Response.ContentType = "video/mp4";
+            Response.Headers.CacheControl = "no-store";
+            var stderrTask = proc.StandardError.ReadToEndAsync(CancellationToken.None);
+            try
+            {
+                await proc.StandardOutput.BaseStream.CopyToAsync(Response.Body, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                // cliente fechou o player / trocou de filme no meio — normal, não é erro.
+            }
+            finally
+            {
+                if (!proc.HasExited)
+                {
+                    try { proc.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+                }
+            }
+            if (proc.HasExited && proc.ExitCode != 0)
+                _logger.LogWarning("Remux do filme {Id} terminou com erro (exit {Exit}): {Err}", id, proc.ExitCode, await stderrTask);
+            return new EmptyResult();
         }
         finally
         {
-            if (!proc.HasExited)
-            {
-                try { proc.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
-            }
+            _transcode.TerminarRemux();
         }
-        if (proc.HasExited && proc.ExitCode != 0)
-            _logger.LogWarning("Remux do filme {Id} terminou com erro (exit {Exit}): {Err}", id, proc.ExitCode, await stderrTask);
-        return new EmptyResult();
     }
 
     /// <summary>Manifest HLS: dispara/reusa o job de transcodificação e serve a playlist assim que ela existir.</summary>
