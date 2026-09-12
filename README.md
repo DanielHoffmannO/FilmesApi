@@ -30,9 +30,12 @@ transcodificação sob demanda e aceleração por hardware (VPU do RK3399/RK3588
 - **Próximo episódio** — no fim de um episódio, oferece o próximo da série com contagem regressiva.
 - **Legendas embutidas** — extrai as faixas de texto pra WebVTT e serve como `<track>` (menu CC nativo).
 - **Tela pra smart TV antiga** (`tv.html`) — catálogo navegável pelo controle da própria TV, em
-  ES5 puro, sem HLS (toca o arquivo direto). Roda naquele navegador que não abre site nenhum.
+  ES5 puro. Toca HLS quando a TV suporta (MediaSource ou HLS nativo do `<video>`); numa TV sem
+  nenhum dos dois, ainda arruma o áudio incompatível via `/remux` antes de cair pro arquivo cru.
+- **Controle remoto pelo celular** (`controle.html`) — manda um filme pra TV, controla
+  play/pause, avança/volta, volume e legenda à distância, com barra de progresso.
 - **Pôster e sinopse** — enriquecimento opcional via [TMDB](https://www.themoviedb.org/).
-- **Duas telas web** (assistir / TV) + página de status. Sem app pra instalar.
+- **Três telas web** (assistir / TV / controle remoto) + página de status. Sem app pra instalar.
 
 ---
 
@@ -64,7 +67,8 @@ dotnet run --project src/FilmesApi
 Requer o **.NET 9 SDK** e `ffmpeg`/`ffprobe` instalados.
 
 ```bash
-dotnet test        # MediaNomeParser (nome de arquivo -> série/episódio) + downmix 5.1 do HLS
+dotnet test        # MediaNomeParser (nome de arquivo -> série/episódio), downmix 5.1 do HLS
+                    # e a decisão de compatibilidade (compatível / só-remux-de-áudio / incompatível)
 ```
 
 ---
@@ -120,7 +124,8 @@ Cada tela tem **um** papel:
 | URL | Onde | Pra quê |
 |---|---|---|
 | `/` (`index.html`) | celular / PC | Catálogo em lista compacta, busca, filtros, "continuar assistindo", player com HLS, legenda e próximo-episódio. Navegador velho cai pra `/tv.html`. |
-| `/tv.html` | smart TV antiga | Catálogo **standalone** navegável pelo controle da TV (ES5, setas + OK, sem HLS — toca o arquivo direto). É o que roda naquela TV que não abre a `index.html`. |
+| `/tv.html` | smart TV antiga | Catálogo **standalone** navegável pelo controle da TV (ES5, setas + OK). Toca HLS (MediaSource ou nativo) quando a TV suporta; senão tenta `/remux` (áudio incompatível arrumado); só cai pro arquivo cru como último recurso. Também escuta comandos do `/controle.html` por baixo dos panos. |
+| `/controle.html` | celular | Controle remoto: lista de filmes com botão "enviar pra TV" + barra fixa com play/pause, seek, volume, legenda e progresso do que está tocando na TV. |
 | `/status.html` | — | Diagnóstico: temperatura da placa, fila de transcode, uso do cache HLS, estado da VPU. |
 | `/swagger` | — | Documentação interativa da API. |
 
@@ -143,6 +148,15 @@ Ao pedir um filme, o servidor decide o caminho:
 O resultado fica em **cache permanente por filme** (`/data/hls/{id}/`), com despejo LRU quando
 passa de `HlsCacheMaxGB`. Só **1 transcodificação por vez** por padrão (`MaxConcurrentTranscodeJobs`).
 
+**`/remux` — não confundir com o remux stream-copy do passo 2 acima (esse é interno ao pipeline
+HLS).** Pra TV sem HLS nenhum (nem MediaSource nem `<video>` nativo): quando o vídeo já é compatível mas
+só o **áudio** não é (EAC3/DTS de rip WEB-DL/HMAX, caso comum), `/remux` copia o vídeo sem
+re-encode e transcodifica só o áudio pra AAC estéreo, gerando um `.mp4` completo em cache
+(`/data/remux/{id}.mp4`, teto `RemuxCacheMaxGB`) servido com `Range` normal — funciona em
+qualquer player, ao contrário de um pipe ao vivo sem `Content-Length`. Passa pelo mesmo gate de
+temperatura/concorrência do HLS. Só cai pro arquivo original cru se o **vídeo** também for
+incompatível (aí não tem o que copiar sem reencode completo).
+
 **Faixa de áudio:** escolhe automaticamente português (`por`/`pt`/`pob`), senão a marcada como
 _default_, senão a primeira. (Rip dual-áudio costuma vir com a faixa errada como default.)
 Sempre reencodada pra **AAC estéreo** (`-ac 2`): AAC 5.1/7.1 sem `channel_layout` reconhecido
@@ -159,6 +173,20 @@ sob demanda pra WebVTT (`/api/filmes/{id}/legenda/{idx}`) e servidas como `<trac
   retentável. Os players mandam um _keepalive_ (`POST /{id}/assistindo`) enquanto tocam.
 - **Governador térmico** (opt-in) — segura o início de um novo transcode enquanto a placa
   estiver acima de `ThermalPauseCelsius`.
+
+---
+
+## 📱 Controle remoto
+
+`/controle.html` manda comandos pra TV via `PlayerStateService` (estado único em memória,
+pensado pra casa com uma TV): selecionar filme, play/pause, seek relativo/absoluto, volume e
+legenda. O `tv.html` faz *poll* desse estado por baixo dos panos e aplica os comandos chamando
+as **mesmas** funções que o controle da própria TV usa — nenhuma lógica de reprodução muda
+dependendo de quem mandou o comando. A TV também avisa o estado quando o filme é trocado
+localmente (D-pad), então o celular reflete o que está tocando não importa a origem.
+
+Sem brilho/zoom de propósito (existiam numa versão antiga) — mudariam o que aparece na tela da
+TV, fora do escopo de um controle remoto.
 
 ---
 
@@ -203,6 +231,7 @@ usam `__` (ex.: `ConnectionStrings__Default`).
 | `MediaPath` | `/media` | Pasta com os vídeos (varredura recursiva). |
 | `ConnectionStrings__Default` | `Data Source=/data/filmes.db` | Banco SQLite. |
 | `HlsCachePath` | `/data/hls` | Cache dos segmentos HLS. |
+| `RemuxCachePath` | `/data/remux` | Cache dos `.mp4` do `/remux` (áudio arrumado pra TV sem HLS). |
 | `SubtitleCachePath` | `/data/subs` | Cache das legendas `.vtt` extraídas. |
 | `FfmpegPath` / `FfprobePath` | `ffmpeg` / `ffprobe` | Binários (o Docker aponta pro jellyfin-ffmpeg). |
 
@@ -218,6 +247,7 @@ usam `__` (ex.: `ConnectionStrings__Default`).
 | `TranscodeJobTimeoutHours` | `6` | Teto absoluto por job de ffmpeg. |
 | `ForceSoftwareEncoder` | `false` | Ignora a VPU e usa sempre `libx264`. |
 | `HlsRkmppDecodeHw` | `false` | Tenta decode por hardware no caminho 4K (experimental — ver acima). |
+| `RemuxCacheMaxGB` | `15` | Teto do cache de `/remux`; acima disso, despejo LRU. `0` = ilimitado. |
 
 ### Governador térmico (opt-in)
 
@@ -277,19 +307,38 @@ filmes ainda sem metadados (roda ~30s depois do boot e reprocessa a cada scan).
 | Método | Rota | Descrição |
 |---|---|---|
 | `GET` | `/api/filmes/{id}/stream-status` | `compativel` / `preparando` / `disponivel` / erro `500`. |
-| `GET` | `/api/filmes/{id}/pode-direto` | `{compativel: bool}` sem disparar transcode (o `tv.html` numa TV antiga usa). |
+| `GET` | `/api/filmes/{id}/pode-direto` | `{compativel, remuxavel}` sem disparar transcode (o `tv.html` sem HLS usa pra escolher entre `/stream`, `/remux` e `/original`). |
 | `GET` | `/api/filmes/{id}/stream` | Stream direto (só quando compatível), com `Range`. |
+| `GET` | `/api/filmes/{id}/remux-status` | Estado do cache de `/remux` — dispara o job (vídeo copy + áudio→AAC) na 1ª chamada. `{status, progresso}`, `progresso` só durante "preparando" (estimado pelo tamanho do arquivo). |
+| `GET` | `/api/filmes/{id}/remux` | Vídeo copiado + áudio em AAC, já em cache — `409` se ainda não está pronto (consulte `/remux-status` antes). Com `Range`, como um arquivo normal. |
 | `GET` | `/api/filmes/{id}/original` | Sempre o arquivo original, sem transcodificar (VLC etc.). |
 | `GET` | `/api/filmes/{id}/hls/playlist.m3u8` | Manifesto HLS (dispara/reusa o transcode). `202` enquanto prepara. |
 | `GET` | `/api/filmes/{id}/hls/{seg}.ts` | Segmentos HLS. |
 | `GET` | `/api/filmes/{id}/legendas` | Faixas de legenda embutidas. |
 | `GET` | `/api/filmes/{id}/legenda/{idx}` | Uma faixa de texto convertida pra WebVTT. |
 
+### Controle remoto
+
+Estado único em memória (`PlayerStateService`) — pensado pra uma casa com uma TV.
+
+| Método | Rota | Descrição |
+|---|---|---|
+| `GET` | `/api/player/state` | Estado atual: filme, playing, posição/duração, volume, legenda (com contadores de versão pra seek/legenda/parar). |
+| `POST` | `/api/player/selecionar/{filmeId}` | Manda a TV tocar este filme. |
+| `POST` | `/api/player/play-pause` | Alterna play/pause. |
+| `POST` | `/api/player/seek` | `{delta}` segundos, relativo à posição atual. |
+| `POST` | `/api/player/seek-abs` | `{pos}` segundos, posição absoluta (arrastar a barra). |
+| `POST` | `/api/player/volume` | `{valor}` de 0 a 1. |
+| `POST` | `/api/player/legenda` | `{idx}` da faixa (-1 desliga). |
+| `POST` | `/api/player/posicao` | A própria TV reporta `{pos, dur}` a cada ~2s, pro celular desenhar o progresso. |
+| `POST` | `/api/player/parar` | Fecha o player na TV. |
+
 ### Diagnóstico
 
 | Método | Rota | Descrição |
 |---|---|---|
 | `GET` | `/api/status` | Temperatura, fila de transcode, cache, estado da VPU (consumido pela `status.html`). |
+| `POST` | `/api/diag/log` | `{msg}` — o `tv.html` manda erro de JS/hls.js/`<video>` pra cá (cai no log do servidor). TV não tem console acessível; sem isso não dava pra depurar o que acontecia na tela dela. |
 
 ---
 
@@ -300,12 +349,13 @@ src/FilmesApi/
 ├── Controllers/            (todos sob /api/filmes, exceto onde indicado)
 │   ├── CatalogoController.cs     listar/criar/remover, scan da pasta, próximo episódio
 │   ├── ProgressoController.cs    "continuar de onde parou", concluir
-│   ├── ReproducaoController.cs   stream direto vs HLS, playlist/segments, legendas, keepalive
+│   ├── ReproducaoController.cs   stream direto vs HLS vs remux, playlist/segments, legendas, keepalive
+│   ├── PlayerController.cs       /api/player — controle remoto (celular → TV)
 │   └── StatusController.cs       /api/status
 ├── Services/
 │   ├── FilmeService.cs           CRUD + scan da pasta de mídia
 │   ├── ProgressoService.cs       "continuar de onde parou"
-│   ├── HlsTranscodeService.cs    decisão compat/remux/reencode, cache, filas
+│   ├── HlsTranscodeService.cs    decisão compat/remux-áudio/remux-container/reencode, caches, filas
 │   ├── RkmppCapabilityService.cs probe da VPU + fallback pra libx264
 │   ├── ThermalService.cs         leitura de /sys/class/thermal + backpressure
 │   ├── SubtitleService.cs        listar/extrair legendas → WebVTT
@@ -313,16 +363,18 @@ src/FilmesApi/
 │   ├── TmdbService.cs            busca no TMDB
 │   ├── MetadataService.cs        enriquecimento em background (BackgroundService)
 │   ├── PreTranscodeService.cs    passada noturna (BackgroundService)
+│   ├── PlayerStateService.cs     estado do controle remoto (singleton em memória)
 │   └── ProcessRunner.cs          executa ffmpeg com timeout + detector de travamento
-├── Models/                       entidades EF + DTOs
+├── Models/                       entidades EF + DTOs (incl. PlayerDtos.cs)
 ├── Data/AppDbContext.cs          Filmes + Progressos (SQLite)
-├── wwwroot/                      index.html · tv.html · status.html · vendor/hls.min.js
+├── wwwroot/                      index.html · tv.html · controle.html · status.html · vendor/hls.min.js
 └── Program.cs                    DI, pipeline, "auto-migração" no boot
 
-tests/FilmesApi.Tests/          corpus do MediaNomeParser + downmix 5.1→estéreo do HLS
+tests/FilmesApi.Tests/          MediaNomeParser, downmix 5.1→estéreo do HLS,
+                                 decisão de compatibilidade (compatível/remux-áudio/incompatível)
 ```
 
-**Stack:** .NET 9 / ASP.NET Core · EF Core 8 + SQLite · Swashbuckle (Swagger) ·
+**Stack:** .NET 9 / ASP.NET Core · EF Core 9 + SQLite · Swashbuckle (Swagger) ·
 [hls.js](https://github.com/video-dev/hls.js) (embutido, sem CDN) · Docker multi-stage
 (build em Alpine, runtime em Debian bookworm-slim + jellyfin-ffmpeg).
 
