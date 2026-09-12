@@ -30,9 +30,12 @@ on-demand transcoding and hardware acceleration (RK3399/RK3588 VPU) when availab
 - **Next episode** — at the end of an episode, offers the next one with a countdown.
 - **Embedded subtitles** — extracts text tracks to WebVTT and serves them as `<track>` (native CC menu).
 - **Old smart TV screen** (`tv.html`) — standalone catalog you navigate with the TV's own remote,
-  pure ES5, no HLS (plays the raw file). Runs on that browser that won't open any website.
+  pure ES5. Plays HLS when the TV supports it (MediaSource or native `<video>` HLS); on a TV
+  with neither, still fixes incompatible audio via `/remux` before falling back to the raw file.
+- **Phone remote control** (`controle.html`) — send a movie to the TV, control play/pause,
+  seek, volume and subtitles from your phone, with a live progress bar.
 - **Poster & synopsis** — optional enrichment via [TMDB](https://www.themoviedb.org/).
-- **Two web UIs** (watch / TV) + a status page. No app to install.
+- **Three web UIs** (watch / TV / remote) + a status page. No app to install.
 
 ---
 
@@ -83,7 +86,8 @@ Recognized extensions: `.mp4 .mkv .avi .mov .wmv .flv .webm`
 | URL | Where | For |
 |---|---|---|
 | `/` (`index.html`) | phone / PC | Compact-list catalog, search, filters, resume, player with HLS, subtitles and next-episode. Old browsers fall back to `/tv.html`. |
-| `/tv.html` | old smart TV | **Standalone** catalog navigable with the TV's own remote (ES5, arrows + OK, no HLS — plays the raw file). This is what runs on the TV that can't open `index.html`. |
+| `/tv.html` | old smart TV | **Standalone** catalog navigable with the TV's own remote (ES5, arrows + OK). Plays HLS (MediaSource or native) when the TV supports it; otherwise tries `/remux` (fixed audio); the raw file is the last resort. Also listens for commands from `/controle.html` in the background. |
+| `/controle.html` | phone | Remote control: movie list with a "send to TV" button, plus a fixed bar with play/pause, seek, volume, subtitles and progress for whatever's playing on the TV. |
 | `/status.html` | — | Diagnostics: board temperature, transcode queue, HLS cache usage, VPU state. |
 | `/swagger` | — | Interactive API docs. |
 
@@ -103,12 +107,35 @@ On request, the server picks a path:
 Output is cached **permanently per movie** with LRU eviction above `HlsCacheMaxGB`. One
 transcode at a time by default.
 
+**`/remux` — not to be confused with the stream-copy remux from step 2 above** (that one's
+internal to the HLS pipeline). **For a TV with no HLS at all** (no MediaSource, no native
+`<video>` HLS): when the video is already
+compatible but only the **audio** isn't (EAC3/DTS from WEB-DL/HMAX rips), `/remux` copies the
+video without re-encoding and transcodes just the audio to stereo AAC into a cached `.mp4`
+(`RemuxCacheMaxGB` cap), served with normal `Range` support — works on any player, unlike a live
+pipe with no `Content-Length`. Falls back to the raw original only if the video itself is also
+incompatible.
+
 - **Audio track:** auto-picks Portuguese, then the default track, then the first.
 - **Subtitles:** not muxed into HLS. Text tracks (SRT/ASS/mov_text) are extracted to WebVTT
   on demand and served as `<track>`. Bitmap subs (PGS/VobSub) can't be converted.
 - **Protections:** stall detector (kills a stuck ffmpeg after 8 min), orphan cancellation
   (aborts a transcode nobody is watching after `HlsOrphanTimeoutSeconds`), optional thermal
   governor (holds new transcodes while the board is too hot).
+
+---
+
+## 📱 Remote control
+
+`/controle.html` sends commands to the TV through `PlayerStateService` (a single in-memory
+state, built for a one-TV household): select movie, play/pause, relative/absolute seek, volume,
+subtitles. `tv.html` polls that state in the background and applies commands by calling the
+**same** functions its own remote uses — no playback logic changes depending on who issued the
+command. The TV also reports state when the movie is changed locally, so the phone reflects
+what's playing regardless of where the command came from.
+
+No brightness/zoom on purpose (an older version had them) — those would change what's on the
+TV screen, out of scope for a remote control.
 
 ---
 
@@ -152,7 +179,7 @@ use `__`.
 **Transcoding:** `MaxConcurrentTranscodeJobs` (`1`), `HlsMaxAlturaReencode` (`1080`, `0`
 disables downscale), `HlsCacheMaxGB` (`20`), `HlsOrphanTimeoutSeconds` (`90`, `0` never
 aborts), `HlsStallTimeoutMinutes` (`8`), `ForceSoftwareEncoder` (`false`), `HlsRkmppDecodeHw`
-(`false`).
+(`false`), `RemuxCachePath` (`/data/remux`), `RemuxCacheMaxGB` (`15`).
 
 **Thermal governor (opt-in):** `ThermalPauseCelsius` (`0` = off), `ThermalResumeCelsius`
 (`pause − 8`), `ThermalMaxWaitMinutes` (`5`).
@@ -176,17 +203,23 @@ See the [Portuguese README](README.md) for the full config table with descriptio
 `GET|PUT|DELETE /api/filmes/{id}/progresso`, `POST /api/filmes/{id}/concluir`,
 `POST /api/filmes/{id}/assistindo`.
 
-**Streaming:** `GET /api/filmes/{id}/stream-status`, `.../pode-direto`, `.../stream`,
-`.../original`, `.../hls/playlist.m3u8`, `.../hls/{seg}.ts`, `.../legendas`,
+**Streaming:** `GET /api/filmes/{id}/stream-status`, `.../pode-direto` (now `{compativel,
+remuxavel}`), `.../stream`, `.../remux-status`, `.../remux` (video-copy + AAC audio, cached,
+`Range`-served), `.../original`, `.../hls/playlist.m3u8`, `.../hls/{seg}.ts`, `.../legendas`,
 `.../legenda/{idx}`.
 
-**Diagnostics:** `GET /api/status`. Full details at `/swagger`.
+**Remote control** (single in-memory state, `PlayerStateService`): `GET /api/player/state`,
+`POST .../selecionar/{filmeId}`, `.../play-pause`, `.../seek`, `.../seek-abs`, `.../volume`,
+`.../legenda`, `.../posicao` (TV reports its own position), `.../parar`.
+
+**Diagnostics:** `GET /api/status`, `POST /api/diag/log` (`tv.html` reports JS/hls.js/`<video>`
+errors here — the TV has no accessible console). Full details at `/swagger`.
 
 ---
 
 ## 🏗️ Stack
 
-.NET 9 / ASP.NET Core · EF Core 8 + SQLite (no migrations — `EnsureCreated()` + idempotent
+.NET 9 / ASP.NET Core · EF Core 9 + SQLite (no migrations — `EnsureCreated()` + idempotent
 raw-SQL guards at boot) · Swashbuckle · [hls.js](https://github.com/video-dev/hls.js)
 (bundled) · Docker multi-stage (Alpine build, Debian bookworm-slim + jellyfin-ffmpeg runtime).
 

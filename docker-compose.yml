@@ -5,7 +5,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./data:/data          # SQLite + cache HLS/legendas
+      - ./data:/data          # SQLite + cache HLS/legendas/remux
       - ./media:/media:ro     # Pasta com seus filmes/séries (só leitura)
       - /mnt/backup/media:/media/extra   # espaço extra no HD WD 1TB (870GB livres)
     environment:

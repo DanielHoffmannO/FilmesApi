@@ -29,9 +29,13 @@ transcodificación bajo demanda y aceleración por hardware (VPU del RK3399/RK35
 - **Próximo episodio** — al terminar un episodio, ofrece el siguiente con cuenta regresiva.
 - **Subtítulos embebidos** — extrae las pistas de texto a WebVTT y las sirve como `<track>`.
 - **Pantalla para smart TV vieja** (`tv.html`) — catálogo standalone que navegás con el control
-  de la propia TV, ES5 puro, sin HLS (reproduce el archivo directo). Corre en ese navegador que no abre ningún sitio.
+  de la propia TV, ES5 puro. Reproduce HLS cuando la TV lo soporta (MediaSource o HLS nativo del
+  `<video>`); en una TV sin ninguno de los dos, igual arregla el audio incompatible vía `/remux`
+  antes de caer al archivo crudo.
+- **Control remoto desde el celular** (`controle.html`) — envía una película a la TV, controla
+  play/pause, avanza/retrocede, volumen y subtítulos a distancia, con barra de progreso.
 - **Póster y sinopsis** — enriquecimiento opcional vía [TMDB](https://www.themoviedb.org/).
-- **Dos interfaces web** (ver / TV) + una página de estado. Sin app que instalar.
+- **Tres interfaces web** (ver / TV / control remoto) + una página de estado. Sin app que instalar.
 
 ---
 
@@ -82,7 +86,8 @@ Extensiones reconocidas: `.mp4 .mkv .avi .mov .wmv .flv .webm`
 | URL | Dónde | Para |
 |---|---|---|
 | `/` (`index.html`) | celular / PC | Catálogo en lista compacta, búsqueda, filtros, continuar, reproductor con HLS, subtítulos y próximo-episodio. Navegador viejo cae a `/tv.html`. |
-| `/tv.html` | smart TV vieja | Catálogo **standalone** navegable con el control de la propia TV (ES5, flechas + OK, sin HLS — reproduce el archivo directo). Es lo que corre en la TV que no abre la `index.html`. |
+| `/tv.html` | smart TV vieja | Catálogo **standalone** navegable con el control de la propia TV (ES5, flechas + OK). Reproduce HLS (MediaSource o nativo) cuando la TV lo soporta; si no, intenta `/remux` (audio arreglado); el archivo crudo es el último recurso. También escucha comandos de `/controle.html` por detrás. |
+| `/controle.html` | celular | Control remoto: lista de películas con botón "enviar a la TV" + barra fija con play/pause, seek, volumen, subtítulos y progreso de lo que se reproduce en la TV. |
 | `/status.html` | — | Diagnóstico: temperatura de la placa, cola de transcode, uso del caché HLS, estado de la VPU. |
 | `/swagger` | — | Documentación interactiva de la API. |
 
@@ -102,12 +107,35 @@ Al pedir una película, el servidor elige el camino:
 La salida se cachea **permanentemente por película** con desalojo LRU sobre `HlsCacheMaxGB`.
 Una transcodificación a la vez por defecto.
 
+**`/remux` — no confundir con el remux stream-copy del paso 2** (ese es interno al pipeline
+HLS). **Para una TV sin HLS de ningún tipo** (ni MediaSource ni `<video>` nativo): cuando el video ya es
+compatible pero solo el **audio** no lo es (EAC3/DTS de rips WEB-DL/HMAX), `/remux` copia el
+video sin recodificar y transcodifica solo el audio a AAC estéreo en un `.mp4` cacheado (tope
+`RemuxCacheMaxGB`), servido con `Range` normal — funciona en cualquier reproductor, a diferencia
+de un pipe en vivo sin `Content-Length`. Solo cae al original crudo si el **video** también es
+incompatible.
+
 - **Pista de audio:** elige automáticamente portugués, luego la pista por defecto, luego la primera.
 - **Subtítulos:** no se muxean en el HLS. Las pistas de texto (SRT/ASS/mov_text) se extraen a
   WebVTT bajo demanda y se sirven como `<track>`. Los subtítulos bitmap (PGS/VobSub) no se pueden convertir.
 - **Protecciones:** detector de bloqueo (mata un ffmpeg colgado tras 8 min), cancelación de
   huérfanos (aborta un transcode que nadie mira tras `HlsOrphanTimeoutSeconds`), gobernador
   térmico opcional (retiene nuevos transcodes mientras la placa está muy caliente).
+
+---
+
+## 📱 Control remoto
+
+`/controle.html` manda comandos a la TV vía `PlayerStateService` (un único estado en memoria,
+pensado para una casa con una TV): seleccionar película, play/pause, seek relativo/absoluto,
+volumen, subtítulos. `tv.html` hace *poll* de ese estado por detrás y aplica los comandos
+llamando a las **mismas** funciones que usa el control de la propia TV — ninguna lógica de
+reproducción cambia según quién mandó el comando. La TV también avisa el estado cuando la
+película se cambia localmente, así el celular refleja lo que se está reproduciendo sin importar
+el origen.
+
+Sin brillo/zoom a propósito (existían en una versión anterior) — cambiarían lo que aparece en
+la pantalla de la TV, fuera del alcance de un control remoto.
 
 ---
 
@@ -151,7 +179,7 @@ anidadas usan `__`.
 **Transcodificación:** `MaxConcurrentTranscodeJobs` (`1`), `HlsMaxAlturaReencode` (`1080`,
 `0` desactiva el downscale), `HlsCacheMaxGB` (`20`), `HlsOrphanTimeoutSeconds` (`90`, `0`
 nunca aborta), `HlsStallTimeoutMinutes` (`8`), `ForceSoftwareEncoder` (`false`),
-`HlsRkmppDecodeHw` (`false`).
+`HlsRkmppDecodeHw` (`false`), `RemuxCachePath` (`/data/remux`), `RemuxCacheMaxGB` (`15`).
 
 **Gobernador térmico (opt-in):** `ThermalPauseCelsius` (`0` = off), `ThermalResumeCelsius`
 (`pausa − 8`), `ThermalMaxWaitMinutes` (`5`).
@@ -176,17 +204,23 @@ Ver el [README en portugués](README.md) para la tabla completa con descripcione
 `GET|PUT|DELETE /api/filmes/{id}/progresso`, `POST /api/filmes/{id}/concluir`,
 `POST /api/filmes/{id}/assistindo`.
 
-**Streaming:** `GET /api/filmes/{id}/stream-status`, `.../pode-direto`, `.../stream`,
-`.../original`, `.../hls/playlist.m3u8`, `.../hls/{seg}.ts`, `.../legendas`,
-`.../legenda/{idx}`.
+**Streaming:** `GET /api/filmes/{id}/stream-status`, `.../pode-direto` (ahora `{compativel,
+remuxavel}`), `.../stream`, `.../remux-status`, `.../remux` (video copy + audio AAC, cacheado,
+servido con `Range`), `.../original`, `.../hls/playlist.m3u8`, `.../hls/{seg}.ts`,
+`.../legendas`, `.../legenda/{idx}`.
 
-**Diagnóstico:** `GET /api/status`. Detalles completos en `/swagger`.
+**Control remoto** (un único estado en memoria, `PlayerStateService`): `GET /api/player/state`,
+`POST .../selecionar/{filmeId}`, `.../play-pause`, `.../seek`, `.../seek-abs`, `.../volume`,
+`.../legenda`, `.../posicao` (la TV reporta su propia posición), `.../parar`.
+
+**Diagnóstico:** `GET /api/status`, `POST /api/diag/log` (`tv.html` manda errores de
+JS/hls.js/`<video>` para acá — la TV no tiene consola accesible). Detalles completos en `/swagger`.
 
 ---
 
 ## 🏗️ Stack
 
-.NET 9 / ASP.NET Core · EF Core 8 + SQLite (sin migraciones — `EnsureCreated()` + guardas SQL
+.NET 9 / ASP.NET Core · EF Core 9 + SQLite (sin migraciones — `EnsureCreated()` + guardas SQL
 idempotentes al arrancar) · Swashbuckle · [hls.js](https://github.com/video-dev/hls.js)
 (incluido) · Docker multi-stage (build en Alpine, runtime en Debian bookworm-slim + jellyfin-ffmpeg).
 
