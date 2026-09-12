@@ -512,38 +512,63 @@ video { width: 100%; height: auto; background: #000; }
     hls.loadSource(url);
   }
 
+  function tocarUrl(id, url, comAviso) {
+    var v = document.getElementById('video');
+    var pmsg = document.getElementById('pmsg');
+    var seg = posicaoRetomar > 5 ? Math.floor(posicaoRetomar) : 0;
+    v.src = url + (seg ? '#t=' + seg : '');
+    if (comAviso) {
+      pmsg.innerHTML = 'Arquivo original (pode nao rodar em TV muito antiga).';
+      setTimeout(function () {
+        if (pmsg.innerHTML.indexOf('original') !== -1) pmsg.innerHTML = '';
+      }, 8000);
+    }
+    v.onerror = function () {
+      var err = v.error;
+      logDiag('<video> error (direto): code=' + (err && err.code) + ' filme ' + id + ' url=' + url);
+    };
+    try { v.load(); v.play(); } catch (e) {}
+    carregarLegendas(id);
+    // "assistido" fica por conta do backend (perto do fim) ou do evento 'ended'.
+  }
+
+  // Poll de /remux-status ate o .mp4 (video copiado, audio -> AAC) ficar pronto em
+  // cache — so entao toca, como um arquivo normal (Content-Length + Range, ao contrario
+  // de um pipe ao vivo que algumas TVs recusam na hora por nao saber o tamanho).
+  function pollRemuxEtocar(id) {
+    get(API + '/' + id + '/remux-status', function (err, d) {
+      if (filmeAtual !== id) return;
+      var pmsg = document.getElementById('pmsg');
+      var status = (!err && d) ? d.status : null;
+
+      if (status === 'erro') { pmsg.innerHTML = 'Falha ao preparar o audio.'; return; }
+      if (status === null || status === 'preparando') {
+        pmsg.innerHTML = 'Preparando audio...';
+        pollTimer = setTimeout(function () { pollRemuxEtocar(id); }, 2000);
+        return;
+      }
+      pmsg.innerHTML = '';
+      tocarUrl(id, API + '/' + id + '/remux', false);
+    });
+  }
+
   // TV sem MediaSource nem HLS nativo (ou hls.js que travou sem erro): pergunta se da
   // pra tocar direto (sem disparar transcode); se so o audio for o problema (EAC3/DTS
-  // de rip WEB-DL — o video ja e compativel), usa /remux (video copiado, so o audio
-  // vira AAC); senao, ultimo recurso, serve o arquivo original cru.
+  // de rip WEB-DL — o video ja e compativel), espera o /remux ficar pronto em cache
+  // (video copiado, so o audio vira AAC); senao, ultimo recurso, arquivo original cru.
   function tocarSemHls(id) {
-    var v = document.getElementById('video');
     var pmsg = document.getElementById('pmsg');
     get(API + '/' + id + '/pode-direto', function (e2, pd) {
       if (filmeAtual !== id) return;
-      pmsg.innerHTML = '';
-      var seg = posicaoRetomar > 5 ? Math.floor(posicaoRetomar) : 0;
       if (!e2 && pd && pd.compativel) {
-        v.src = API + '/' + id + '/stream' + (seg ? ('#t=' + seg) : '');
+        pmsg.innerHTML = '';
+        tocarUrl(id, API + '/' + id + '/stream', false);
       } else if (!e2 && pd && pd.remuxavel) {
-        // /remux e um pipe ao vivo, sem Range: a posicao de retomada tem que ir por
-        // query string (o ffmpeg faz -ss no inicio), fragmento #t= nao chega no servidor.
         logDiag('remux (audio) filme ' + id);
-        v.src = API + '/' + id + '/remux?t=' + seg;
+        pollRemuxEtocar(id);
       } else {
-        v.src = API + '/' + id + '/original' + (seg ? ('#t=' + seg) : '');
-        pmsg.innerHTML = 'Arquivo original (pode nao rodar em TV muito antiga).';
-        setTimeout(function () {
-          if (pmsg.innerHTML.indexOf('original') !== -1) pmsg.innerHTML = '';
-        }, 8000);
+        tocarUrl(id, API + '/' + id + '/original', true);
       }
-      v.onerror = function () {
-        var err = v.error;
-        logDiag('<video> error (direto): code=' + (err && err.code) + ' filme ' + id);
-      };
-      try { v.load(); v.play(); } catch (e) {}
-      carregarLegendas(id);
-      // "assistido" fica por conta do backend (perto do fim) ou do evento 'ended'.
     });
   }
 

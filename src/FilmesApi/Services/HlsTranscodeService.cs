@@ -1,10 +1,10 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Globalization;
 
 namespace FilmesApi.Services;
 
 public enum StreamStatus { Compativel, Preparando, Disponivel, Erro }
+public enum RemuxStatus { Preparando, Disponivel, Erro }
 
 /// <summary>
 /// Garante que o vídeo seja tocável no navegador: se o codec original já é suportado,
@@ -36,11 +36,7 @@ public class HlsTranscodeService
     private readonly TimeSpan _falhaCooldown;
     private readonly int _maxJobs;
     private readonly SemaphoreSlim _slotEncoder;
-    /// <summary>Só 1 /remux por vez: é um pipe sem cache, cada request roda o ffmpeg do zero.
-    /// Sem isso, TV que insiste (F5 repetido) empilha um ffmpeg full-speed por tentativa —
-    /// o processo velho não morre na hora quando o cliente some (detecção de desconexão do
-    /// Kestrel não é imediata, e MinResponseDataRate é null de propósito pra TV pausada).</summary>
-    private readonly SemaphoreSlim _slotRemux = new(1, 1);
+    private readonly string _remuxCachePath;
     private readonly RkmppCapabilityService _rkmpp;
     private readonly ThermalService _thermal;
     private readonly MediaProbeService _probe;
@@ -59,6 +55,14 @@ public class HlsTranscodeService
     /// (o caso clássico: abriu um 4K, viu "Preparando", desistiu — e o ffmpeg segue 1h à toa).</summary>
     private readonly ConcurrentDictionary<int, DateTime> _ultimoAcesso = new();
     private readonly object _decisaoLock = new();
+
+    /// <summary>Cache de /remux: um .mp4 completo por filme (não segmentado). Job dispara
+    /// uma vez, fica em <c>_remuxJobs</c> até terminar; <c>_remuxFalhas</c> segue o mesmo
+    /// cooldown de <c>_falhas</c>. Sem eviction por ora — só filmes com áudio incompatível
+    /// (EAC3/DTS) passam por aqui, um subconjunto pequeno da biblioteca.</summary>
+    private readonly ConcurrentDictionary<int, Task> _remuxJobs = new();
+    private readonly ConcurrentDictionary<int, DateTime> _remuxFalhas = new();
+    private readonly object _remuxLock = new();
 
     /// <summary>(bytes, itens, quando) do cache HLS em disco — varrido no máx. a cada 20 s
     /// (a página de status é refresh manual, não vale o I/O). Ver <see cref="ObterSnapshot"/>.</summary>
@@ -84,11 +88,13 @@ public class HlsTranscodeService
         _orphanTimeout = TimeSpan.FromSeconds(config.GetValue<double?>("HlsOrphanTimeoutSeconds") ?? 90);  // 0 = nunca aborta
         _falhaCooldown = TimeSpan.FromMinutes(config.GetValue<double?>("HlsFalhaCooldownMinutes") ?? 10);
         _slotEncoder = new SemaphoreSlim(_maxJobs, _maxJobs);
+        _remuxCachePath = config.GetValue<string>("RemuxCachePath") ?? "/data/remux";
         _rkmpp = rkmpp;
         _thermal = thermal;
         _probe = probe;
         _logger = logger;
         Directory.CreateDirectory(_cachePath);
+        Directory.CreateDirectory(_remuxCachePath);
     }
 
     public string DiretorioCache(int filmeId) => Path.Combine(_cachePath, filmeId.ToString());
@@ -111,9 +117,9 @@ public class HlsTranscodeService
 
     /// <summary>TV sem HLS nenhum (nem MSE nem nativo) e vídeo incompatível pra tocar
     /// direto: quando só o ÁUDIO é o problema (EAC3/DTS de rip WEB-DL, vídeo já em h264),
-    /// dá pra copiar o vídeo sem re-encode e só arrumar o áudio — ver <see cref="IniciarRemuxAsync"/>.
-    /// Se o vídeo também precisar reencode, não vale a pena pro caminho sem cache (pesado
-    /// demais pra rodar de novo a cada abertura) — cai pro /original mesmo.</summary>
+    /// dá pra copiar o vídeo sem re-encode e só arrumar o áudio — ver <see cref="ObterStatusRemuxAsync"/>.
+    /// Se o vídeo também precisar reencode, não vale a pena pro cache de remux (pesado
+    /// demais) — cai pro /original mesmo.</summary>
     public async Task<bool> PrecisaSoRemuxAudioAsync(string path, CancellationToken ct)
     {
         var info = await _probe.InspecionarAsync(path, ct);
@@ -122,38 +128,66 @@ public class HlsTranscodeService
         return primeiroAudio is not null && !AudioCodecsCompativeis.Contains(primeiroAudio);
     }
 
-    /// <summary>Tenta reservar a única vaga de /remux — não espera: se já tem um rodando,
-    /// devolve false na hora (o chamador responde 409 em vez de empilhar outro ffmpeg).</summary>
-    public bool TryComecarRemux() => _slotRemux.Wait(0);
+    public string CaminhoRemux(int filmeId) => Path.Combine(_remuxCachePath, $"{filmeId}.mp4");
 
-    /// <summary>Libera a vaga de /remux. Chamar sempre, mesmo em erro/cancelamento — no
-    /// finally do controller, junto com o Kill do processo.</summary>
-    public void TerminarRemux() => _slotRemux.Release();
-
-    /// <summary>Sobe um ffmpeg que copia o vídeo (sem re-encode) e transcodifica só o áudio
-    /// pra AAC estéreo, escrevendo MP4 fragmentado direto no stdout — sem cache em disco:
-    /// toca em progressive download assim que os primeiros bytes saem. Sem seek depois de
-    /// iniciado (é um pipe, não um arquivo) — a posição de retomada entra como -ss ANTES
-    /// do -i, no início do processo. Chamador tem que drenar stderr (senão o pipe enche e
-    /// o ffmpeg trava), matar o processo se o cliente desconectar no meio, e liberar a vaga
-    /// de <see cref="TryComecarRemux"/> (via <see cref="TerminarRemux"/>) ao terminar.</summary>
-    public async Task<Process?> IniciarRemuxAsync(string path, double posicaoSegundos, CancellationToken ct)
+    /// <summary>Estado do remux (cache em disco, um .mp4 por filme): dispara o job na primeira
+    /// chamada, reusa nas seguintes. Ao contrário do /remux antigo (pipe ao vivo, sem
+    /// Content-Length — algumas TVs recusam isso na hora, sem nem tentar), aqui o arquivo só
+    /// fica "disponivel" quando está completo e gravado, servido depois com Range normal
+    /// (<see cref="Controllers.ReproducaoController.ServirComRange"/>) — qualquer player aceita.</summary>
+    public RemuxStatus ObterStatusRemux(int filmeId, string origem)
     {
-        var info = await _probe.InspecionarAsync(path, ct);
-        if (info is null) return null;
-        var audioIdx = EscolherStreamAudio(info.Audios);
+        lock (_remuxLock)
+        {
+            if (_remuxFalhas.TryGetValue(filmeId, out var falhouEm))
+            {
+                if (DateTime.UtcNow - falhouEm < _falhaCooldown) return RemuxStatus.Erro;
+                _remuxFalhas.TryRemove(filmeId, out _);
+            }
+            if (File.Exists(CaminhoRemux(filmeId))) return RemuxStatus.Disponivel;
+            if (!_remuxJobs.ContainsKey(filmeId))
+                _remuxJobs[filmeId] = Task.Run(() => ExecutarRemuxAsync(filmeId, origem));
+            return RemuxStatus.Preparando;
+        }
+    }
 
-        List<string> args = ["-y"];
-        if (posicaoSegundos > 0) args.AddRange(["-ss", posicaoSegundos.ToString("0.###", CultureInfo.InvariantCulture)]);
-        args.AddRange(["-i", path, "-map", "0:v:0"]);
-        if (audioIdx is int idx) args.AddRange(["-map", $"0:{idx}"]);
-        args.Add("-c:v"); args.Add("copy");
-        if (audioIdx is not null) args.AddRange(["-c:a", "aac", "-b:a", "192k", "-ac", "2"]);
-        args.AddRange(["-f", "mp4", "-movflags", "frag_keyframe+empty_moov+default_base_moof", "pipe:1"]);
+    private async Task ExecutarRemuxAsync(int filmeId, string origem)
+    {
+        var final = CaminhoRemux(filmeId);
+        var tmp = final + ".tmp";
+        try
+        {
+            var info = await _probe.InspecionarAsync(origem, CancellationToken.None)
+                ?? throw new InvalidOperationException("probe falhou");
+            var audioIdx = EscolherStreamAudio(info.Audios);
 
-        var psi = new ProcessStartInfo(_ffmpegPath) { RedirectStandardOutput = true, RedirectStandardError = true };
-        foreach (var arg in args) psi.ArgumentList.Add(arg);
-        return Process.Start(psi);
+            List<string> args = ["-y", "-i", origem, "-map", "0:v:0"];
+            if (audioIdx is int idx) args.AddRange(["-map", $"0:{idx}"]);
+            args.Add("-c:v"); args.Add("copy");
+            if (audioIdx is not null) args.AddRange(["-c:a", "aac", "-b:a", "192k", "-ac", "2"]);
+            // -f mp4 explícito: o nome real é "{id}.mp4.tmp" (renomeado pro final só depois
+            // de completo), e o ffmpeg escolhe o muxer pela ÚLTIMA extensão — ".tmp" sozinho
+            // não é reconhecido, então sem isso ele recusa nem abrir o arquivo de saída.
+            args.AddRange(["-f", "mp4", "-movflags", "+faststart", tmp]);
+
+            var psi = new ProcessStartInfo(_ffmpegPath);
+            foreach (var a in args) psi.ArgumentList.Add(a);
+
+            var (exit, stderr) = await ProcessRunner.ExecutarComTimeoutAsync(psi, _jobTimeout, null, _pararToken);
+            if (exit != 0) throw new InvalidOperationException($"ffmpeg exit {exit}: {stderr}");
+
+            File.Move(tmp, final, overwrite: true);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Falha ao remuxar filme {Id}.", filmeId);
+            _remuxFalhas[filmeId] = DateTime.UtcNow;
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+        finally
+        {
+            _remuxJobs.TryRemove(filmeId, out _);
+        }
     }
 
     /// <summary>Tem algum job de transcode vivo (encodando ou na fila)? Barato — sem I/O.</summary>
