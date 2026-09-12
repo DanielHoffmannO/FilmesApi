@@ -101,6 +101,18 @@ app.UseSwagger();
 app.UseSwaggerUI(c => c.RoutePrefix = "swagger");
 app.MapControllers();
 app.MapHealthChecks("/health");
+
+// Diagnostico client-side: tv.html nao tem console acessivel (TV sem devtools) — manda
+// erro de JS/hls.js/<video> pra cá, cai direto no docker logs. Sem persistir em banco:
+// é só pra depuração pontual.
+app.MapPost("/api/diag/log", (DiagLogRequest req, ILoggerFactory lf) =>
+{
+    lf.CreateLogger("TvDiag").LogWarning("[tv.html] {Msg}", req.Msg);
+    return Results.NoContent();
+});
+
 app.MapFallbackToFile("index.html");
 
 app.Run();
+
+record DiagLogRequest(string Msg);
