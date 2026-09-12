@@ -161,6 +161,7 @@ video { width: 100%; height: auto; background: #000; }
   var hls = null;
   var pollTimer = null;
   var hlsRetries = 0;
+  var hlsWatchdog = null;
   var filmes = [];
   var continuar = [];
   var filtroTipo = 'all';   // all | filme | serie
@@ -200,6 +201,22 @@ video { width: 100%; height: auto; background: #000; }
     x.open(method, url, true);
     x.send();
   }
+
+  // TV nao tem console acessivel — manda erro pro servidor (docker logs) em vez de
+  // depender de alguem ler a tela. Best-effort: nunca lanca.
+  function logDiag(msg) {
+    try {
+      var x = new XMLHttpRequest();
+      x.open('POST', '/api/diag/log', true);
+      x.setRequestHeader('Content-Type', 'application/json');
+      x.send(JSON.stringify({ msg: String(msg) }));
+    } catch (e) {}
+  }
+
+  window.onerror = function (msg, url, line, col, err) {
+    logDiag('JS error: ' + msg + ' @ ' + url + ':' + line + ':' + col);
+    return false;
+  };
 
   function esc(s) {
     s = String(s == null ? '' : s);
@@ -444,14 +461,39 @@ video { width: 100%; height: auto; background: #000; }
     if (hls) { try { hls.destroy(); } catch (e) {} hls = null; }
   }
 
+  function pararWatchdog() {
+    if (hlsWatchdog) { clearTimeout(hlsWatchdog); hlsWatchdog = null; }
+  }
+
+  // Se o hls.js anexa mas nunca entrega dado nenhum pro <video> (MediaSource com bug
+  // silencioso, comum em WebKit velho de TV — nao dispara ERROR nenhum), cai pro
+  // caminho antigo (arquivo direto/original) depois de um tempo em vez de ficar
+  // preso pra sempre numa tela preta.
+  function armarWatchdog(id) {
+    pararWatchdog();
+    hlsWatchdog = setTimeout(function () {
+      var v = document.getElementById('video');
+      if (filmeAtual !== id || v.readyState >= 2) return;  // ja tem dado -> hls ta ok
+      logDiag('watchdog: hls sem dado em 15s (readyState=' + v.readyState + '), filme ' + id + ' — caindo pro arquivo direto');
+      destruirHls();
+      document.getElementById('pmsg').innerHTML = 'HLS não respondeu, tentando arquivo direto...';
+      tocarSemHls(id);
+    }, 15000);
+  }
+
   function iniciarHls(id, url, tAlvo) {
     var v = document.getElementById('video');
     destruirHls();
+    armarWatchdog(id);
     hls = new window.Hls(tAlvo ? { startPosition: tAlvo } : {});
     hls.on(window.Hls.Events.MANIFEST_PARSED, function () { try { v.play(); } catch (e) {} });
     hls.on(window.Hls.Events.ERROR, function (_e, d) {
-      if (!d || !d.fatal || filmeAtual !== id) return;
-      if (d.type === window.Hls.ErrorTypes.MEDIA_ERROR) { hls.recoverMediaError(); return; }
+      if (!d) return;
+      logDiag('hls.js error: type=' + d.type + ' details=' + d.details + ' fatal=' + d.fatal +
+              (d.response ? (' status=' + d.response.code) : ''));
+      if (!d.fatal || filmeAtual !== id) return;
+      pararWatchdog();
+      if (d.type === window.Hls.ErrorTypes.MEDIA_ERROR) { hls.recoverMediaError(); armarWatchdog(id); return; }
       destruirHls();
       // erro fatal de rede: segmento sumiu (transcode reiniciou) — recarrega o filme.
       // Limite de tentativas: senao um erro persistente (TV incompativel, etc.)
@@ -462,8 +504,40 @@ video { width: 100%; height: auto; background: #000; }
         document.getElementById('pmsg').innerHTML = 'Falha ao carregar o video (erro ' + d.type + ').';
       }
     });
+    v.onerror = function () {
+      var err = v.error;
+      logDiag('<video> error: code=' + (err && err.code) + ' filme ' + id);
+    };
     hls.attachMedia(v);
     hls.loadSource(url);
+  }
+
+  // TV sem MediaSource (ou hls.js que travou sem erro): so pergunta se da pra tocar
+  // direto (sem disparar transcode), senao serve o arquivo original.
+  function tocarSemHls(id) {
+    var v = document.getElementById('video');
+    var pmsg = document.getElementById('pmsg');
+    get(API + '/' + id + '/pode-direto', function (e2, pd) {
+      if (filmeAtual !== id) return;
+      pmsg.innerHTML = '';
+      var frag = posicaoRetomar > 5 ? ('#t=' + Math.floor(posicaoRetomar)) : '';
+      if (!e2 && pd && pd.compativel) {
+        v.src = API + '/' + id + '/stream' + frag;
+      } else {
+        v.src = API + '/' + id + '/original' + frag;
+        pmsg.innerHTML = 'Arquivo original (pode nao rodar em TV muito antiga).';
+        setTimeout(function () {
+          if (pmsg.innerHTML.indexOf('original') !== -1) pmsg.innerHTML = '';
+        }, 8000);
+      }
+      v.onerror = function () {
+        var err = v.error;
+        logDiag('<video> error (direto): code=' + (err && err.code) + ' filme ' + id);
+      };
+      try { v.load(); v.play(); } catch (e) {}
+      carregarLegendas(id);
+      // "assistido" fica por conta do backend (perto do fim) ou do evento 'ended'.
+    });
   }
 
   // Poll de /stream-status ate sair de "preparando", igual ao index.html. So entra
@@ -548,6 +622,7 @@ video { width: 100%; height: auto; background: #000; }
   function tocar(id, ehRetry) {
     cancelarProximo();
     pararPoll();
+    pararWatchdog();
     destruirHls();
     removerLegendas();
     if (!ehRetry) hlsRetries = 0;  // retry preserva o contador, senao o teto de 3 nunca conta
@@ -571,34 +646,12 @@ video { width: 100%; height: auto; background: #000; }
     reproducaoConcluida = false;
 
     var temHls = !!(window.Hls && window.Hls.isSupported && window.Hls.isSupported());
+    if (!ehRetry) logDiag('tocar filme ' + id + ': temHls=' + temHls);
 
     // pega o ponto de retomada ANTES de setar o src (senao o loadedmetadata perde a corrida)
     get(API + '/' + id + '/progresso', function (err, d) {
       if (!err && d && d.posicaoSegundos) posicaoRetomar = d.posicaoSegundos;
-
-      if (temHls) {
-        pollStatusEtocar(id);
-        return;
-      }
-
-      // TV sem MediaSource: so pergunta se da pra tocar direto (sem disparar
-      // transcode), senao serve o arquivo original.
-      get(API + '/' + id + '/pode-direto', function (e2, pd) {
-        pmsg.innerHTML = '';
-        var frag = posicaoRetomar > 5 ? ('#t=' + Math.floor(posicaoRetomar)) : '';
-        if (!e2 && pd && pd.compativel) {
-          v.src = API + '/' + id + '/stream' + frag;
-        } else {
-          v.src = API + '/' + id + '/original' + frag;
-          pmsg.innerHTML = 'Arquivo original (pode nao rodar em TV muito antiga).';
-          setTimeout(function () {
-            if (pmsg.innerHTML.indexOf('original') !== -1) pmsg.innerHTML = '';
-          }, 8000);
-        }
-        try { v.load(); v.play(); } catch (e) {}
-        carregarLegendas(id);
-        // "assistido" fica por conta do backend (perto do fim) ou do evento 'ended'.
-      });
+      if (temHls) pollStatusEtocar(id); else tocarSemHls(id);
     });
   }
 
@@ -664,6 +717,7 @@ video { width: 100%; height: auto; background: #000; }
   function fecharPlayer() {
     cancelarProximo();
     pararPoll();
+    pararWatchdog();
     destruirHls();
     removerLegendas();
     // grava o progresso e so entao recarrega a lista, senao o "continuar
