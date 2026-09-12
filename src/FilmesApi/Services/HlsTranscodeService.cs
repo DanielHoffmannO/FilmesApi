@@ -36,6 +36,11 @@ public class HlsTranscodeService
     private readonly TimeSpan _falhaCooldown;
     private readonly int _maxJobs;
     private readonly SemaphoreSlim _slotEncoder;
+    /// <summary>Só 1 /remux por vez: é um pipe sem cache, cada request roda o ffmpeg do zero.
+    /// Sem isso, TV que insiste (F5 repetido) empilha um ffmpeg full-speed por tentativa —
+    /// o processo velho não morre na hora quando o cliente some (detecção de desconexão do
+    /// Kestrel não é imediata, e MinResponseDataRate é null de propósito pra TV pausada).</summary>
+    private readonly SemaphoreSlim _slotRemux = new(1, 1);
     private readonly RkmppCapabilityService _rkmpp;
     private readonly ThermalService _thermal;
     private readonly MediaProbeService _probe;
@@ -117,12 +122,21 @@ public class HlsTranscodeService
         return primeiroAudio is not null && !AudioCodecsCompativeis.Contains(primeiroAudio);
     }
 
+    /// <summary>Tenta reservar a única vaga de /remux — não espera: se já tem um rodando,
+    /// devolve false na hora (o chamador responde 409 em vez de empilhar outro ffmpeg).</summary>
+    public bool TryComecarRemux() => _slotRemux.Wait(0);
+
+    /// <summary>Libera a vaga de /remux. Chamar sempre, mesmo em erro/cancelamento — no
+    /// finally do controller, junto com o Kill do processo.</summary>
+    public void TerminarRemux() => _slotRemux.Release();
+
     /// <summary>Sobe um ffmpeg que copia o vídeo (sem re-encode) e transcodifica só o áudio
     /// pra AAC estéreo, escrevendo MP4 fragmentado direto no stdout — sem cache em disco:
     /// toca em progressive download assim que os primeiros bytes saem. Sem seek depois de
     /// iniciado (é um pipe, não um arquivo) — a posição de retomada entra como -ss ANTES
     /// do -i, no início do processo. Chamador tem que drenar stderr (senão o pipe enche e
-    /// o ffmpeg trava) e matar o processo se o cliente desconectar no meio.</summary>
+    /// o ffmpeg trava), matar o processo se o cliente desconectar no meio, e liberar a vaga
+    /// de <see cref="TryComecarRemux"/> (via <see cref="TerminarRemux"/>) ao terminar.</summary>
     public async Task<Process?> IniciarRemuxAsync(string path, double posicaoSegundos, CancellationToken ct)
     {
         var info = await _probe.InspecionarAsync(path, ct);
