@@ -541,7 +541,8 @@ video { width: 100%; height: auto; background: #000; }
   }
 
   // Poll de /stream-status ate sair de "preparando", igual ao index.html. So entra
-  // aqui quando a TV tem hls.js (Hls.isSupported()) — TV sem MediaSource nem chega.
+  // aqui quando a TV tem algum jeito de tocar HLS (MSE+hls.js OU HLS nativo do
+  // <video>) — TV sem nenhum dos dois nem chega, vai direto pro tocarSemHls.
   function pollStatusEtocar(id) {
     get(API + '/' + id + '/stream-status', function (err, d) {
       if (filmeAtual !== id) return;  // trocou de filme enquanto esperava
@@ -558,11 +559,25 @@ video { width: 100%; height: auto; background: #000; }
       pmsg.innerHTML = '';
       var v = document.getElementById('video');
       var t = posicaoRetomar > 5 ? Math.floor(posicaoRetomar) : 0;
+      var url = API + '/' + id + '/hls/playlist.m3u8';
       if (status === 'compativel') {
         v.src = API + '/' + id + '/stream' + (t ? ('#t=' + t) : '');
         try { v.load(); v.play(); } catch (e) {}
+      } else if (window.Hls && window.Hls.isSupported && window.Hls.isSupported()) {
+        iniciarHls(id, url, t);
       } else {
-        iniciarHls(id, API + '/' + id + '/hls/playlist.m3u8', t);
+        // Sem MediaSource, mas o <video> entende .m3u8 direto (HLS nativo — comum em
+        // smart TV mesmo sem hls.js). Mesmo watchdog: se travar sem erro, cai pro raw.
+        logDiag('native HLS (canPlayType) filme ' + id);
+        armarWatchdog(id);
+        v.onerror = function () {
+          var err = v.error;
+          logDiag('<video> error (HLS nativo): code=' + (err && err.code) + ' filme ' + id);
+          pararWatchdog();
+          tocarSemHls(id);
+        };
+        v.src = url + (t ? ('#t=' + t) : '');
+        try { v.load(); v.play(); } catch (e) {}
       }
       carregarLegendas(id);
     });
@@ -645,8 +660,10 @@ video { width: 100%; height: auto; background: #000; }
     retomarTentativas = 0;
     reproducaoConcluida = false;
 
-    var temHls = !!(window.Hls && window.Hls.isSupported && window.Hls.isSupported());
-    if (!ehRetry) logDiag('tocar filme ' + id + ': temHls=' + temHls);
+    var temMseHls = !!(window.Hls && window.Hls.isSupported && window.Hls.isSupported());
+    var temNativeHls = !!(v.canPlayType && v.canPlayType('application/vnd.apple.mpegurl'));
+    var temHls = temMseHls || temNativeHls;
+    if (!ehRetry) logDiag('tocar filme ' + id + ': mse=' + temMseHls + ' native=' + temNativeHls);
 
     // pega o ponto de retomada ANTES de setar o src (senao o loadedmetadata perde a corrida)
     get(API + '/' + id + '/progresso', function (err, d) {
