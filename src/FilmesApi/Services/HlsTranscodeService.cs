@@ -131,15 +131,22 @@ public class HlsTranscodeService
     {
         var info = await _probe.InspecionarAsync(path, ct);
         if (info is null) return CompatibilidadeDireta.Incompativel;
-
-        var videoOk = info.VideoCodec is not null && VideoCodecsCompativeis.Contains(info.VideoCodec);
         var primeiroAudio = info.Audios.Count > 0 ? info.Audios[0].Codec : null;
-        var audioOk = primeiroAudio is null || AudioCodecsCompativeis.Contains(primeiroAudio);
+        return ClassificarCompatibilidade(Path.GetExtension(path), info.VideoCodec, primeiroAudio);
+    }
+
+    /// <summary>Decisão pura de compatibilidade, separada do probe (I/O) pra dar pra testar
+    /// direto — mesma ideia do <see cref="MontarArgsFfmpegHls"/>. Ver <see cref="AnalisarCompatibilidadeAsync"/>
+    /// pro caminho real, que lê o arquivo com ffprobe antes de chamar isso.</summary>
+    internal static CompatibilidadeDireta ClassificarCompatibilidade(string extensao, string? videoCodec, string? primeiroAudioCodec)
+    {
+        var videoOk = videoCodec is not null && VideoCodecsCompativeis.Contains(videoCodec);
+        var audioOk = primeiroAudioCodec is null || AudioCodecsCompativeis.Contains(primeiroAudioCodec);
 
         // "Compativel" (toca cru, sem processar nada) só vale pra containers que o <video>
         // entende sem drama — extensão restrita de propósito, MKV mesmo com codecs bons fica
         // de fora (comportamento de sempre, ver histórico do antigo EhCompativelAsync).
-        var containerOk = Path.GetExtension(path).ToLowerInvariant() is ".mp4" or ".webm" or ".mov" or ".m4v";
+        var containerOk = extensao.ToLowerInvariant() is ".mp4" or ".webm" or ".mov" or ".m4v";
 
         if (containerOk && videoOk && audioOk) return CompatibilidadeDireta.Compativel;
         if (videoOk && !audioOk) return CompatibilidadeDireta.SoAudioIncompativel;
@@ -152,29 +159,56 @@ public class HlsTranscodeService
     /// chamada, reusa nas seguintes. Ao contrário do /remux antigo (pipe ao vivo, sem
     /// Content-Length — algumas TVs recusam isso na hora, sem nem tentar), aqui o arquivo só
     /// fica "disponivel" quando está completo e gravado, servido depois com Range normal
-    /// (<see cref="Controllers.ReproducaoController.ServirComRange"/>) — qualquer player aceita.</summary>
-    public RemuxStatus ObterStatusRemux(int filmeId, string origem)
+    /// (<see cref="Controllers.ReproducaoController.ServirComRange"/>) — qualquer player aceita.
+    /// Enquanto "preparando", devolve também um progresso estimado (tamanho do .tmp / tamanho
+    /// do original — o vídeo é copiado quase 1:1, só o áudio encolhe, então isso sobra perto
+    /// do fim; por isso o teto de 99% até realmente terminar). É só pra não parecer travado
+    /// num filme de 2h+ — não precisa ser exato.</summary>
+    public (RemuxStatus Status, int? ProgressoPercent) ObterStatusRemux(int filmeId, string origem)
     {
         lock (_remuxLock)
         {
             if (_remuxFalhas.TryGetValue(filmeId, out var falhouEm))
             {
-                if (DateTime.UtcNow - falhouEm < _falhaCooldown) return RemuxStatus.Erro;
+                if (DateTime.UtcNow - falhouEm < _falhaCooldown) return (RemuxStatus.Erro, null);
                 _remuxFalhas.TryRemove(filmeId, out _);
             }
-            if (File.Exists(CaminhoRemux(filmeId))) return RemuxStatus.Disponivel;
+            if (File.Exists(CaminhoRemux(filmeId))) return (RemuxStatus.Disponivel, 100);
             if (!_remuxJobs.ContainsKey(filmeId))
                 _remuxJobs[filmeId] = Task.Run(() => ExecutarRemuxAsync(filmeId, origem));
-            return RemuxStatus.Preparando;
+            return (RemuxStatus.Preparando, EstimarProgressoRemux(filmeId, origem));
         }
+    }
+
+    private int? EstimarProgressoRemux(int filmeId, string origem)
+    {
+        try
+        {
+            var tmp = CaminhoRemux(filmeId) + ".tmp";
+            if (!File.Exists(tmp)) return 0;
+            var origBytes = new FileInfo(origem).Length;
+            if (origBytes <= 0) return null;
+            var pct = (int)(100.0 * new FileInfo(tmp).Length / origBytes);
+            return Math.Clamp(pct, 0, 99);
+        }
+        catch (IOException) { return null; }
     }
 
     private async Task ExecutarRemuxAsync(int filmeId, string origem)
     {
         var final = CaminhoRemux(filmeId);
         var tmp = final + ".tmp";
+        var slotObtido = false;
         try
         {
+            // Mesmo gate de temperatura/concorrência do HLS: mesmo o remux sendo leve
+            // (video só copia, só o áudio processa), ele ainda compete pela mesma CPU/placa —
+            // sem isso um remux e um reencode HLS rodando juntos já esquentaram a placa hoje.
+            await _thermal.AguardarResfriamentoAsync(_pararToken);
+            await _slotEncoder.WaitAsync(_pararToken);
+            slotObtido = true;
+            await _thermal.AguardarResfriamentoAsync(_pararToken);
+
             var info = await _probe.InspecionarAsync(origem, CancellationToken.None)
                 ?? throw new InvalidOperationException("probe falhou");
             var audioIdx = EscolherStreamAudio(info.Audios);
@@ -205,6 +239,7 @@ public class HlsTranscodeService
         finally
         {
             _remuxJobs.TryRemove(filmeId, out _);
+            if (slotObtido) _slotEncoder.Release();
         }
 
         if (!_pararToken.IsCancellationRequested) LimparRemuxCacheExcedente();

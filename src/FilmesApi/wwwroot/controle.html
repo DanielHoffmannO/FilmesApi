@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Controle da TV</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📱%3C/text%3E%3C/svg%3E">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,sans-serif;background:#0d0d0d;color:#eee;min-height:100vh;padding-bottom:120px}
+header{background:#111;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #222;position:sticky;top:0;z-index:5}
+h1{font-size:18px;font-weight:600}
+header a{color:#888;text-decoration:none;font-size:13px}
+main{padding:10px 14px;max-width:640px;margin:0 auto}
+.secao-title{font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.6px;margin:14px 0 6px}
+.row{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:8px;background:#161616;margin-bottom:6px}
+.row.tocando{outline:2px solid #e50914}
+.row .rtit{flex:1;min-width:0}
+.row .rtit .t{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.row .rtit .sub{font-size:11px;color:#888}
+.row .rprog{height:2px;background:#2a2a2a;border-radius:1px;margin-top:6px;overflow:hidden}
+.row .rprog>div{height:100%;background:#e50914}
+.enviar{background:#222;color:#eee;border:1px solid #333;border-radius:20px;padding:8px 14px;font-size:18px;line-height:1;flex:none}
+.enviar:active{background:#333}
+.grupo-hd{padding:11px 12px;border-radius:8px;background:#1a1a1a;font-size:14px;font-weight:600;color:#ddd;margin-bottom:2px}
+.grupo-hd .count{color:#666;font-weight:400;font-size:12px}
+.grupo-body{padding-left:10px;margin-bottom:6px}
+.msg{text-align:center;color:#777;padding:50px 20px;font-size:14px}
+
+#barra{position:fixed;left:0;right:0;bottom:0;background:#111;border-top:1px solid #222;padding:10px 14px 14px;display:none;flex-direction:column;gap:8px;z-index:10}
+#barra.on{display:flex}
+.b-titulo{font-size:13px;color:#eee;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.b-prog{height:10px;background:#2a2a2a;border-radius:5px;position:relative}
+.b-prog>div{height:100%;background:#e50914;border-radius:5px;width:0}
+.b-time{display:flex;justify-content:space-between;font-size:11px;color:#999;font-variant-numeric:tabular-nums}
+.b-controles{display:flex;align-items:center;gap:10px}
+.b-controles button{background:#222;color:#eee;border:1px solid #333;border-radius:8px;padding:10px 12px;font-size:16px;flex:none}
+.b-controles button.on{border-color:#e50914;color:#e50914}
+.b-controles input[type=range]{flex:1}
+.b-controles .parar{margin-left:auto;color:#e50914;border-color:#e50914}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📱 Controle da TV</h1>
+  <a href="/">🎬 Lista completa</a>
+</header>
+
+<main>
+  <div id="msg" class="msg">Carregando…</div>
+  <div id="grid"></div>
+</main>
+
+<div id="barra">
+  <div class="b-titulo" id="bTitulo"></div>
+  <div class="b-prog" id="bProg"><div id="bProgFill"></div></div>
+  <div class="b-time"><span id="bPos">0:00</span><span id="bDur">0:00</span></div>
+  <div class="b-controles">
+    <button onclick="remoto('seek',-10)">« 10s</button>
+    <button onclick="remoto('play-pause')" id="bPlayPause">⏸</button>
+    <button onclick="remoto('seek',10)">10s »</button>
+    <button onclick="cicarLegenda()" id="bCC" style="display:none">CC</button>
+    <input type="range" id="bVolume" min="0" max="1" step="0.05" oninput="remoto('volume', Number(this.value))">
+    <button class="parar" onclick="remoto('parar')">⏹</button>
+  </div>
+</div>
+
+<script>
+const API = '/api/filmes';
+const PLAYER = '/api/player';
+let filmes = [];
+let continuar = [];
+let estadoAnterior = null;
+let legendas = [], legendasDe = null;
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function mmss(s) {
+  s = Math.max(0, Math.round(s || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : String(m)) + ':' + String(sec).padStart(2, '0');
+}
+
+async function carregar() {
+  const msg = document.getElementById('msg');
+  try {
+    filmes = await fetch(API).then(r => r.json());
+    continuar = await fetch(API + '/continuar').then(r => r.json()).catch(() => []);
+    msg.style.display = filmes.length ? 'none' : 'block';
+    if (!filmes.length) msg.textContent = 'Nenhum filme. Rode o Scan no celular (lista completa).';
+    render();
+  } catch {
+    msg.style.display = 'block';
+    msg.textContent = 'Falha ao carregar a lista.';
+  }
+}
+
+function itemHtml(f, rotulo) {
+  const pct = f.duracaoSegundos ? Math.min(100, 100 * (f.posicaoSegundos || 0) / f.duracaoSegundos) : 0;
+  const tocando = estadoAnterior && estadoAnterior.filmeId === f.id;
+  return `<div class="row${tocando ? ' tocando' : ''}" data-id="${f.id}">
+      <div class="rtit">
+        <span class="t">${esc(rotulo || f.titulo)}</span>
+        ${f.anoLancamento ? `<span class="sub">${f.anoLancamento}${f.assistido ? ' · assistido' : ''}</span>` : ''}
+        ${pct ? `<div class="rprog"><div style="width:${pct}%"></div></div>` : ''}
+      </div>
+      <button class="enviar" onclick="enviar(${f.id})" title="Enviar para a TV">📺</button>
+    </div>`;
+}
+
+function render() {
+  const grid = document.getElementById('grid');
+  let html = '';
+
+  if (continuar.length) {
+    html += '<div class="secao-title">Continuar assistindo</div>';
+    for (const c of continuar) html += itemHtml(c);
+  }
+
+  const soltos = filmes.filter(f => !f.ehEpisodio);
+  const series = {};
+  for (const f of filmes) if (f.ehEpisodio) (series[f.serie] ??= []).push(f);
+
+  if (soltos.length) {
+    html += '<div class="secao-title">Filmes (' + soltos.length + ')</div>';
+    for (const f of soltos.sort((a, b) => a.titulo.localeCompare(b.titulo))) html += itemHtml(f);
+  }
+  const nomesSerie = Object.keys(series).sort();
+  if (nomesSerie.length) {
+    html += '<div class="secao-title">Séries</div>';
+    for (const nome of nomesSerie) {
+      const eps = series[nome].sort((a, b) => (a.temporada - b.temporada) || (a.episodio - b.episodio));
+      html += `<div class="grupo-hd">${esc(nome)} <span class="count">(${eps.length})</span></div><div class="grupo-body">`;
+      for (const ep of eps) html += itemHtml(ep, ep.rotulo);
+      html += '</div>';
+    }
+  }
+  grid.innerHTML = html;
+}
+
+function enviar(id) {
+  remoto('selecionar', id);
+}
+
+async function remoto(acao, valor) {
+  let url = PLAYER + '/' + acao;
+  let opts = { method: 'POST' };
+  if (acao === 'selecionar') url += '/' + valor;
+  else if (acao === 'seek') opts = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ delta: valor }) };
+  else if (acao === 'volume') opts = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ valor }) };
+  try { await fetch(url, opts); } catch {}
+  pollEstado();
+}
+
+async function seekAbsoluto(fracao) {
+  const dur = (estadoAnterior && estadoAnterior.duracaoSegundos) || 0;
+  if (!dur) return;
+  try {
+    await fetch(PLAYER + '/seek-abs', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pos: fracao * dur })
+    });
+  } catch {}
+  pollEstado();
+}
+document.getElementById('bProg').addEventListener('click', e => {
+  const r = e.currentTarget.getBoundingClientRect();
+  seekAbsoluto(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)));
+});
+
+async function carregarLegendas(id) {
+  if (legendasDe === id) return;
+  legendasDe = id;
+  try { legendas = (await fetch(`${API}/${id}/legendas`).then(r => r.json())).filter(x => x.convertivel); }
+  catch { legendas = []; }
+  document.getElementById('bCC').style.display = legendas.length ? '' : 'none';
+}
+async function cicarLegenda() {
+  if (!legendas.length) return;
+  const atual = estadoAnterior && estadoAnterior.legendaIdx;
+  const idxAtual = legendas.findIndex(x => x.idx === atual);
+  const prox = idxAtual + 1 >= legendas.length ? -1 : legendas[idxAtual + 1].idx;
+  try {
+    await fetch(PLAYER + '/legenda', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idx: prox })
+    });
+  } catch {}
+  pollEstado();
+}
+
+let pollTimer = null;
+async function pollEstado() {
+  if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+  try {
+    const estado = await fetch(PLAYER + '/state').then(r => r.json());
+    const trocouFilme = !estadoAnterior || estadoAnterior.filmeId !== estado.filmeId;
+    estadoAnterior = estado;
+
+    const barra = document.getElementById('barra');
+    if (estado.filmeId === null) {
+      barra.classList.remove('on');
+      legendasDe = null;
+    } else {
+      barra.classList.add('on');
+      carregarLegendas(estado.filmeId);
+      if (trocouFilme) {
+        const f = filmes.find(x => x.id === estado.filmeId) || continuar.find(x => x.id === estado.filmeId);
+        document.getElementById('bTitulo').textContent = f ? (f.rotulo || f.titulo) : ('Filme #' + estado.filmeId);
+        render();
+      }
+      document.getElementById('bPlayPause').textContent = estado.playing ? '⏸' : '▶';
+      document.getElementById('bPlayPause').className = estado.playing ? '' : 'on';
+      document.getElementById('bVolume').value = estado.volume;
+      document.getElementById('bCC').className = estado.legendaIdx >= 0 ? 'on' : '';
+      const pos = estado.posSegundos || 0, dur = estado.duracaoSegundos || 0;
+      document.getElementById('bProgFill').style.width = dur ? Math.min(100, 100 * pos / dur) + '%' : '0';
+      document.getElementById('bPos').textContent = mmss(pos);
+      document.getElementById('bDur').textContent = dur ? mmss(dur) : '--:--';
+    }
+  } catch { /* ignora falha pontual de rede */ }
+  finally {
+    pollTimer = setTimeout(pollEstado, 1000);
+  }
+}
+
+carregar();
+pollEstado();
+</script>
+</body>
+</html>
