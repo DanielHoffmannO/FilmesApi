@@ -6,6 +6,12 @@ namespace FilmesApi.Services;
 public enum StreamStatus { Compativel, Preparando, Disponivel, Erro }
 public enum RemuxStatus { Preparando, Disponivel, Erro }
 
+/// <summary>Classificação de compatibilidade "tocar sem HLS", numa leitura de probe só —
+/// <c>Compativel</c> (toca cru, sem processar nada), <c>SoAudioIncompativel</c> (vídeo ok,
+/// só o áudio precisa de /remux) ou <c>Incompativel</c> (nem isso: /original é o único
+/// recurso, pode falhar dependendo do player).</summary>
+public enum CompatibilidadeDireta { Compativel, SoAudioIncompativel, Incompativel }
+
 /// <summary>
 /// Garante que o vídeo seja tocável no navegador: se o codec original já é suportado,
 /// serve direto; senão gera HLS incrementalmente (remux por stream-copy quando só o
@@ -37,6 +43,7 @@ public class HlsTranscodeService
     private readonly int _maxJobs;
     private readonly SemaphoreSlim _slotEncoder;
     private readonly string _remuxCachePath;
+    private readonly long _remuxCacheMaxBytes;
     private readonly RkmppCapabilityService _rkmpp;
     private readonly ThermalService _thermal;
     private readonly MediaProbeService _probe;
@@ -58,8 +65,7 @@ public class HlsTranscodeService
 
     /// <summary>Cache de /remux: um .mp4 completo por filme (não segmentado). Job dispara
     /// uma vez, fica em <c>_remuxJobs</c> até terminar; <c>_remuxFalhas</c> segue o mesmo
-    /// cooldown de <c>_falhas</c>. Sem eviction por ora — só filmes com áudio incompatível
-    /// (EAC3/DTS) passam por aqui, um subconjunto pequeno da biblioteca.</summary>
+    /// cooldown de <c>_falhas</c>. Eviction por tamanho em <see cref="LimparRemuxCacheExcedente"/>.</summary>
     private readonly ConcurrentDictionary<int, Task> _remuxJobs = new();
     private readonly ConcurrentDictionary<int, DateTime> _remuxFalhas = new();
     private readonly object _remuxLock = new();
@@ -89,6 +95,8 @@ public class HlsTranscodeService
         _falhaCooldown = TimeSpan.FromMinutes(config.GetValue<double?>("HlsFalhaCooldownMinutes") ?? 10);
         _slotEncoder = new SemaphoreSlim(_maxJobs, _maxJobs);
         _remuxCachePath = config.GetValue<string>("RemuxCachePath") ?? "/data/remux";
+        var remuxMaxGb = config.GetValue<double?>("RemuxCacheMaxGB") ?? 15;
+        _remuxCacheMaxBytes = remuxMaxGb > 0 ? (long)(remuxMaxGb * 1024 * 1024 * 1024) : long.MaxValue;
         _rkmpp = rkmpp;
         _thermal = thermal;
         _probe = probe;
@@ -112,20 +120,30 @@ public class HlsTranscodeService
 
     /// <summary>Só responde "dá pra tocar direto?" sem disparar transcode nenhum — o
     /// <c>tv.html</c> numa TV antiga usa isso pra decidir entre /stream e /original sem HLS.</summary>
-    public Task<bool> PodeStreamDiretoAsync(string arquivoOriginal, CancellationToken ct)
-        => EhCompativelAsync(arquivoOriginal, ct);
+    public async Task<bool> PodeStreamDiretoAsync(string arquivoOriginal, CancellationToken ct)
+        => await AnalisarCompatibilidadeAsync(arquivoOriginal, ct) == CompatibilidadeDireta.Compativel;
 
-    /// <summary>TV sem HLS nenhum (nem MSE nem nativo) e vídeo incompatível pra tocar
-    /// direto: quando só o ÁUDIO é o problema (EAC3/DTS de rip WEB-DL, vídeo já em h264),
-    /// dá pra copiar o vídeo sem re-encode e só arrumar o áudio — ver <see cref="ObterStatusRemuxAsync"/>.
-    /// Se o vídeo também precisar reencode, não vale a pena pro cache de remux (pesado
-    /// demais) — cai pro /original mesmo.</summary>
-    public async Task<bool> PrecisaSoRemuxAudioAsync(string path, CancellationToken ct)
+    /// <summary>Uma leitura de probe (cacheada) decide as três situações que <c>/pode-direto</c>
+    /// precisa: toca cru, precisa só de /remux (vídeo ok, áudio não — EAC3/DTS de rip WEB-DL é
+    /// o caso comum), ou nem isso (vídeo também incompatível — /original é o único recurso que
+    /// sobra, às vezes falha dependendo do player).</summary>
+    public async Task<CompatibilidadeDireta> AnalisarCompatibilidadeAsync(string path, CancellationToken ct)
     {
         var info = await _probe.InspecionarAsync(path, ct);
-        if (info?.VideoCodec is null || !VideoCodecsCompativeis.Contains(info.VideoCodec)) return false;
+        if (info is null) return CompatibilidadeDireta.Incompativel;
+
+        var videoOk = info.VideoCodec is not null && VideoCodecsCompativeis.Contains(info.VideoCodec);
         var primeiroAudio = info.Audios.Count > 0 ? info.Audios[0].Codec : null;
-        return primeiroAudio is not null && !AudioCodecsCompativeis.Contains(primeiroAudio);
+        var audioOk = primeiroAudio is null || AudioCodecsCompativeis.Contains(primeiroAudio);
+
+        // "Compativel" (toca cru, sem processar nada) só vale pra containers que o <video>
+        // entende sem drama — extensão restrita de propósito, MKV mesmo com codecs bons fica
+        // de fora (comportamento de sempre, ver histórico do antigo EhCompativelAsync).
+        var containerOk = Path.GetExtension(path).ToLowerInvariant() is ".mp4" or ".webm" or ".mov" or ".m4v";
+
+        if (containerOk && videoOk && audioOk) return CompatibilidadeDireta.Compativel;
+        if (videoOk && !audioOk) return CompatibilidadeDireta.SoAudioIncompativel;
+        return CompatibilidadeDireta.Incompativel;
     }
 
     public string CaminhoRemux(int filmeId) => Path.Combine(_remuxCachePath, $"{filmeId}.mp4");
@@ -187,6 +205,62 @@ public class HlsTranscodeService
         finally
         {
             _remuxJobs.TryRemove(filmeId, out _);
+        }
+
+        if (!_pararToken.IsCancellationRequested) LimparRemuxCacheExcedente();
+    }
+
+    /// <summary>Toca o mtime do .mp4 remuxado — sinal de LRU pra eviction, mesmo padrão do
+    /// <see cref="RegistrarAcesso"/> do HLS. Chamado a cada GET de /remux (que não passa mais
+    /// por <see cref="ObterStatusRemux"/> depois de "disponivel" — só assim o arquivo não
+    /// parece "sem uso" pra sempre depois da primeira vez).</summary>
+    public void RegistrarAcessoRemux(int filmeId)
+    {
+        try
+        {
+            var caminho = CaminhoRemux(filmeId);
+            if (!File.Exists(caminho)) return;
+            if (DateTime.UtcNow - File.GetLastWriteTimeUtc(caminho) > TimeSpan.FromMinutes(2))
+                File.SetLastWriteTimeUtc(caminho, DateTime.UtcNow);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
+    /// <summary>Se o cache de /remux passou do teto (<c>RemuxCacheMaxGB</c>), despeja os .mp4
+    /// menos recentemente acessados até voltar pra ~90%. Sem isso, todo filme com áudio
+    /// incompatível que alguém já abriu fica em cache pra sempre (cada um é o filme inteiro,
+    /// ~mesmo tamanho do original).</summary>
+    private void LimparRemuxCacheExcedente()
+    {
+        if (_remuxCacheMaxBytes == long.MaxValue) return;
+        try
+        {
+            if (!Directory.Exists(_remuxCachePath)) return;
+
+            var arquivos = Directory.EnumerateFiles(_remuxCachePath, "*.mp4")
+                .Select(p => new FileInfo(p))
+                .OrderBy(f => f.LastWriteTimeUtc)
+                .ToList();
+            var total = arquivos.Sum(f => f.Length);
+            if (total <= _remuxCacheMaxBytes) return;
+
+            var alvo = (long)(_remuxCacheMaxBytes * 0.9);
+            var corte = DateTime.UtcNow - TimeSpan.FromMinutes(30);
+            foreach (var f in arquivos)
+            {
+                if (total <= alvo) break;
+                if (f.LastWriteTimeUtc >= corte) continue;  // acessado há pouco, pode estar em uso
+                try { f.Delete(); }
+                catch (IOException) { continue; }
+                catch (UnauthorizedAccessException) { continue; }
+                total -= f.Length;
+                _logger.LogInformation("Cache de remux acima do teto: despejando {Nome} ({Mb} MB).", f.Name, f.Length / 1024 / 1024);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Falha ao avaliar/despejar cache de remux excedente.");
         }
     }
 
@@ -306,7 +380,7 @@ public class HlsTranscodeService
     /// (arquivo original se compatível, ou playlist.m3u8 se HLS já tem algo pronto).</summary>
     public async Task<(StreamStatus Status, string? Path)> ObterStatusAsync(int filmeId, string arquivoOriginal, CancellationToken ct)
     {
-        if (await EhCompativelAsync(arquivoOriginal, ct))
+        if (await AnalisarCompatibilidadeAsync(arquivoOriginal, ct) == CompatibilidadeDireta.Compativel)
             return (StreamStatus.Compativel, arquivoOriginal);
 
         RegistrarInteresse(filmeId);
@@ -613,23 +687,6 @@ public class HlsTranscodeService
 
         var (exitCode, stderr) = await ProcessRunner.ExecutarComTimeoutAsync(psi, _jobTimeout, Travou, _pararToken);
         return (exitCode, stderr, orfao);
-    }
-
-    private async Task<bool> EhCompativelAsync(string path, CancellationToken ct)
-    {
-        var ext = Path.GetExtension(path).ToLowerInvariant();
-        if (ext is not (".mp4" or ".webm" or ".mov" or ".m4v")) return false;
-
-        var info = await _probe.InspecionarAsync(path, ct);
-        return info is not null && PodeTocarDireto(info);
-    }
-
-    private static bool PodeTocarDireto(MediaInfo info)
-    {
-        var videoOk = info.VideoCodec is not null && VideoCodecsCompativeis.Contains(info.VideoCodec);
-        var primeiroAudio = info.Audios.Count > 0 ? info.Audios[0].Codec : null;
-        var audioOk = primeiroAudio is null || AudioCodecsCompativeis.Contains(primeiroAudio);
-        return videoOk && audioOk;
     }
 
     /// <summary>Índice global (pra <c>-map</c>) da faixa de áudio que vai pro HLS: primeiro

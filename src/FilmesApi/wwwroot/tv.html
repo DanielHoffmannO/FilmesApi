@@ -532,24 +532,34 @@ video { width: 100%; height: auto; background: #000; }
     // "assistido" fica por conta do backend (perto do fim) ou do evento 'ended'.
   }
 
-  // Poll de /remux-status ate o .mp4 (video copiado, audio -> AAC) ficar pronto em
-  // cache — so entao toca, como um arquivo normal (Content-Length + Range, ao contrario
-  // de um pipe ao vivo que algumas TVs recusam na hora por nao saber o tamanho).
-  function pollRemuxEtocar(id) {
-    get(API + '/' + id + '/remux-status', function (err, d) {
-      if (filmeAtual !== id) return;
+  // Poll generico "preparando -> disponivel/erro": usado tanto pelo /stream-status do
+  // HLS quanto pelo /remux-status (a diferenca entre os dois eh so a mensagem e o que
+  // fazer quando fica pronto). Continua rechamando a si mesmo enquanto "preparando".
+  function pollStatus(id, url, intervaloMs, msgPreparando, msgErro, aoPronto) {
+    get(url, function (err, d) {
+      if (filmeAtual !== id) return;  // trocou de filme enquanto esperava
       var pmsg = document.getElementById('pmsg');
       var status = (!err && d) ? d.status : null;
 
-      if (status === 'erro') { pmsg.innerHTML = 'Falha ao preparar o audio.'; return; }
+      if (status === 'erro') { pmsg.innerHTML = msgErro; return; }
       if (status === null || status === 'preparando') {
-        pmsg.innerHTML = 'Preparando audio...';
-        pollTimer = setTimeout(function () { pollRemuxEtocar(id); }, 2000);
+        pmsg.innerHTML = msgPreparando;
+        pollTimer = setTimeout(function () {
+          pollStatus(id, url, intervaloMs, msgPreparando, msgErro, aoPronto);
+        }, intervaloMs);
         return;
       }
       pmsg.innerHTML = '';
-      tocarUrl(id, API + '/' + id + '/remux', false);
+      aoPronto(status);
     });
+  }
+
+  // /remux-status ate o .mp4 (video copiado, audio -> AAC) ficar pronto em cache — so
+  // entao toca, como um arquivo normal (Content-Length + Range, ao contrario de um pipe
+  // ao vivo que algumas TVs recusam na hora por nao saber o tamanho).
+  function pollRemuxEtocar(id) {
+    pollStatus(id, API + '/' + id + '/remux-status', 2000, 'Preparando audio...', 'Falha ao preparar o audio.',
+      function () { tocarUrl(id, API + '/' + id + '/remux', false); });
   }
 
   // TV sem MediaSource nem HLS nativo (ou hls.js que travou sem erro): pergunta se da
@@ -576,43 +586,32 @@ video { width: 100%; height: auto; background: #000; }
   // aqui quando a TV tem algum jeito de tocar HLS (MSE+hls.js OU HLS nativo do
   // <video>) — TV sem nenhum dos dois nem chega, vai direto pro tocarSemHls.
   function pollStatusEtocar(id) {
-    get(API + '/' + id + '/stream-status', function (err, d) {
-      if (filmeAtual !== id) return;  // trocou de filme enquanto esperava
-      var pmsg = document.getElementById('pmsg');
-      var status = (!err && d) ? d.status : null;
-
-      if (status === 'erro') { pmsg.innerHTML = 'Falha ao preparar o video.'; return; }
-      if (status === null || status === 'preparando') {
-        pmsg.innerHTML = 'Preparando video...';
-        pollTimer = setTimeout(function () { pollStatusEtocar(id); }, 1500);
-        return;
-      }
-
-      pmsg.innerHTML = '';
-      var v = document.getElementById('video');
-      var t = posicaoRetomar > 5 ? Math.floor(posicaoRetomar) : 0;
-      var url = API + '/' + id + '/hls/playlist.m3u8';
-      if (status === 'compativel') {
-        v.src = API + '/' + id + '/stream' + (t ? ('#t=' + t) : '');
-        try { v.load(); v.play(); } catch (e) {}
-      } else if (window.Hls && window.Hls.isSupported && window.Hls.isSupported()) {
-        iniciarHls(id, url, t);
-      } else {
-        // Sem MediaSource, mas o <video> entende .m3u8 direto (HLS nativo — comum em
-        // smart TV mesmo sem hls.js). Mesmo watchdog: se travar sem erro, cai pro raw.
-        logDiag('native HLS (canPlayType) filme ' + id);
-        armarWatchdog(id);
-        v.onerror = function () {
-          var err = v.error;
-          logDiag('<video> error (HLS nativo): code=' + (err && err.code) + ' filme ' + id);
-          pararWatchdog();
-          tocarSemHls(id);
-        };
-        v.src = url + (t ? ('#t=' + t) : '');
-        try { v.load(); v.play(); } catch (e) {}
-      }
-      carregarLegendas(id);
-    });
+    pollStatus(id, API + '/' + id + '/stream-status', 1500, 'Preparando video...', 'Falha ao preparar o video.',
+      function (status) {
+        var v = document.getElementById('video');
+        var t = posicaoRetomar > 5 ? Math.floor(posicaoRetomar) : 0;
+        var url = API + '/' + id + '/hls/playlist.m3u8';
+        if (status === 'compativel') {
+          v.src = API + '/' + id + '/stream' + (t ? ('#t=' + t) : '');
+          try { v.load(); v.play(); } catch (e) {}
+        } else if (window.Hls && window.Hls.isSupported && window.Hls.isSupported()) {
+          iniciarHls(id, url, t);
+        } else {
+          // Sem MediaSource, mas o <video> entende .m3u8 direto (HLS nativo — comum em
+          // smart TV mesmo sem hls.js). Mesmo watchdog: se travar sem erro, cai pro raw.
+          logDiag('native HLS (canPlayType) filme ' + id);
+          armarWatchdog(id);
+          v.onerror = function () {
+            var err = v.error;
+            logDiag('<video> error (HLS nativo): code=' + (err && err.code) + ' filme ' + id);
+            pararWatchdog();
+            tocarSemHls(id);
+          };
+          v.src = url + (t ? ('#t=' + t) : '');
+          try { v.load(); v.play(); } catch (e) {}
+        }
+        carregarLegendas(id);
+      });
   }
 
   function removerLegendas() {
