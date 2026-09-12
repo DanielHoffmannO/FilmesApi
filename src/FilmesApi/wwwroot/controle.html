@@ -15,6 +15,9 @@ h1{font-size:20px;font-weight:600}
 header a{color:#888;text-decoration:none;font-size:13px}
 header a:hover{color:#fff}
 main{padding:16px 24px;max-width:640px;margin:0 auto}
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.filter-btn{background:none;border:1px solid #333;color:#888;padding:6px 12px;border-radius:20px;font-size:12px}
+.filter-btn.active{border-color:#e50914;color:#fff}
 .secao-title{font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px;padding:0 12px}
 #grid{display:flex;flex-direction:column}
 .row{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:6px;position:relative}
@@ -27,7 +30,9 @@ main{padding:16px 24px;max-width:640px;margin:0 auto}
 .row .rprog>div{height:100%;background:#e50914}
 .cast-btn{background:none;border:none;color:#666;font-size:18px;cursor:pointer;padding:2px 6px;line-height:1}
 .cast-btn:active{color:#fff}
-.grupo-hd{padding:9px 12px;border-radius:6px;font-size:14px;font-weight:600;color:#ddd;margin:14px 0 2px}
+.grupo.collapsed .grupo-body{display:none}
+.grupo-hd{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:6px;font-size:14px;font-weight:600;color:#ddd;margin:14px 0 2px;cursor:pointer;user-select:none}
+.grupo-hd .caret{display:inline-block;width:12px;color:#888;font-size:11px}
 .grupo-hd .count{font-size:12px;color:#666;font-weight:400}
 .grupo-body{padding-left:12px}
 .msg{text-align:center;color:#777;padding:60px 20px;font-size:15px}
@@ -55,6 +60,11 @@ main{padding:16px 24px;max-width:640px;margin:0 auto}
 </header>
 
 <main>
+  <div class="filters" id="filters">
+    <button class="filter-btn active" data-filter="all">Todos</button>
+    <button class="filter-btn" data-filter="filme">🎬 Filmes</button>
+    <button class="filter-btn" data-filter="serie">📺 Séries</button>
+  </div>
   <div id="msg" class="msg">Carregando…</div>
   <div id="grid"></div>
 </main>
@@ -80,6 +90,17 @@ const API = '/api/filmes';
 const PLAYER_API = '/api/player';
 let filmes = [];
 let continuar = [];
+let filtroTipo = 'all';         // all | filme | serie
+const foldersAbertos = new Set();  // séries expandidas — fecham por padrão, sobrevive ao re-render
+
+document.getElementById('filters').addEventListener('click', e => {
+  const btn = e.target.closest('.filter-btn');
+  if (!btn) return;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  filtroTipo = btn.dataset.filter;
+  render();
+});
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -113,14 +134,19 @@ function render() {
   const grid = document.getElementById('grid');
   let html = '';
 
-  if (continuar.length) {
+  if (filtroTipo === 'all' && continuar.length) {
     html += '<div class="secao-title">Continuar assistindo</div>';
     for (const c of continuar) html += rowHtml(c);
   }
 
-  const soltos = filmes.filter(f => !f.ehEpisodio).sort((a, b) => a.titulo.localeCompare(b.titulo));
+  const filtrados = filmes.filter(f => {
+    if (filtroTipo === 'filme' && f.ehEpisodio) return false;
+    if (filtroTipo === 'serie' && !f.ehEpisodio) return false;
+    return true;
+  });
+  const soltos = filtrados.filter(f => !f.ehEpisodio).sort((a, b) => a.titulo.localeCompare(b.titulo));
   const series = {};
-  for (const f of filmes) if (f.ehEpisodio) (series[f.serie] ??= []).push(f);
+  for (const f of filtrados) if (f.ehEpisodio) (series[f.serie] ??= []).push(f);
 
   if (soltos.length) {
     html += '<div class="secao-title">Filmes (' + soltos.length + ')</div>';
@@ -129,12 +155,22 @@ function render() {
   const nomesSerie = Object.keys(series).sort();
   for (const nome of nomesSerie) {
     const eps = series[nome].sort((a, b) => (a.temporada - b.temporada) || (a.episodio - b.episodio));
-    html += `<div class="grupo-hd">${esc(nome)} <span class="count">(${eps.length})</span></div>`;
-    html += '<div class="grupo-body">';
-    for (const ep of eps) html += rowHtml(ep, ep.rotulo);
-    html += '</div>';
+    const aberto = foldersAbertos.has(nome);
+    html += `<div class="grupo ${aberto ? '' : 'collapsed'}" data-key="${esc(nome)}">
+      <div class="grupo-hd" onclick="toggleGrupo(this)"><span class="caret">${aberto ? '▾' : '▸'}</span>${esc(nome)} <span class="count">(${eps.length} ${eps.length === 1 ? 'episódio' : 'episódios'})</span></div>
+      <div class="grupo-body">${eps.map(ep => rowHtml(ep, ep.rotulo)).join('')}</div>
+    </div>`;
   }
   grid.innerHTML = html || '<div class="msg">Nada encontrado.</div>';
+}
+
+function toggleGrupo(el) {
+  const grupo = el.parentNode;
+  grupo.classList.toggle('collapsed');
+  const aberto = !grupo.classList.contains('collapsed');
+  if (aberto) foldersAbertos.add(grupo.dataset.key);
+  else foldersAbertos.delete(grupo.dataset.key);
+  el.querySelector('.caret').textContent = aberto ? '▾' : '▸';
 }
 
 // ─── Controle remoto (TV) — mesmo código que existia no index.html ────────
