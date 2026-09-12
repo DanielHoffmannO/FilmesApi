@@ -512,19 +512,26 @@ video { width: 100%; height: auto; background: #000; }
     hls.loadSource(url);
   }
 
-  // TV sem MediaSource (ou hls.js que travou sem erro): so pergunta se da pra tocar
-  // direto (sem disparar transcode), senao serve o arquivo original.
+  // TV sem MediaSource nem HLS nativo (ou hls.js que travou sem erro): pergunta se da
+  // pra tocar direto (sem disparar transcode); se so o audio for o problema (EAC3/DTS
+  // de rip WEB-DL — o video ja e compativel), usa /remux (video copiado, so o audio
+  // vira AAC); senao, ultimo recurso, serve o arquivo original cru.
   function tocarSemHls(id) {
     var v = document.getElementById('video');
     var pmsg = document.getElementById('pmsg');
     get(API + '/' + id + '/pode-direto', function (e2, pd) {
       if (filmeAtual !== id) return;
       pmsg.innerHTML = '';
-      var frag = posicaoRetomar > 5 ? ('#t=' + Math.floor(posicaoRetomar)) : '';
+      var seg = posicaoRetomar > 5 ? Math.floor(posicaoRetomar) : 0;
       if (!e2 && pd && pd.compativel) {
-        v.src = API + '/' + id + '/stream' + frag;
+        v.src = API + '/' + id + '/stream' + (seg ? ('#t=' + seg) : '');
+      } else if (!e2 && pd && pd.remuxavel) {
+        // /remux e um pipe ao vivo, sem Range: a posicao de retomada tem que ir por
+        // query string (o ffmpeg faz -ss no inicio), fragmento #t= nao chega no servidor.
+        logDiag('remux (audio) filme ' + id);
+        v.src = API + '/' + id + '/remux?t=' + seg;
       } else {
-        v.src = API + '/' + id + '/original' + frag;
+        v.src = API + '/' + id + '/original' + (seg ? ('#t=' + seg) : '');
         pmsg.innerHTML = 'Arquivo original (pode nao rodar em TV muito antiga).';
         setTimeout(function () {
           if (pmsg.innerHTML.indexOf('original') !== -1) pmsg.innerHTML = '';

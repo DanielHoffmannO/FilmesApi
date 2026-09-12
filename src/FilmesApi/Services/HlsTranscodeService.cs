@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Globalization;
 
 namespace FilmesApi.Services;
 
@@ -102,6 +103,44 @@ public class HlsTranscodeService
     /// <c>tv.html</c> numa TV antiga usa isso pra decidir entre /stream e /original sem HLS.</summary>
     public Task<bool> PodeStreamDiretoAsync(string arquivoOriginal, CancellationToken ct)
         => EhCompativelAsync(arquivoOriginal, ct);
+
+    /// <summary>TV sem HLS nenhum (nem MSE nem nativo) e vídeo incompatível pra tocar
+    /// direto: quando só o ÁUDIO é o problema (EAC3/DTS de rip WEB-DL, vídeo já em h264),
+    /// dá pra copiar o vídeo sem re-encode e só arrumar o áudio — ver <see cref="IniciarRemuxAsync"/>.
+    /// Se o vídeo também precisar reencode, não vale a pena pro caminho sem cache (pesado
+    /// demais pra rodar de novo a cada abertura) — cai pro /original mesmo.</summary>
+    public async Task<bool> PrecisaSoRemuxAudioAsync(string path, CancellationToken ct)
+    {
+        var info = await _probe.InspecionarAsync(path, ct);
+        if (info?.VideoCodec is null || !VideoCodecsCompativeis.Contains(info.VideoCodec)) return false;
+        var primeiroAudio = info.Audios.Count > 0 ? info.Audios[0].Codec : null;
+        return primeiroAudio is not null && !AudioCodecsCompativeis.Contains(primeiroAudio);
+    }
+
+    /// <summary>Sobe um ffmpeg que copia o vídeo (sem re-encode) e transcodifica só o áudio
+    /// pra AAC estéreo, escrevendo MP4 fragmentado direto no stdout — sem cache em disco:
+    /// toca em progressive download assim que os primeiros bytes saem. Sem seek depois de
+    /// iniciado (é um pipe, não um arquivo) — a posição de retomada entra como -ss ANTES
+    /// do -i, no início do processo. Chamador tem que drenar stderr (senão o pipe enche e
+    /// o ffmpeg trava) e matar o processo se o cliente desconectar no meio.</summary>
+    public async Task<Process?> IniciarRemuxAsync(string path, double posicaoSegundos, CancellationToken ct)
+    {
+        var info = await _probe.InspecionarAsync(path, ct);
+        if (info is null) return null;
+        var audioIdx = EscolherStreamAudio(info.Audios);
+
+        List<string> args = ["-y"];
+        if (posicaoSegundos > 0) args.AddRange(["-ss", posicaoSegundos.ToString("0.###", CultureInfo.InvariantCulture)]);
+        args.AddRange(["-i", path, "-map", "0:v:0"]);
+        if (audioIdx is int idx) args.AddRange(["-map", $"0:{idx}"]);
+        args.Add("-c:v"); args.Add("copy");
+        if (audioIdx is not null) args.AddRange(["-c:a", "aac", "-b:a", "192k", "-ac", "2"]);
+        args.AddRange(["-f", "mp4", "-movflags", "frag_keyframe+empty_moov+default_base_moof", "pipe:1"]);
+
+        var psi = new ProcessStartInfo(_ffmpegPath) { RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var arg in args) psi.ArgumentList.Add(arg);
+        return Process.Start(psi);
+    }
 
     /// <summary>Tem algum job de transcode vivo (encodando ou na fila)? Barato — sem I/O.</summary>
     public bool TemJobAtivo() => !_jobs.IsEmpty;

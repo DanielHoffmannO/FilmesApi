@@ -12,12 +12,15 @@ public partial class ReproducaoController : ControllerBase
     private readonly FilmeService _service;
     private readonly HlsTranscodeService _transcode;
     private readonly SubtitleService _legendas;
+    private readonly ILogger<ReproducaoController> _logger;
 
-    public ReproducaoController(FilmeService service, HlsTranscodeService transcode, SubtitleService legendas)
+    public ReproducaoController(FilmeService service, HlsTranscodeService transcode, SubtitleService legendas,
+        ILogger<ReproducaoController> logger)
     {
         _service = service;
         _transcode = transcode;
         _legendas = legendas;
+        _logger = logger;
     }
 
     /// <summary>Keepalive do player: "ainda tem alguém assistindo este filme". Sem isso, o
@@ -30,13 +33,16 @@ public partial class ReproducaoController : ControllerBase
     }
 
     /// <summary>"Dá pra tocar o arquivo direto?" — sem disparar transcode. O tv.html numa
-    /// TV antiga (que não roda HLS) usa isso pra escolher entre /stream e /original.</summary>
+    /// TV sem HLS nenhum (nem MSE nem nativo) usa isso pra escolher entre /stream, /remux
+    /// (só o áudio é o problema) e /original (último recurso).</summary>
     [HttpGet("{id:int}/pode-direto")]
     public async Task<IActionResult> PodeDireto(int id, CancellationToken ct)
     {
         var (path, erro) = await ResolverCaminhoAsync(id);
         if (erro is not null) return erro;
-        return Ok(new { compativel = await _transcode.PodeStreamDiretoAsync(path!, ct) });
+        var compativel = await _transcode.PodeStreamDiretoAsync(path!, ct);
+        var remuxavel = !compativel && await _transcode.PrecisaSoRemuxAudioAsync(path!, ct);
+        return Ok(new { compativel, remuxavel });
     }
 
     /// <summary>Estado do vídeo: <c>compativel</c> / <c>preparando</c> / <c>disponivel</c> /
@@ -64,6 +70,43 @@ public partial class ReproducaoController : ControllerBase
             return Conflict(new { mensagem = "Este vídeo precisa de HLS, use /hls/playlist.m3u8." });
 
         return ServirComRange(path!);
+    }
+
+    /// <summary>Vídeo compatível mas áudio não (EAC3/DTS — comum em rip WEB-DL/HMAX): copia o
+    /// vídeo sem re-encode e transcodifica só o áudio pra AAC, num pipe MP4 fragmentado sem
+    /// cache em disco. Usado pela TV sem HLS nenhum (nem MSE nem nativo) quando /original
+    /// falharia em silêncio por causa do codec de áudio. Sem Range: é um stream ao vivo, não
+    /// um arquivo — a posição de retomada (<c>t</c>) vira <c>-ss</c> no início do ffmpeg.</summary>
+    [HttpGet("{id:int}/remux")]
+    public async Task<IActionResult> Remux(int id, [FromQuery] double t, CancellationToken ct)
+    {
+        var (path, erro) = await ResolverCaminhoAsync(id);
+        if (erro is not null) return erro;
+
+        var proc = await _transcode.IniciarRemuxAsync(path!, t, ct);
+        if (proc is null) return NotFound();
+
+        Response.ContentType = "video/mp4";
+        Response.Headers.CacheControl = "no-store";
+        var stderrTask = proc.StandardError.ReadToEndAsync(CancellationToken.None);
+        try
+        {
+            await proc.StandardOutput.BaseStream.CopyToAsync(Response.Body, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            // cliente fechou o player / trocou de filme no meio — normal, não é erro.
+        }
+        finally
+        {
+            if (!proc.HasExited)
+            {
+                try { proc.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+            }
+        }
+        if (proc.HasExited && proc.ExitCode != 0)
+            _logger.LogWarning("Remux do filme {Id} terminou com erro (exit {Exit}): {Err}", id, proc.ExitCode, await stderrTask);
+        return new EmptyResult();
     }
 
     /// <summary>Manifest HLS: dispara/reusa o job de transcodificação e serve a playlist assim que ela existir.</summary>
