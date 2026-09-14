@@ -410,3 +410,6 @@ media/
 
 # Banco de dados local
 /data/
+
+# Segredos locais — nunca commitar
+.env
