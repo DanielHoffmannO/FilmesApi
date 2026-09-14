@@ -196,11 +196,11 @@ See the [Portuguese README](README.md) for the full config table with descriptio
 
 ## 🔌 Endpoints
 
-**Catalog:** `GET /api/filmes`, `GET|POST /api/filmes[/{id}]`, `PUT /api/filmes/{id}/assistido`,
-`DELETE /api/filmes/{id}`, `POST /api/filmes/scan`, `GET /api/filmes/{id}/proximo`.
+**Catalog:** `GET /api/filmes[/{id}]`, `PUT /api/filmes/{id}/assistido`,
+`POST /api/filmes/scan`, `GET /api/filmes/{id}/proximo`.
 
 **Playback / progress:** `GET /api/filmes/continuar`,
-`GET|PUT|DELETE /api/filmes/{id}/progresso`, `POST /api/filmes/{id}/concluir`,
+`GET|PUT /api/filmes/{id}/progresso`, `POST /api/filmes/{id}/concluir`,
 `POST /api/filmes/{id}/assistindo`.
 
 **Streaming:** `GET /api/filmes/{id}/stream-status`, `.../pode-direto` (now `{compativel,

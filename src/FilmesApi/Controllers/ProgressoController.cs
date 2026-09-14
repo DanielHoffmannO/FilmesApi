@@ -39,11 +39,6 @@ public class ProgressoController : ControllerBase
         return await _progresso.SalvarAsync(id, req.Posicao, duracao) ? NoContent() : NotFound();
     }
 
-    /// <summary>Esquece o ponto de retomada ("assistir do começo").</summary>
-    [HttpDelete("{id:int}/progresso")]
-    public async Task<IActionResult> LimparProgresso(int id)
-        => await _progresso.LimparAsync(id) ? NoContent() : NotFound();
-
     /// <summary>Reprodução chegou ao fim: marca assistido e limpa a retomada.</summary>
     [HttpPost("{id:int}/concluir")]
     public async Task<IActionResult> Concluir(int id)

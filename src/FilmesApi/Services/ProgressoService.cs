@@ -71,12 +71,6 @@ public class ProgressoService
         return p is null ? null : new ProgressoResponse(p.FilmeId, p.PosicaoSegundos, p.DuracaoSegundos, p.AtualizadoEm);
     }
 
-    /// <summary>Esquece o ponto de retomada ("assistir do começo"). False se não havia nada guardado.</summary>
-    public async Task<bool> LimparAsync(int filmeId)
-    {
-        var removidos = await _db.Progressos.Where(p => p.FilmeId == filmeId).ExecuteDeleteAsync();
-        return removidos > 0;
-    }
 
     /// <summary>Reprodução chegou ao fim: marca o filme como assistido e limpa a retomada.
     /// Usado pelo evento 'ended' do player — inclusive no HLS, onde a regra de "perto do fim"

@@ -149,4 +149,20 @@ public class MediaNomeParserTests
         var r = MediaNomeParser.TituloParaBusca("Breaking Bad 3 Temporada - The Pirate Filmes/8.mp4");
         Assert.Equal("Breaking Bad", r.Titulo);
     }
+
+    // Regressão: pasta cujo nome é só ruído de release ("Legendado", "1080p", "Dual"...) +
+    // arquivo cujo nome reduz a ≤2 chars/número puro fazia ChaveSerie devolver o MESMO texto
+    // de entrada (sem "/" pra extrair segmento de pasta) e a chamada recursiva reentrava com
+    // argumento idêntico — StackOverflowException garantido, derrubando o processo inteiro
+    // no meio de um /scan. Basta o teste terminar (sem estourar a pilha) pra travar o fix.
+    [Theory]
+    [InlineData("Legendado/1.mkv")]
+    [InlineData("1080p/2.mkv")]
+    [InlineData("Dual/9.mp4")]
+    [InlineData("Dublado/03.mkv")]
+    public void TituloParaBusca_pasta_so_ruido_nao_recursiona_infinitamente(string path)
+    {
+        var r = MediaNomeParser.TituloParaBusca(path);
+        Assert.NotNull(r.Titulo);
+    }
 }

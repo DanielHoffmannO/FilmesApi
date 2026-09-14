@@ -196,12 +196,12 @@ Ver el [README en portugués](README.md) para la tabla completa con descripcione
 
 ## 🔌 Endpoints
 
-**Catálogo:** `GET /api/filmes`, `GET|POST /api/filmes[/{id}]`,
-`PUT /api/filmes/{id}/assistido`, `DELETE /api/filmes/{id}`, `POST /api/filmes/scan`,
+**Catálogo:** `GET /api/filmes[/{id}]`,
+`PUT /api/filmes/{id}/assistido`, `POST /api/filmes/scan`,
 `GET /api/filmes/{id}/proximo`.
 
 **Reproducción / progreso:** `GET /api/filmes/continuar`,
-`GET|PUT|DELETE /api/filmes/{id}/progresso`, `POST /api/filmes/{id}/concluir`,
+`GET|PUT /api/filmes/{id}/progresso`, `POST /api/filmes/{id}/concluir`,
 `POST /api/filmes/{id}/assistindo`.
 
 **Streaming:** `GET /api/filmes/{id}/stream-status`, `.../pode-direto` (ahora `{compativel,
