@@ -184,9 +184,6 @@ nunca aborta), `HlsStallTimeoutMinutes` (`8`), `ForceSoftwareEncoder` (`false`),
 **Gobernador térmico (opt-in):** `ThermalPauseCelsius` (`0` = off), `ThermalResumeCelsius`
 (`pausa − 8`), `ThermalMaxWaitMinutes` (`5`).
 
-**Pre-transcode nocturno (opt-in):** `PreTranscodeEnabled` (`false`), `PreTranscodeHoraUtc`
-(`6`), `PreTranscodeMaxItens` (`5`).
-
 **Metadatos TMDB (opt-in):** `TmdbApiKey` (vacío = off), `TmdbLanguage` (`pt-BR`),
 `TmdbImageBase`.
 

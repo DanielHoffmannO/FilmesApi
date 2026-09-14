@@ -11,8 +11,12 @@ public record FaixaAudio(int Index, string? Codec, string? Idioma, bool Default)
 /// <c>-map 0:s:N</c> e no endpoint <c>/legenda/{idx}</c>.</summary>
 public record FaixaLegenda(int IdxRelativo, string Codec, string? Idioma, string? Titulo, bool Forced, bool Default);
 
+/// <summary><c>Video10Bit</c>: H.264/HEVC "High 10"/"Main 10" (pix_fmt tipo <c>yuv420p10le</c>
+/// ou <c>bits_per_raw_sample</c> ≥ 9) — o navegador não decodifica, mesmo com codec_name
+/// "compatível". Sem isso o arquivo tocava direto com tela preta e nenhum erro em lugar
+/// nenhum (ver <see cref="HlsTranscodeService.ClassificarCompatibilidade"/>).</summary>
 public record MediaInfo(
-    string? VideoCodec, int Largura, int Altura, double? DuracaoSegundos,
+    string? VideoCodec, int Largura, int Altura, bool Video10Bit, double? DuracaoSegundos,
     IReadOnlyList<FaixaAudio> Audios, IReadOnlyList<FaixaLegenda> Legendas);
 
 /// <summary>
@@ -89,13 +93,17 @@ public class MediaProbeService
         }
     }
 
-    private static MediaInfo Parsear(string json)
+    /// <summary><c>internal</c> de propósito: dá pra testar o parsing do JSON do ffprobe
+    /// (attached_pic, 10-bit…) sem rodar processo nenhum — mesma ideia do
+    /// <see cref="HlsTranscodeService.MontarArgsFfmpegHls"/>.</summary>
+    internal static MediaInfo Parsear(string json)
     {
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
         string? videoCodec = null;
         int largura = 0, altura = 0;
+        var video10Bit = false;
         var audios = new List<FaixaAudio>();
         var legendas = new List<FaixaLegenda>();
         var idxLegenda = 0;
@@ -106,10 +114,14 @@ public class MediaProbeService
                 var tipo = Str(s, "codec_type");
                 switch (tipo)
                 {
-                    case "video" when videoCodec is null:
+                    // attached_pic (capa/poster embutido, ex.: rip de anime/música) não é o
+                    // vídeo de verdade — sem esse filtro, um arquivo com capa antes da faixa
+                    // real virava "vídeo" de 1 frame no codec da imagem (mjpeg/png).
+                    case "video" when videoCodec is null && !Disp(s, "attached_pic"):
                         videoCodec = Str(s, "codec_name");
                         largura = Int(s, "width");
                         altura = Int(s, "height");
+                        video10Bit = EhDezBits(s);
                         break;
                     case "audio":
                         audios.Add(new FaixaAudio(Int(s, "index"), Str(s, "codec_name"),
@@ -127,7 +139,7 @@ public class MediaProbeService
             && double.TryParse(d.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var seg) && seg > 0)
             duracao = seg;
 
-        return new MediaInfo(videoCodec, largura, altura, duracao, audios, legendas);
+        return new MediaInfo(videoCodec, largura, altura, video10Bit, duracao, audios, legendas);
     }
 
     private static string? Str(JsonElement e, string prop) =>
@@ -142,4 +154,16 @@ public class MediaProbeService
     private static bool Disp(JsonElement e, string flag) =>
         e.TryGetProperty("disposition", out var disp) && disp.ValueKind == JsonValueKind.Object
         && disp.TryGetProperty(flag, out var f) && f.ValueKind == JsonValueKind.Number && f.GetInt32() == 1;
+
+    // pix_fmt tipo "yuv420p10le"/"p010le" é o sinal mais confiável de profundidade de cor —
+    // cobre H.264 High 10, HEVC Main 10 etc. bits_per_raw_sample (ffprobe manda como string)
+    // é o fallback pros casos em que o nome do pix_fmt não deixa claro.
+    private static bool EhDezBits(JsonElement s)
+    {
+        var pixFmt = Str(s, "pix_fmt");
+        if (pixFmt is not null && (pixFmt.Contains("10") || pixFmt.Contains("12") || pixFmt.Contains("16")))
+            return true;
+        var bits = Str(s, "bits_per_raw_sample");
+        return bits is not null && int.TryParse(bits, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n >= 9;
+    }
 }

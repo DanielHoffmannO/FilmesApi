@@ -35,6 +35,7 @@ main{padding:16px 24px;max-width:1000px;margin:0 auto}
 .lista{display:flex;flex-direction:column}
 .row{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:6px;cursor:pointer;position:relative}
 .row:hover{background:#181818}
+.rposter{width:28px;height:40px;flex-shrink:0;border-radius:3px;background:#1a1a1a;object-fit:cover}
 .row .rtit{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}
 .row .rep{color:#888;font-variant-numeric:tabular-nums;margin-right:8px}
 .row .rano{font-size:12px;color:#777;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -255,8 +256,9 @@ function render() {
     html += `<div class="secao"><div class="secao-title">📺 Séries <span class="count">(${seriesNomes.length})</span></div><div class="lista">`;
     html += seriesNomes.map(nome => {
       const itens = seriesMap.get(nome);
-      return grupo('s:' + nome, `${esc(nome)} <span class="count">(${itens.length} ${itens.length === 1 ? 'episódio' : 'episódios'})</span>`,
-        itens.map(f => rowHtml(f, true)).join(''));
+      const poster = itens.find(f => f.posterUrl);   // um pôster já basta pra série inteira
+      const tituloHtml = `${poster ? posterHtml(poster) : ''}${esc(nome)} <span class="count">(${itens.length} ${itens.length === 1 ? 'episódio' : 'episódios'})</span>`;
+      return grupo('s:' + nome, tituloHtml, itens.map(f => rowHtml(f, true)).join(''));
     }).join('');
     html += `</div></div>`;
   }
@@ -303,6 +305,21 @@ function tituloEpisodio(f) {
   return s;
 }
 
+// Miniatura do pôster (TMDB) quando tem; senão um retângulo vazio, só pra manter as
+// linhas alinhadas na lista. "loading=lazy" evita baixar tudo de uma vez em catálogo grande.
+function posterHtml(f) {
+  return f.posterUrl
+    ? `<img class="rposter" src="${attr(f.posterUrl)}" loading="lazy" alt="">`
+    : `<span class="rposter"></span>`;
+}
+
+// Tooltip: título original (quando diverge do exibido) + sinopse — TMDB às vezes traduz
+// tão livremente que vale mostrar o nome original ao passar o mouse.
+function tooltipFilme(f) {
+  const original = f.tituloOriginal && f.tituloOriginal !== f.titulo ? f.tituloOriginal + '\n' : '';
+  return attr(original + (f.sinopse || f.titulo));
+}
+
 function rowHtml(f, episodio) {
   const retomar = f.posicaoSegundos ? `<span class="resume">▶ ${formatarTempo(f.posicaoSegundos)}</span>` : '';
   let titulo;
@@ -316,7 +333,8 @@ function rowHtml(f, episodio) {
     titulo = esc(f.titulo);
   }
   return `
-    <div class="row ${f.assistido ? 'assistido' : ''}" onclick="play(${f.id})" title="${attr(f.sinopse || f.titulo)}">
+    <div class="row ${f.assistido ? 'assistido' : ''}" onclick="play(${f.id})" title="${tooltipFilme(f)}">
+      ${episodio ? '' : posterHtml(f)}
       <span class="rtit">${titulo}</span>
       ${!episodio && f.anoLancamento ? `<span class="rano">${f.anoLancamento}</span>` : ''}
       ${retomar}
@@ -334,7 +352,8 @@ function continuarRowHtml(c) {
     ? `<span class="rep">${f.serie} · S${pad2(f.temporada)}E${pad2(f.episodio)}</span>${esc(tituloEpisodio(f))}`
     : esc(c.titulo);
   return `
-    <div class="row" onclick="play(${c.id})" title="${attr(c.titulo)}">
+    <div class="row" onclick="play(${c.id})" title="${f ? tooltipFilme(f) : attr(c.titulo)}">
+      ${f ? posterHtml(f) : '<span class="rposter"></span>'}
       <span class="rtit">${nome}</span>
       <span class="resume">▶ ${info}</span>
       ${barraProgresso(c)}
@@ -352,6 +371,64 @@ let hls = null;
 
 function destruirHls() {
   if (hls) { hls.destroy(); hls = null; }
+}
+
+// ─── Watchdog do "live edge" ────────────────────────────────────────────
+// A playlist HLS cresce sem #EXT-X-ENDLIST enquanto o servidor ainda converte. Se a
+// reprodução alcança o fim do que já foi gerado (assiste mais rápido que o encode, ou o
+// job travou/morreu no meio), o <video> só fica "bufferizando" pra sempre — sem nenhum
+// aviso, indistinguível de travado de verdade. Esse watchdog detecta currentTime parado
+// tocando e consulta /stream-status pra decidir: ainda convertendo (avisa e segue
+// esperando), falhou de vez (mostra erro em vez de spinner eterno), ou já terminou e o
+// hls.js só não recarregou a playlist ainda (força reload — ele nota o ENDLIST e conclui).
+let watchdogLiveEdge = null;
+let vigiaPos = -1;
+let vigiaDesde = 0;
+
+function pararWatchdogLiveEdge() {
+  if (watchdogLiveEdge) { clearInterval(watchdogLiveEdge); watchdogLiveEdge = null; }
+  vigiaPos = -1;
+  vigiaDesde = 0;
+}
+
+function iniciarWatchdogLiveEdge(id) {
+  pararWatchdogLiveEdge();
+  watchdogLiveEdge = setInterval(async () => {
+    const video = document.getElementById('video');
+    if (filmeAtual !== id || video.paused || video.ended || reproducaoConcluida) {
+      vigiaPos = -1; vigiaDesde = 0;
+      return;
+    }
+    if (video.currentTime !== vigiaPos) {
+      vigiaPos = video.currentTime;
+      vigiaDesde = Date.now();
+      const converting = document.getElementById('converting');
+      if (converting.dataset.liveEdge) { converting.style.display = 'none'; delete converting.dataset.liveEdge; }
+      return;
+    }
+    if (!vigiaDesde) vigiaDesde = Date.now();
+    if (Date.now() - vigiaDesde < 15000) return;  // parado há pouco: buffer normal, não é o live-edge
+
+    const status = await checarStatus(id);
+    if (filmeAtual !== id) return;
+    const converting = document.getElementById('converting');
+    if (status === 'erro') {
+      converting.innerHTML = 'A conversão falhou no meio do vídeo. <button onclick="play(filmeAtual)">Tentar de novo</button>';
+      converting.style.display = 'block';
+      converting.dataset.liveEdge = '1';
+      pararWatchdogLiveEdge();
+    } else if (status === 'preparando') {
+      converting.textContent = 'Ainda convertendo — a reprodução alcançou o que já foi processado. Aguarde…';
+      converting.style.display = 'block';
+      converting.dataset.liveEdge = '1';
+      vigiaDesde = Date.now();  // não repete o /stream-status a cada 5s enquanto ainda prepara
+    } else if (status === 'disponivel' && hls) {
+      // Terminou (ganhou #EXT-X-ENDLIST) mas o hls.js ainda não recarregou a playlist pra
+      // perceber — forçar o reload costuma bastar pra ele notar o fim e disparar 'ended'.
+      hls.loadSource(`${API}/${id}/hls/playlist.m3u8`);
+      vigiaDesde = Date.now();
+    }
+  }, 5000);
 }
 
 let hlsRetries = 0;
@@ -390,6 +467,7 @@ async function play(id, ehRetry) {
   removerLegendas();
   video.removeAttribute('src');
   destruirHls();
+  pararWatchdogLiveEdge();
   converting.style.display = 'none';
   document.getElementById('player').classList.add('active');
 
@@ -439,6 +517,7 @@ async function play(id, ehRetry) {
     video.play();
   } else {
     iniciarHls(video, `${API}/${id}/hls/playlist.m3u8`, posicaoParaRetomar);
+    iniciarWatchdogLiveEdge(id);
   }
   carregarLegendas(id);
   // "assistido" agora é decidido pelo backend quando a reprodução chega perto do fim
@@ -535,6 +614,7 @@ async function closePlayer() {
   const video = document.getElementById('video');
   removerLegendas();
   destruirHls();
+  pararWatchdogLiveEdge();
   video.pause();
   video.src = '';
   filmeAtual = null;

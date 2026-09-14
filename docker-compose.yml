@@ -14,7 +14,6 @@ services:
       - MediaPath=/media
       # ─── opcionais (ver README) ──────────────────────────────
       # - TmdbApiKey=sua_chave_v3_do_themoviedb.org   # pôster + sinopse
-      # - PreTranscodeEnabled=true                     # pré-transcode noturno
     # VPU do RK3399/RK3588:
     devices:
       - /dev/mpp_service       # VPU do RK3399/RK3588, encode/decode de hardware
