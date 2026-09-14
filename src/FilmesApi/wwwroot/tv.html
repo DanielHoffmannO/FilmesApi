@@ -149,6 +149,7 @@ video { width: 100%; height: auto; background: #000; }
 </div>
 
 <script src="/vendor/hls.min.js"></script>
+<script src="/js/util.js"></script>
 
 <script>
 /* ES5 puro, XMLHttpRequest, sem Promise. Feito pra navegador de smart TV antiga.
@@ -219,10 +220,7 @@ video { width: 100%; height: auto; background: #000; }
     return false;
   };
 
-  function esc(s) {
-    s = String(s == null ? '' : s);
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
+  // esc() vem de /js/util.js (compartilhado com index.html e controle.html).
 
   // Serie/episodio/rotulo/pasta vem prontos da API (MediaNomeParser no servidor) — uma
   // fonte so, sem regex duplicada aqui.
@@ -243,11 +241,7 @@ video { width: 100%; height: auto; background: #000; }
     });
   }
 
-  function formatarTempo(seg) {
-    seg = Math.max(0, Math.round(seg || 0));
-    var h = Math.floor(seg / 3600), m = Math.round((seg % 3600) / 60);
-    return h ? (h + 'h ' + m + 'min') : (m + 'min');
-  }
+  // formatarTempo() vem de /js/util.js.
 
   function render() {
     var grid = document.getElementById('grid');

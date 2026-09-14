@@ -128,6 +128,7 @@ main{padding:16px 24px;max-width:1000px;margin:0 auto}
 <div class="scan-msg" id="scanMsg"></div>
 
 <script src="/vendor/hls.min.js"></script>
+<script src="/js/util.js"></script>
 
 <script>
 const API = '/api/filmes';
@@ -162,9 +163,7 @@ async function load() {
 }
 
 // Série/episódio/rótulo vêm prontos da API (MediaNomeParser no servidor) — uma fonte só.
-// esc() = texto entre tags; attr() = valor de atributo entre aspas duplas.
-const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const attr = s => esc(s).replace(/"/g, '&quot;');
+// esc()/attr() vêm de /js/util.js (compartilhado com tv.html e controle.html).
 
 function render() {
   const grid = document.getElementById('grid');
@@ -219,7 +218,7 @@ function render() {
     const aberto = foldersAbertos.has(key);
     return `
       <div class="grupo ${aberto ? '' : 'collapsed'}" data-key="${attr(key)}">
-        <div class="grupo-hd" onclick="toggleGrupo(this)"><span class="caret">${aberto ? '▾' : '▸'}</span>${tituloHtml}</div>
+        <div class="grupo-hd" onclick="toggleGrupo(this, foldersAbertos)"><span class="caret">${aberto ? '▾' : '▸'}</span>${tituloHtml}</div>
         <div class="grupo-body">${rows}</div>
       </div>`;
   };
@@ -266,15 +265,7 @@ function render() {
   window.scrollTo(0, scrollAntes);
 }
 
-function toggleGrupo(el) {
-  const grupo = el.parentNode;
-  grupo.classList.toggle('collapsed');
-  const aberto = !grupo.classList.contains('collapsed');
-  if (aberto) foldersAbertos.add(grupo.dataset.key);
-  else foldersAbertos.delete(grupo.dataset.key);
-  const caret = el.querySelector('.caret');
-  if (caret) caret.textContent = aberto ? '▾' : '▸';
-}
+// toggleGrupo(el, folderSet) vem de /js/util.js.
 
 function pctProgresso(item) {
   if (!item.posicaoSegundos || !item.duracaoSegundos) return 0;
@@ -286,11 +277,7 @@ function barraProgresso(item) {
   return pct ? `<div class="rprog"><div style="width:${pct}%"></div></div>` : '';
 }
 
-function formatarTempo(seg) {
-  seg = Math.max(0, Math.round(seg || 0));
-  const h = Math.floor(seg / 3600), m = Math.round((seg % 3600) / 60);
-  return h ? `${h}h ${m}min` : `${m}min`;
-}
+// formatarTempo() vem de /js/util.js.
 
 const pad2 = n => String(n).padStart(2, '0');
 
