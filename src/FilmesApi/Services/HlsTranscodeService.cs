@@ -132,15 +132,25 @@ public class HlsTranscodeService
         var info = await _probe.InspecionarAsync(path, ct);
         if (info is null) return CompatibilidadeDireta.Incompativel;
         var primeiroAudio = info.Audios.Count > 0 ? info.Audios[0].Codec : null;
-        return ClassificarCompatibilidade(Path.GetExtension(path), info.VideoCodec, primeiroAudio);
+        return ClassificarCompatibilidade(Path.GetExtension(path), info.VideoCodec, info.Video10Bit, primeiroAudio);
     }
+
+    /// <summary>Vídeo tocável sem reencodar (stream direto OU remux <c>-c:v copy</c>): codec
+    /// numa lista curta E não 10-bit — 10-bit (<c>High 10</c>/<c>Main 10</c>) o navegador não
+    /// decodifica mesmo com <c>codec_name</c> "compatível", e copiar o stream não muda isso.
+    /// Compartilhado entre <see cref="ClassificarCompatibilidade"/> (decide /stream e /remux)
+    /// e <see cref="TranscodificarHlsAsync"/> (decide remux vs reencode dentro do HLS) — as
+    /// duas decisões já divergiram uma vez (<c>b19d789</c>) por checarem isso cada uma do seu jeito.</summary>
+    internal static bool VideoTocavelSemReencode(string? videoCodec, bool video10Bit) =>
+        videoCodec is not null && VideoCodecsCompativeis.Contains(videoCodec) && !video10Bit;
 
     /// <summary>Decisão pura de compatibilidade, separada do probe (I/O) pra dar pra testar
     /// direto — mesma ideia do <see cref="MontarArgsFfmpegHls"/>. Ver <see cref="AnalisarCompatibilidadeAsync"/>
     /// pro caminho real, que lê o arquivo com ffprobe antes de chamar isso.</summary>
-    internal static CompatibilidadeDireta ClassificarCompatibilidade(string extensao, string? videoCodec, string? primeiroAudioCodec)
+    internal static CompatibilidadeDireta ClassificarCompatibilidade(
+        string extensao, string? videoCodec, bool video10Bit, string? primeiroAudioCodec)
     {
-        var videoOk = videoCodec is not null && VideoCodecsCompativeis.Contains(videoCodec);
+        var videoOk = VideoTocavelSemReencode(videoCodec, video10Bit);
         var audioOk = primeiroAudioCodec is null || AudioCodecsCompativeis.Contains(primeiroAudioCodec);
 
         // "Compativel" (toca cru, sem processar nada) só vale pra containers que o <video>
@@ -298,12 +308,6 @@ public class HlsTranscodeService
             _logger.LogWarning(ex, "Falha ao avaliar/despejar cache de remux excedente.");
         }
     }
-
-    /// <summary>Tem algum job de transcode vivo (encodando ou na fila)? Barato — sem I/O.</summary>
-    public bool TemJobAtivo() => !_jobs.IsEmpty;
-
-    /// <summary>Este filme tem job de transcode vivo? Barato — sem I/O.</summary>
-    public bool TemJobDoFilme(int filmeId) => _jobs.ContainsKey(filmeId);
 
     /// <summary>Apaga best-effort o cache HLS do filme — usado ao deletar o filme do catálogo.</summary>
     public void LimparCache(int filmeId)
@@ -504,8 +508,7 @@ public class HlsTranscodeService
             // Uma leitura de ffprobe só (cacheada): codec, resolução e faixa de áudio.
             var info = await _probe.InspecionarAsync(origem, CancellationToken.None)
                        ?? throw new InvalidOperationException("ffprobe não conseguiu ler o arquivo.");
-            var videoCodec = info.VideoCodec;
-            var videoCompativel = videoCodec is not null && VideoCodecsCompativeis.Contains(videoCodec);
+            var videoCompativel = VideoTocavelSemReencode(info.VideoCodec, info.Video10Bit);
 
             // 4K/UHD decodificado + encodado em software trava o Radxa por minutos e esquenta
             // a placa. Se vamos reencodar e a entrada passa do teto, reduz a resolução no

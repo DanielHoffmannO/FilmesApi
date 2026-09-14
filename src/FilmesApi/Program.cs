@@ -30,7 +30,6 @@ builder.Services.AddSingleton<SubtitleService>();
 builder.Services.AddSingleton<PlayerStateService>();
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<TmdbService>();
-builder.Services.AddHostedService<PreTranscodeService>();
 builder.Services.AddHostedService<MetadataService>();
 
 builder.Services.AddControllers();

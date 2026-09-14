@@ -258,14 +258,6 @@ usam `__` (ex.: `ConnectionStrings__Default`).
 | `ThermalMaxWaitMinutes` | `5` | Depois disso, transcodifica mesmo quente (melhor que travar o vídeo pra sempre). |
 | `ThermalRoot` | `/sys/class/thermal` | Onde ficam as zonas térmicas. |
 
-### Pré-transcode noturno (opt-in)
-
-| Chave | Padrão | Descrição |
-|---|---|---|
-| `PreTranscodeEnabled` | `false` | Liga a passada noturna. |
-| `PreTranscodeHoraUtc` | `6` | Hora (UTC) em que roda. |
-| `PreTranscodeMaxItens` | `5` | Quantos filmes prepara por noite (retomadas + adições recentes não assistidas). |
-
 ### Metadados TMDB (opt-in)
 
 | Chave | Padrão | Descrição |
@@ -360,7 +352,6 @@ src/FilmesApi/
 │   ├── MediaNomeParser.cs        série/episódio/ano a partir do nome do arquivo
 │   ├── TmdbService.cs            busca no TMDB
 │   ├── MetadataService.cs        enriquecimento em background (BackgroundService)
-│   ├── PreTranscodeService.cs    passada noturna (BackgroundService)
 │   ├── PlayerStateService.cs     estado do controle remoto (singleton em memória)
 │   └── ProcessRunner.cs          executa ffmpeg com timeout + detector de travamento
 ├── Models/                       entidades EF + DTOs (incl. PlayerDtos.cs)
