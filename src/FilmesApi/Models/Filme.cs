@@ -6,7 +6,6 @@ public class Filme
     public string Titulo { get; set; } = string.Empty;
 
     public int? AnoLancamento { get; set; }
-    public string? Diretor { get; set; }
 
     /// <summary>Caminho relativo do arquivo de vídeo na pasta de mídia.</summary>
     public string? ArquivoPath { get; set; }

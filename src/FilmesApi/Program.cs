@@ -1,5 +1,4 @@
 using System.Reflection;
-using System.Text.Json.Serialization;
 using FilmesApi.Data;
 using FilmesApi.Services;
 using Microsoft.EntityFrameworkCore;
@@ -34,8 +33,7 @@ builder.Services.AddSingleton<TmdbService>();
 builder.Services.AddHostedService<PreTranscodeService>();
 builder.Services.AddHostedService<MetadataService>();
 
-builder.Services.AddControllers()
-    .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+builder.Services.AddControllers();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>

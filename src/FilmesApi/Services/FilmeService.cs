@@ -30,7 +30,7 @@ public class FilmeService
     // Os campos de classificação vêm depois, em memória (ComClassificacao) — regex não roda em SQL.
     private static readonly System.Linq.Expressions.Expression<Func<Filme, FilmeResponse>> ToResponse =
         f => new FilmeResponse(
-            f.Id, f.Titulo, f.AnoLancamento, f.Diretor, f.ArquivoPath, f.Assistido, f.DataAdicionado,
+            f.Id, f.Titulo, f.AnoLancamento, f.ArquivoPath, f.Assistido, f.DataAdicionado,
             f.Progresso != null ? f.Progresso.PosicaoSegundos : (double?)null,
             f.Progresso != null ? f.Progresso.DuracaoSegundos : null,
             f.PosterUrl, f.Sinopse, f.TituloOriginal,
@@ -95,50 +95,12 @@ public class FilmeService
     public Task<string?> ObterArquivoPathAsync(int id)
         => _db.Filmes.AsNoTracking().Where(f => f.Id == id).Select(f => f.ArquivoPath).FirstOrDefaultAsync();
 
-    /// <summary>Cria um filme manualmente. Retorna null se já existe um com o mesmo
-    /// <c>ArquivoPath</c> (índice único) — o controller mapeia pra 409.</summary>
-    public async Task<FilmeResponse?> CriarAsync(FilmeRequest req)
-    {
-        if (req.ArquivoPath is not null
-            && await _db.Filmes.AnyAsync(f => f.ArquivoPath == req.ArquivoPath))
-            return null;
-
-        var filme = new Filme
-        {
-            Titulo = req.Titulo,
-            AnoLancamento = req.AnoLancamento,
-            Diretor = req.Diretor,
-            ArquivoPath = req.ArquivoPath
-        };
-        _db.Filmes.Add(filme);
-        try { await _db.SaveChangesAsync(); }
-        catch (DbUpdateException) { return null; }  // corrida contra o índice único
-
-        return ComClassificacao(new FilmeResponse(filme.Id, filme.Titulo, filme.AnoLancamento, filme.Diretor,
-            filme.ArquivoPath, filme.Assistido, filme.DataAdicionado, null, null, null, null, null));
-    }
-
     public async Task<bool> MarcarAssistidoAsync(int id)
     {
         var filme = await _db.Filmes.FindAsync(id);
         if (filme is null) return false;
         filme.Assistido = !filme.Assistido;
         await _db.SaveChangesAsync();
-        return true;
-    }
-
-    public async Task<bool> DeletarAsync(int id)
-    {
-        var filme = await _db.Filmes.FindAsync(id);
-        if (filme is null) return false;
-
-        // FK tem ON DELETE CASCADE, mas não depender do PRAGMA foreign_keys da conexão.
-        await _db.Progressos.Where(p => p.FilmeId == id).ExecuteDeleteAsync();
-        _db.Filmes.Remove(filme);
-        await _db.SaveChangesAsync();
-
-        _transcode.LimparCache(id);
-        _legendas.LimparCache(id);
         return true;
     }
 
@@ -149,7 +111,7 @@ public class FilmeService
 
     /// <summary>Título + ano só a partir do nome do arquivo, sem lixo de release
     /// (<c>720p</c>, <c>x264</c>, <c>DUAL</c>, <c>SxxExx</c>…). Mesmo caminho do
-    /// <see cref="MediaNomeParser.TituloParaBusca"/> — tela e busca no TMDB batem.</summary>
+    /// <see cref="MediaNomeParser.TituloParaBusca(string?, string?)"/> — tela e busca no TMDB batem.</summary>
     private static (string Titulo, int? Ano) DeduzirTitulo(string relativoPath)
     {
         var cru = TituloCru(relativoPath);

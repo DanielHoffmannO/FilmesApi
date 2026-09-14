@@ -194,6 +194,15 @@ public static partial class MediaNomeParser
     /// <summary>Título "limpo" pra busca de metadados: tira marcador de episódio, ano e ruído
     /// de release. Pra episódio cujo nome de arquivo é só "N - Título", usa o nome da série.</summary>
     public static (string Titulo, int? Ano) TituloParaBusca(string? arquivoPath, string? tituloFallback = null)
+        => TituloParaBusca(arquivoPath, tituloFallback, permiteFallbackSerie: true);
+
+    // permiteFallbackSerie=false na segunda chamada: sem isso, uma pasta cujo nome é só ruído
+    // de release ("Legendado", "1080p", "Dual"...) faz ChaveSerie devolver o MESMO texto de
+    // entrada (sem "/" pra extrair segmento de pasta), e a chamada recursiva reentra com
+    // argumento idêntico — StackOverflowException garantido (não capturável em .NET, derruba
+    // o processo inteiro no meio de um /scan). Com o guard, no máximo 1 nível de recursão,
+    // só pra tentar achar um ano no nome da série.
+    private static (string Titulo, int? Ano) TituloParaBusca(string? arquivoPath, string? tituloFallback, bool permiteFallbackSerie)
     {
         var n = SemExtensao(NomeArquivo(arquivoPath));
         if (string.IsNullOrWhiteSpace(n)) n = tituloFallback ?? "";
@@ -225,10 +234,11 @@ public static partial class MediaNomeParser
         n = Regex.Replace(n, @"\s+", " ").Trim();
 
         // Nome de arquivo era só o número/título do episódio -> busca pelo nome da série.
-        if (n.Length <= 2 || Regex.IsMatch(n, @"^[0-9]{1,3}$"))
+        if (permiteFallbackSerie && (n.Length <= 2 || Regex.IsMatch(n, @"^[0-9]{1,3}$")))
         {
             var serie = ChaveSerie(arquivoPath);
-            if (serie.Length > 2) return (serie, ano ?? TituloParaBusca(serie).Ano);
+            if (serie.Length > 2 && serie != n)
+                return (serie, ano ?? TituloParaBusca(serie, null, permiteFallbackSerie: false).Ano);
         }
         return (n, ano);
     }

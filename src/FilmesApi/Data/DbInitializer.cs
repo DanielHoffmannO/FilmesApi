@@ -48,6 +48,12 @@ public static class DbInitializer
         if (colunasFilmes.Contains("Genero"))
             db.Database.ExecuteSqlRaw("""ALTER TABLE "Filmes" DROP COLUMN "Genero";""");
 
+        // "Diretor" era preenchida só pelo POST /api/filmes manual, removido do catálogo por
+        // não ter chamador (nenhuma tela cadastra filme na mão). Coluna nullable — ao contrário
+        // do Genero, deixar pra trás não quebra INSERT nenhum, é só schema desalinhado do modelo.
+        if (colunasFilmes.Contains("Diretor"))
+            db.Database.ExecuteSqlRaw("""ALTER TABLE "Filmes" DROP COLUMN "Diretor";""");
+
         // Colunas de metadados do TMDB — SQLite não tem "ADD COLUMN IF NOT EXISTS", então
         // checa o pragma e adiciona só as que faltam (bancos antigos não têm nenhuma).
         foreach (var (nome, ddl) in new (string Nome, string Ddl)[]

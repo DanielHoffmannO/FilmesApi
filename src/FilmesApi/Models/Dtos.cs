@@ -1,12 +1,10 @@
 namespace FilmesApi.Models;
 
-public record FilmeRequest(string Titulo, int? AnoLancamento, string? Diretor, string? ArquivoPath);
-
 /// <summary>Um filme na lista. Os campos de classificação (<c>Serie</c>, <c>EhEpisodio</c>,
 /// <c>Rotulo</c>…) são computados no servidor por <see cref="Services.MediaNomeParser"/> —
 /// as telas só renderizam, não têm mais regex.</summary>
 public record FilmeResponse(
-    int Id, string Titulo, int? AnoLancamento, string? Diretor, string? ArquivoPath,
+    int Id, string Titulo, int? AnoLancamento, string? ArquivoPath,
     bool Assistido, DateTime DataAdicionado,
     double? PosicaoSegundos, double? DuracaoSegundos,
     string? PosterUrl = null, string? Sinopse = null, string? TituloOriginal = null,

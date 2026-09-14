@@ -287,9 +287,7 @@ filmes ainda sem metadados (roda ~30s depois do boot e reprocessa a cada scan).
 |---|---|---|
 | `GET` | `/api/filmes?assistido=` | Lista (filtro opcional). Traz pôster, sinopse e ponto de retomada de cada item. |
 | `GET` | `/api/filmes/{id}` | Detalhes de um filme. |
-| `POST` | `/api/filmes` | Adiciona manualmente (`{titulo, anoLancamento?, diretor?, arquivoPath?}`). |
 | `PUT` | `/api/filmes/{id}/assistido` | Alterna "assistido". |
-| `DELETE` | `/api/filmes/{id}` | Remove do catálogo (+ progresso + caches). |
 | `POST` | `/api/filmes/scan` | Importa vídeos novos da pasta e remove órfãos. `{importados, removidos}`. |
 | `GET` | `/api/filmes/{id}/proximo` | Próximo episódio da série. `204` se não há. |
 
@@ -298,7 +296,7 @@ filmes ainda sem metadados (roda ~30s depois do boot e reprocessa a cada scan).
 | Método | Rota | Descrição |
 |---|---|---|
 | `GET` | `/api/filmes/continuar` | "Continuar assistindo" (mais recentes primeiro). |
-| `GET` `PUT` `DELETE` | `/api/filmes/{id}/progresso` | Lê / salva / esquece onde a reprodução parou. |
+| `GET` `PUT` | `/api/filmes/{id}/progresso` | Lê / salva onde a reprodução parou. |
 | `POST` | `/api/filmes/{id}/concluir` | Marca assistido e limpa a retomada (evento `ended` do player). |
 | `POST` | `/api/filmes/{id}/assistindo` | Keepalive — "ainda tem alguém assistindo". |
 
@@ -347,13 +345,13 @@ Estado único em memória (`PlayerStateService`) — pensado pra uma casa com um
 ```
 src/FilmesApi/
 ├── Controllers/            (todos sob /api/filmes, exceto onde indicado)
-│   ├── CatalogoController.cs     listar/criar/remover, scan da pasta, próximo episódio
+│   ├── CatalogoController.cs     listar, marcar assistido, scan da pasta, próximo episódio
 │   ├── ProgressoController.cs    "continuar de onde parou", concluir
 │   ├── ReproducaoController.cs   stream direto vs HLS vs remux, playlist/segments, legendas, keepalive
 │   ├── PlayerController.cs       /api/player — controle remoto (celular → TV)
 │   └── StatusController.cs       /api/status
 ├── Services/
-│   ├── FilmeService.cs           CRUD + scan da pasta de mídia
+│   ├── FilmeService.cs           listagem/classificação + scan da pasta de mídia
 │   ├── ProgressoService.cs       "continuar de onde parou"
 │   ├── HlsTranscodeService.cs    decisão compat/remux-áudio/remux-container/reencode, caches, filas
 │   ├── RkmppCapabilityService.cs probe da VPU + fallback pra libx264
