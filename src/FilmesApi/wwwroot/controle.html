@@ -85,6 +85,7 @@ main{padding:16px 24px;max-width:640px;margin:0 auto}
   </div>
 </div>
 
+<script src="/js/util.js"></script>
 <script>
 const API = '/api/filmes';
 const PLAYER_API = '/api/player';
@@ -102,9 +103,7 @@ document.getElementById('filters').addEventListener('click', e => {
   render();
 });
 
-function esc(s) {
-  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+// esc()/toggleGrupo() vêm de /js/util.js.
 
 async function carregar() {
   const msg = document.getElementById('msg');
@@ -157,20 +156,11 @@ function render() {
     const eps = series[nome].sort((a, b) => (a.temporada - b.temporada) || (a.episodio - b.episodio));
     const aberto = foldersAbertos.has(nome);
     html += `<div class="grupo ${aberto ? '' : 'collapsed'}" data-key="${esc(nome)}">
-      <div class="grupo-hd" onclick="toggleGrupo(this)"><span class="caret">${aberto ? '▾' : '▸'}</span>${esc(nome)} <span class="count">(${eps.length} ${eps.length === 1 ? 'episódio' : 'episódios'})</span></div>
+      <div class="grupo-hd" onclick="toggleGrupo(this, foldersAbertos)"><span class="caret">${aberto ? '▾' : '▸'}</span>${esc(nome)} <span class="count">(${eps.length} ${eps.length === 1 ? 'episódio' : 'episódios'})</span></div>
       <div class="grupo-body">${eps.map(ep => rowHtml(ep, ep.rotulo)).join('')}</div>
     </div>`;
   }
   grid.innerHTML = html || '<div class="msg">Nada encontrado.</div>';
-}
-
-function toggleGrupo(el) {
-  const grupo = el.parentNode;
-  grupo.classList.toggle('collapsed');
-  const aberto = !grupo.classList.contains('collapsed');
-  if (aberto) foldersAbertos.add(grupo.dataset.key);
-  else foldersAbertos.delete(grupo.dataset.key);
-  el.querySelector('.caret').textContent = aberto ? '▾' : '▸';
 }
 
 // ─── Controle remoto (TV) — mesmo código que existia no index.html ────────

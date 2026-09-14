@@ -356,7 +356,9 @@ src/FilmesApi/
 │   └── ProcessRunner.cs          executa ffmpeg com timeout + detector de travamento
 ├── Models/                       entidades EF + DTOs (incl. PlayerDtos.cs)
 ├── Data/AppDbContext.cs          Filmes + Progressos (SQLite)
-├── wwwroot/                      index.html · tv.html · controle.html · status.html · vendor/hls.min.js
+├── wwwroot/                      index.html · tv.html · controle.html · status.html
+│                                 js/util.js (esc/formatarTempo/toggleGrupo — compartilhado
+│                                 pelas 3 primeiras) · vendor/hls.min.js
 └── Program.cs                    DI, pipeline, "auto-migração" no boot
 
 tests/FilmesApi.Tests/          MediaNomeParser, downmix 5.1→estéreo do HLS,

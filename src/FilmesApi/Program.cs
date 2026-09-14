@@ -84,14 +84,16 @@ _ = Task.Run(() =>
 
 // ─── Pipeline ───────────────────────────────────────────────────────────
 if (app.Configuration.GetValue<bool>("AllowAnyOrigin")) app.UseCors();
-// index.html/tv.html carregam o app inteiro inline (sem JS separado pra cache-bust) —
-// sem isso, TV agressiva em cache pode ignorar um F5 e continuar rodando código velho
-// mesmo depois de um fix no servidor.
+// index.html/tv.html/controle.html quase tudo inline, mas wwwroot/js/*.js (util.js
+// compartilhado entre as 3) é nosso e muda junto — sem no-cache aqui, TV agressiva em cache
+// pode continuar rodando um util.js velho mesmo depois de um F5 na página. vendor/hls.min.js
+// é biblioteca de terceiro vendorizada, não muda sozinha: cache normal está bem.
 app.UseStaticFiles(new StaticFileOptions
 {
     OnPrepareResponse = ctx =>
     {
-        if (ctx.File.Name.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
+        if (ctx.File.Name.EndsWith(".html", StringComparison.OrdinalIgnoreCase)
+            || ctx.Context.Request.Path.StartsWithSegments("/js"))
             ctx.Context.Response.Headers.CacheControl = "no-cache";
     }
 });
