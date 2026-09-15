@@ -11,8 +11,11 @@ public static class ProcessRunner
     /// <param name="timeout">Prazo máximo — depois disso a árvore de processos é morta.</param>
     /// <param name="travou">Chamado a cada ~2s enquanto o processo roda; se devolver true,
     /// o processo é considerado travado (sem progresso) e morto. Null = só o timeout vale.</param>
-    /// <param name="ct">Cancelado no shutdown do host — mata a árvore de processos em vez de
-    /// deixar o ffmpeg como órfão até o SIGKILL do container.</param>
+    /// <param name="ct">Cancelado no shutdown do host — mata a árvore de processos e
+    /// <b>relança</b> <see cref="OperationCanceledException"/> (não devolve uma tupla de
+    /// "falha" comum) — quem chama precisa poder distinguir "cancelado de propósito" de
+    /// "o processo falhou de verdade" (ver <see cref="HlsTranscodeService"/>: um shutdown
+    /// não deve contar como falha do encoder nem dever cair na cascata de retry).</param>
     public static async Task<(int ExitCode, string Stderr)> ExecutarComTimeoutAsync(
         ProcessStartInfo psi, TimeSpan timeout, Func<bool>? travou = null, CancellationToken ct = default)
     {
@@ -31,8 +34,7 @@ public static class ProcessRunner
             catch (OperationCanceledException)
             {
                 Matar(proc);
-                return (-1, "host encerrando — processo abortado.\n" +
-                            $"--- stderr até aqui ---\n{await StderrParcial(stderrTask)}");
+                throw;
             }
             if (proc.HasExited) break;
 

@@ -177,6 +177,11 @@ video { width: 100%; height: auto; background: #000; }
   var ultimoSalvo = 0;
   var posicaoRetomar = 0;
   var retomarTentativas = 0;
+  // video.duration so e confiavel fora do HLS (stream/remux/original ja sao arquivo completo
+  // com Content-Length; HLS cresce enquanto converte). Sem essa guarda, salvarProgresso manda
+  // uma duracao pequena de mais durante a conversao e o backend marca "assistido" na marra —
+  // mesmo bug que ja existia no index.html antes de duracaoConfiavel existir la.
+  var duracaoConfiavel = false;
   var reproducaoConcluida = false;  // apos 'ended', nao deixa um save tardio recriar a retomada
   var proximoPendente = null;       // proximo episodio oferecido apos o 'ended'
   var proximoTimer = null;
@@ -511,6 +516,9 @@ video { width: 100%; height: auto; background: #000; }
     var v = document.getElementById('video');
     var pmsg = document.getElementById('pmsg');
     var seg = posicaoRetomar > 5 ? Math.floor(posicaoRetomar) : 0;
+    // As 3 chamadoras (stream/remux/original) sao sempre arquivo completo com
+    // Content-Length — duration nunca cresce depois, ao contrario do HLS.
+    duracaoConfiavel = true;
     v.src = url + (seg ? '#t=' + seg : '');
     if (comAviso) {
       pmsg.innerHTML = 'Arquivo original (pode nao rodar em TV muito antiga).';
@@ -530,17 +538,22 @@ video { width: 100%; height: auto; background: #000; }
   // Poll generico "preparando -> disponivel/erro": usado tanto pelo /stream-status do
   // HLS quanto pelo /remux-status (a diferenca entre os dois eh so a mensagem e o que
   // fazer quando fica pronto). Continua rechamando a si mesmo enquanto "preparando".
-  function pollStatus(id, url, intervaloMs, msgPreparando, msgErro, aoPronto) {
+  // Erro de rede tambem cai em "preparando" (mesmo padrao do checarStatus do index.html) --
+  // sem um teto, uma falha de rede prendia a tela em "Preparando..." pra sempre, sem nunca
+  // desistir. `falhas` viaja de chamada em chamada via parametro (nao tem closure aqui).
+  function pollStatus(id, url, intervaloMs, msgPreparando, msgErro, aoPronto, falhas) {
+    falhas = falhas || 0;
     get(url, function (err, d) {
       if (filmeAtual !== id) return;  // trocou de filme enquanto esperava
       var pmsg = document.getElementById('pmsg');
       var status = (!err && d) ? d.status : null;
+      falhas = err ? falhas + 1 : 0;
 
-      if (status === 'erro') { pmsg.innerHTML = msgErro; return; }
+      if (status === 'erro' || falhas > 12) { pmsg.innerHTML = msgErro; return; }
       if (status === null || status === 'preparando') {
         pmsg.innerHTML = typeof msgPreparando === 'function' ? msgPreparando(d) : msgPreparando;
         pollTimer = setTimeout(function () {
-          pollStatus(id, url, intervaloMs, msgPreparando, msgErro, aoPronto);
+          pollStatus(id, url, intervaloMs, msgPreparando, msgErro, aoPronto, falhas);
         }, intervaloMs);
         return;
       }
@@ -589,6 +602,7 @@ video { width: 100%; height: auto; background: #000; }
         var t = posicaoRetomar > 5 ? Math.floor(posicaoRetomar) : 0;
         var url = API + '/' + id + '/hls/playlist.m3u8';
         if (status === 'compativel') {
+          duracaoConfiavel = true;  // arquivo completo, sem HLS — mesma razao do tocarUrl acima
           v.src = API + '/' + id + '/stream' + (t ? ('#t=' + t) : '');
           try { v.load(); v.play(); } catch (e) {}
         } else if (window.Hls && window.Hls.isSupported && window.Hls.isSupported()) {
@@ -690,6 +704,7 @@ video { width: 100%; height: auto; background: #000; }
     ultimoSalvo = 0;
     posicaoRetomar = 0;
     retomarTentativas = 0;
+    duracaoConfiavel = false;
     reproducaoConcluida = false;
 
     var temMseHls = !!(window.Hls && window.Hls.isSupported && window.Hls.isSupported());
@@ -710,7 +725,7 @@ video { width: 100%; height: auto; background: #000; }
     var v = document.getElementById('video');
     if (!(posicaoRetomar > 5)) return;
     var dur = v.duration;
-    if (isFinite(dur) && posicaoRetomar >= dur - 5) { posicaoRetomar = 0; return; }
+    if (duracaoConfiavel && isFinite(dur) && posicaoRetomar >= dur - 5) { posicaoRetomar = 0; return; }
     if (Math.abs(v.currentTime - posicaoRetomar) <= 1.5) { posicaoRetomar = 0; return; }
     if (retomarTentativas++ > 4) { posicaoRetomar = 0; return; }
     try { v.currentTime = posicaoRetomar; } catch (e) {}
@@ -825,7 +840,7 @@ video { width: 100%; height: auto; background: #000; }
     }
     x.send(JSON.stringify({
       posicao: v.currentTime,
-      duracao: (isFinite(v.duration) && v.duration > 0) ? v.duration : null
+      duracao: (duracaoConfiavel && isFinite(v.duration) && v.duration > 0) ? v.duration : null
     }));
   }
 
