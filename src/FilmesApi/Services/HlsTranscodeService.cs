@@ -531,17 +531,17 @@ public class HlsTranscodeService
             // sw-decode+hw-encode → libx264. Cada nível apaga e recria o dir antes de tentar.
             var decodeHw = usarRkmpp && _rkmppDecodeHw && downscalePara is not null;
 
-            var (exitCode, stderr, orfao) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw);
+            var (exitCode, stderr, orfao, travouSemProgresso) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw);
 
             if (!orfao && decodeHw && exitCode != 0)
             {
                 _logger.LogWarning("rkmpp com hwaccel de decode falhou pro filme {Id} (exit {Code}): {Stderr}. Tentando rkmpp só no encode.",
                     filmeId, exitCode, stderr);
                 LimparDir(dir);
-                (exitCode, stderr, orfao) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw: false);
+                (exitCode, stderr, orfao, travouSemProgresso) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw: false);
             }
 
-            if (!orfao && usarRkmpp)
+            if (ContaComoFalhaDeEncoder(orfao, travouSemProgresso) && usarRkmpp)
             {
                 _rkmpp.RegistrarResultado(exitCode == 0);
                 if (exitCode != 0)
@@ -549,7 +549,7 @@ public class HlsTranscodeService
                     _logger.LogWarning("Encode via rkmpp falhou pro filme {Id} (exit {Code}): {Stderr}. Tentando de novo com libx264.",
                         filmeId, exitCode, stderr);
                     LimparDir(dir);
-                    (exitCode, stderr, orfao) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp: false, audioStreamIndex, downscalePara, decodeHw: false);
+                    (exitCode, stderr, orfao, travouSemProgresso) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp: false, audioStreamIndex, downscalePara, decodeHw: false);
                 }
             }
 
@@ -690,7 +690,7 @@ public class HlsTranscodeService
         return args;
     }
 
-    private async Task<(int ExitCode, string Stderr, bool Orfao)> RunFfmpegHlsAsync(
+    private async Task<(int ExitCode, string Stderr, bool Orfao, bool TravouSemProgresso)> RunFfmpegHlsAsync(
         int filmeId, string origem, string dir, bool videoCompativel, bool usarRkmpp, int? audioStreamIndex, int? downscalePara, bool decodeHw)
     {
         var args = MontarArgsFfmpegHls(origem, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw);
@@ -704,6 +704,7 @@ public class HlsTranscodeService
         var ultimaContagem = -1;
         var ultimoProgresso = DateTime.UtcNow;
         var orfao = false;
+        var travouSemProgresso = false;
         bool Travou()
         {
             // Ninguém pede status/segmento deste filme há muito tempo — quem pediu desistiu.
@@ -720,12 +721,26 @@ public class HlsTranscodeService
             try { n = Directory.EnumerateFiles(dir, "seg_*.ts").Count(); }
             catch { return false; }
             if (n != ultimaContagem) { ultimaContagem = n; ultimoProgresso = DateTime.UtcNow; return false; }
-            return DateTime.UtcNow - ultimoProgresso > _stallTimeout;
+            if (DateTime.UtcNow - ultimoProgresso <= _stallTimeout) return false;
+
+            // Travou de verdade (sem progresso) — diferente do órfão acima. Não é falha do
+            // encoder (disco lento, placa quente, arquivo pesado): ver ContaComoFalhaDeEncoder.
+            travouSemProgresso = true;
+            return true;
         }
 
         var (exitCode, stderr) = await ProcessRunner.ExecutarComTimeoutAsync(psi, _jobTimeout, Travou, _pararToken);
-        return (exitCode, stderr, orfao);
+        return (exitCode, stderr, orfao, travouSemProgresso);
     }
+
+    /// <summary>Um job morto pelo detector de travamento (sem progresso por <c>_stallTimeout</c>)
+    /// não é uma falha do encoder de hardware — pode ser disco/mount lento, placa quente ou só
+    /// um arquivo pesado. Só um <c>exitCode</c> genuinamente diferente de zero deveria contar
+    /// contra o rkmpp (o caso de órfão já era filtrado à parte). Extraído e testado à parte
+    /// porque é fácil "simplificar" essa condição de volta pra só <c>!orfao</c> sem perceber que
+    /// isso desliga a VPU pelo resto do processo depois de 3 travamentos que nada têm a ver com
+    /// o hardware — degradação progressiva que só um restart do container conserta.</summary>
+    internal static bool ContaComoFalhaDeEncoder(bool orfao, bool travouSemProgresso) => !orfao && !travouSemProgresso;
 
     /// <summary>Índice global (pra <c>-map</c>) da faixa de áudio que vai pro HLS: primeiro
     /// uma em português — rip "dual áudio" costuma marcar a faixa errada como default —, senão
@@ -772,7 +787,6 @@ public class HlsTranscodeService
         }
 
         return new Models.HlsStatusSnapshot(
-            JobsAtivos: jobs.Length,
             Encodando: encodando,
             NaFila: Math.Max(0, jobs.Length - encodando),
             Completos: _completos.Count,

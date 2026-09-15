@@ -228,8 +228,10 @@ public class FilmeService
 
     /// <summary>
     /// Resolve um ArquivoPath pro caminho absoluto real, recusando qualquer resultado que
-    /// escape de _mediaPath (path absoluto injetado, "..", symlink etc.) — ArquivoPath pode
-    /// vir de fora (POST /api/filmes), então nunca confiar nele sem checar containment.
+    /// escape de _mediaPath (path absoluto injetado, "..", symlink etc.). Hoje ArquivoPath só
+    /// entra no banco pelo scan (ScanMediaAsync, sempre a partir de arquivo real em disco), mas
+    /// a checagem de containment fica como defesa em profundidade — barata e nunca confiar
+    /// cegamente num caminho vindo do banco pra montar um caminho de arquivo.
     /// </summary>
     public string? ObterCaminhoAbsoluto(string relativePath)
     {
