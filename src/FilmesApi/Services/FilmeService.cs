@@ -199,14 +199,20 @@ public class FilmeService
     /// Directory.EnumerateFiles com SearchOption.AllDirectories não dá pra usar direto aqui
     /// porque ele aborta no primeiro diretório inacessível em vez de pular e continuar.
     /// </summary>
-    private static IEnumerable<string> EnumerarArquivosDeVideo(string raiz)
+    internal static IEnumerable<string> EnumerarArquivosDeVideo(string raiz)
     {
         var pendentes = new Stack<string>();
         pendentes.Push(raiz);
+        // Symlink apontando pra um ancestral (ou pra si mesmo) faria o Stack crescer pra
+        // sempre — visitados guarda o caminho REAL (resolvendo o link) de cada pasta já
+        // processada, então um ciclo bate aqui e para, em vez de escanear infinitamente.
+        var visitados = new HashSet<string>(StringComparer.Ordinal);
 
         while (pendentes.Count > 0)
         {
             var dir = pendentes.Pop();
+            if (!visitados.Add(CaminhoReal(dir))) continue;
+
             List<string> subDiretorios;
             List<string> arquivosDoDir;
             try
@@ -223,6 +229,19 @@ public class FilmeService
             foreach (var arquivo in arquivosDoDir)
                 if (VideoExtensions.Contains(Path.GetExtension(arquivo).ToLowerInvariant()))
                     yield return arquivo;
+        }
+    }
+
+    // Segue a cadeia de symlink até o alvo final (ou o próprio caminho absoluto, se não for
+    // link nenhum) — é essa forma resolvida que serve pra detectar ciclo, não o caminho como
+    // foi alcançado (dois links diferentes pro mesmo lugar real também não escaneiam 2x).
+    private static string CaminhoReal(string dir)
+    {
+        var full = Path.GetFullPath(dir);
+        try { return Directory.ResolveLinkTarget(full, returnFinalTarget: true)?.FullName ?? full; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return full;
         }
     }
 
