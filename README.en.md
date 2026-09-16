@@ -207,7 +207,9 @@ remuxavel}`), `.../stream`, `.../remux-status`, `.../remux` (video-copy + AAC au
 
 **Remote control** (single in-memory state, `PlayerStateService`): `GET /api/player/state`,
 `POST .../selecionar/{filmeId}`, `.../play-pause`, `.../seek`, `.../seek-abs`, `.../volume`,
-`.../legenda`, `.../posicao` (TV reports its own position), `.../parar`.
+`.../legenda`, `.../posicao` (TV reports its own position), `.../parar`,
+`.../proximo-oferece` (TV announces the "next episode" countdown), `.../proximo-aceita`
+(phone confirms it remotely).
 
 **Diagnostics:** `GET /api/status`, `POST /api/diag/log` (`tv.html` reports JS/hls.js/`<video>`
 errors here — the TV has no accessible console). Full details at `/swagger`.

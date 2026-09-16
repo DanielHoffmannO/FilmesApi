@@ -76,4 +76,21 @@ public class PlayerController : ControllerBase
         _state.Parar();
         return Ok(_state.Snapshot());
     }
+
+    /// <summary>A TV avisa que começou a contagem de "próximo episódio" — o celular passa a
+    /// exibir a oferta (ver <c>OferecerProximo</c> no estado).</summary>
+    [HttpPost("proximo-oferece")]
+    public IActionResult ProximoOferece([FromBody] ProximoOfertaRequest req)
+    {
+        _state.OferecerProximo(req.FilmeId, req.Rotulo);
+        return Ok(_state.Snapshot());
+    }
+
+    /// <summary>Celular confirmou o próximo episódio oferecido pela TV.</summary>
+    [HttpPost("proximo-aceita")]
+    public IActionResult ProximoAceita()
+    {
+        _state.AceitarProximo();
+        return Ok(_state.Snapshot());
+    }
 }

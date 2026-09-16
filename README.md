@@ -322,6 +322,8 @@ Estado único em memória (`PlayerStateService`) — pensado pra uma casa com um
 | `POST` | `/api/player/legenda` | `{idx}` da faixa (-1 desliga). |
 | `POST` | `/api/player/posicao` | A própria TV reporta `{pos, dur}` a cada ~2s, pro celular desenhar o progresso. |
 | `POST` | `/api/player/parar` | Fecha o player na TV. |
+| `POST` | `/api/player/proximo-oferece` | A própria TV avisa `{filmeId, rotulo}` quando começa a contagem de "próximo episódio". |
+| `POST` | `/api/player/proximo-aceita` | Celular confirma o próximo episódio oferecido pela TV, sem precisar ir até lá. |
 
 ### Diagnóstico
 

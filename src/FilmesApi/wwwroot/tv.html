@@ -203,10 +203,15 @@ video { width: 100%; height: auto; background: #000; }
     x.send();
   }
 
-  function send(method, url) {
+  function send(method, url, body) {
     var x = new XMLHttpRequest();
     x.open(method, url, true);
-    x.send();
+    if (body != null) {
+      x.setRequestHeader('Content-Type', 'application/json');
+      x.send(JSON.stringify(body));
+    } else {
+      x.send();
+    }
   }
 
   // TV nao tem console acessivel — manda erro pro servidor (docker logs) em vez de
@@ -659,6 +664,9 @@ video { width: 100%; height: auto; background: #000; }
     get(API + '/' + id + '/proximo', function (err, prox) {
       if (err || !prox || filmeAtual !== id) return;
       proximoPendente = prox;
+      // Avisa o celular que tem oferta de proximo episodio na tela — sem isso, quem so
+      // tem o controle.html na mao nao sabe que apareceu nem consegue confirmar.
+      send('POST', PLAYER + '/proximo-oferece', { filmeId: prox.id, rotulo: prox.rotulo });
       var pmsg = document.getElementById('pmsg');
       var resta = 12;
       function tick() {
@@ -812,6 +820,9 @@ video { width: 100%; height: auto; background: #000; }
       try { v.currentTime = Math.max(0, estado.seekAbsPos); } catch (e) {}
     }
     if (estado.legendaVersion !== anterior.legendaVersion) aplicarLegendaRemota(estado.legendaIdx);
+    // Celular confirmou a oferta de proximo episodio que esta TV mesma colocou no ar —
+    // mesmo caminho que o OK local do D-pad usaria (irProximo -> tocar -> Selecionar).
+    if (estado.aceitarProximoVersion !== anterior.aceitarProximoVersion && proximoPendente) irProximo();
   }
 
   // Casa o idx (indice da faixa no arquivo original) com o <track> certo — carregarLegendas

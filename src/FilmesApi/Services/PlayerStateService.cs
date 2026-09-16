@@ -21,6 +21,12 @@ public class PlayerStateService
     private double _seekAbsPos;
     private int _legendaIdx = -1;   // -1 = legenda desligada
     private int _legendaVersion;
+    // Oferta de "próximo episódio" que a TV mostra sozinha ao terminar um episódio (com
+    // contagem regressiva de auto-play) — sem isso, quem só tem o celular na mão não sabe
+    // que a oferta apareceu nem consegue confirmar/adiantar sem ir até a TV.
+    private int? _proximoFilmeId;
+    private string? _proximoRotulo;
+    private int _aceitarProximoVersion;
 
     public object Snapshot()
     {
@@ -39,7 +45,10 @@ public class PlayerStateService
                 seekAbsVersion = _seekAbsVersion,
                 seekAbsPos = _seekAbsPos,
                 legendaIdx = _legendaIdx,
-                legendaVersion = _legendaVersion
+                legendaVersion = _legendaVersion,
+                proximoFilmeId = _proximoFilmeId,
+                proximoRotulo = _proximoRotulo,
+                aceitarProximoVersion = _aceitarProximoVersion,
             };
         }
     }
@@ -49,7 +58,25 @@ public class PlayerStateService
     /// verdade sobre o que está tocando, não importa de onde veio o comando.</summary>
     public void Selecionar(int filmeId)
     {
-        lock (_lock) { _filmeId = filmeId; _playing = true; _posSegundos = 0; _duracaoSegundos = 0; _legendaIdx = -1; }
+        lock (_lock)
+        {
+            _filmeId = filmeId; _playing = true; _posSegundos = 0; _duracaoSegundos = 0; _legendaIdx = -1;
+            _proximoFilmeId = null; _proximoRotulo = null;
+        }
+    }
+
+    /// <summary>A TV começou a contagem regressiva de "próximo episódio" — o celular passa a
+    /// mostrar o que vem a seguir e um botão pra confirmar sem precisar ir até a TV.</summary>
+    public void OferecerProximo(int filmeId, string rotulo)
+    {
+        lock (_lock) { _proximoFilmeId = filmeId; _proximoRotulo = rotulo; }
+    }
+
+    /// <summary>Celular confirmou o próximo episódio oferecido — a TV aplica no próximo poll
+    /// chamando o mesmo fluxo que usaria se alguém tivesse apertado OK localmente.</summary>
+    public void AceitarProximo()
+    {
+        lock (_lock) { _aceitarProximoVersion++; }
     }
 
     /// <summary>Celular escolheu uma faixa de legenda (-1 = desligar). A TV aplica no próximo poll.</summary>
@@ -98,6 +125,10 @@ public class PlayerStateService
     /// player fechou localmente (tecla Voltar) — mesma ideia do Selecionar acima.</summary>
     public void Parar()
     {
-        lock (_lock) { _filmeId = null; _playing = false; _pararVersion++; _posSegundos = 0; _duracaoSegundos = 0; _legendaIdx = -1; }
+        lock (_lock)
+        {
+            _filmeId = null; _playing = false; _pararVersion++; _posSegundos = 0; _duracaoSegundos = 0; _legendaIdx = -1;
+            _proximoFilmeId = null; _proximoRotulo = null;
+        }
     }
 }
