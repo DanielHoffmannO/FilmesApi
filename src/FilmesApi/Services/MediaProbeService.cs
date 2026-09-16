@@ -66,16 +66,19 @@ public class MediaProbeService
         }
     }
 
-    private async Task<string?> RodarAsync(string[] args, TimeSpan timeout, string path, CancellationToken ct)
+    /// <summary><c>internal</c> de propósito: dá pra testar o kill-no-timeout com um processo
+    /// fake (<c>sleep</c>) sem precisar de ffprobe de verdade — ver <c>FilmesApi.Tests</c>.</summary>
+    internal async Task<string?> RodarAsync(string[] args, TimeSpan timeout, string path, CancellationToken ct)
     {
         var psi = new ProcessStartInfo(_ffprobe) { RedirectStandardOutput = true };
         foreach (var a in args) psi.ArgumentList.Add(a);
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(timeout);
+        Process? proc = null;
         try
         {
-            using var proc = Process.Start(psi);
+            proc = Process.Start(psi);
             if (proc is null) return null;
             var saida = await proc.StandardOutput.ReadToEndAsync(cts.Token);
             await proc.WaitForExitAsync(cts.Token);
@@ -83,6 +86,10 @@ public class MediaProbeService
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
+            // Sem matar, o ffprobe fica rodando sozinho (arquivo num mount travado é o caso
+            // real) — cada timeout subsequente empilha mais um zumbi, e o servidor vai
+            // ficando lento até reiniciar. Mesma lógica do Matar() do ProcessRunner.
+            try { proc?.Kill(entireProcessTree: true); } catch { /* já morreu / sem permissão */ }
             _logger.LogWarning("ffprobe estourou {Seg}s para {Path} — abortado.", timeout.TotalSeconds, path);
             return null;
         }
@@ -90,6 +97,10 @@ public class MediaProbeService
         {
             _logger.LogWarning(ex, "ffprobe falhou ao iniciar para {Path}.", path);
             return null;
+        }
+        finally
+        {
+            proc?.Dispose();
         }
     }
 
