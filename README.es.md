@@ -208,7 +208,9 @@ servido con `Range`), `.../original`, `.../hls/playlist.m3u8`, `.../hls/{seg}.ts
 
 **Control remoto** (un único estado en memoria, `PlayerStateService`): `GET /api/player/state`,
 `POST .../selecionar/{filmeId}`, `.../play-pause`, `.../seek`, `.../seek-abs`, `.../volume`,
-`.../legenda`, `.../posicao` (la TV reporta su propia posición), `.../parar`.
+`.../legenda`, `.../posicao` (la TV reporta su propia posición), `.../parar`,
+`.../proximo-oferece` (la TV avisa la cuenta regresiva de "próximo episodio"),
+`.../proximo-aceita` (el celular la confirma a distancia).
 
 **Diagnóstico:** `GET /api/status`, `POST /api/diag/log` (`tv.html` manda errores de
 JS/hls.js/`<video>` para acá — la TV no tiene consola accesible). Detalles completos en `/swagger`.

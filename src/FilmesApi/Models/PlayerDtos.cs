@@ -6,3 +6,4 @@ public record SeekRequest(double Delta);
 public record PosicaoRequest(double Pos, double Dur);
 public record SeekAbsRequest(double Pos);
 public record LegendaRequest(int Idx);
+public record ProximoOfertaRequest(int FilmeId, string Rotulo);

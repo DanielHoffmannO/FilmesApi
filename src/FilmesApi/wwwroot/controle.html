@@ -24,7 +24,9 @@ main{padding:16px 24px;max-width:640px;margin:0 auto}
 .row.tocando{background:#181818}
 .row .rtit{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}
 .row .rano{font-size:12px;color:#777;font-variant-numeric:tabular-nums;white-space:nowrap}
-.row .badge{font-size:11px;color:#888;border:1px solid #333;border-radius:3px;padding:1px 7px;white-space:nowrap}
+.row .badge{font-size:11px;color:#888;border:1px solid #333;border-radius:3px;padding:1px 7px;white-space:nowrap;user-select:none}
+.row .badge:active{border-color:#666;color:#ccc}
+.row .badge.on{background:#2ecc40;color:#000;border-color:#2ecc40}
 .row.assistido .rtit{color:#8a8a8a}
 .row .rprog{position:absolute;left:12px;right:12px;bottom:1px;height:2px;background:#2a2a2a;border-radius:1px;overflow:hidden}
 .row .rprog>div{height:100%;background:#e50914}
@@ -50,6 +52,10 @@ main{padding:16px 24px;max-width:640px;margin:0 auto}
 .remote button:active{background:#333}
 .remote button.on{border-color:#e50914;color:#e50914}
 .remote input[type=range]{width:100px}
+.remote-proximo{display:none;align-items:center;gap:10px;background:#181818;border:1px solid #333;border-radius:6px;padding:8px 10px;font-size:12px;color:#ccc}
+.remote-proximo.on{display:flex}
+.remote-proximo span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.remote-proximo button{background:#e50914;border-color:#e50914;color:#fff;padding:6px 10px;font-size:12px;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -75,6 +81,10 @@ main{padding:16px 24px;max-width:640px;margin:0 auto}
     <span class="remote-time" id="remoteTime"></span>
   </div>
   <div class="remote-prog" id="remoteProg" onclick="remoteScrub(event)"><div class="remote-prog-fill" id="remoteProgFill"></div></div>
+  <div class="remote-proximo" id="remoteProximo">
+    <span id="remoteProximoTxt"></span>
+    <button onclick="remoteAceitarProximo()">▶ Assistir agora</button>
+  </div>
   <div class="remote-l2">
     <button onclick="remoteSeek(-10)">« 10s</button>
     <button onclick="remotePlayPause()" id="remotePlayPauseBtn">⏸</button>
@@ -124,9 +134,16 @@ function rowHtml(f, rotulo) {
   return `<div class="row${tocando ? ' tocando' : ''}${f.assistido ? ' assistido' : ''}" onclick="enviarParaTv(${f.id})">
       <span class="rtit">${esc(rotulo || f.titulo)}</span>
       ${!rotulo && f.anoLancamento ? `<span class="rano">${f.anoLancamento}</span>` : ''}
-      ${f.assistido ? '<span class="badge">✓ assistido</span>' : ''}
+      <span class="badge ${f.assistido ? 'on' : ''}" onclick="event.stopPropagation(); toggleAssistido(${f.id})">${f.assistido ? '✓ assistido' : 'marcar'}</span>
       <button class="cast-btn" title="Enviar para a TV" onclick="event.stopPropagation(); enviarParaTv(${f.id})">📺</button>
     </div>`;
+}
+
+async function toggleAssistido(id) {
+  await fetch(`${API}/${id}/assistido`, { method: 'PUT' });
+  const f = filmes.find(x => x.id === id);
+  if (f) f.assistido = !f.assistido;
+  render();
 }
 
 function render() {
@@ -215,6 +232,13 @@ async function remoteParar() {
   pollRemote();
 }
 
+// A TV mesma oferece o próximo episódio (com contagem regressiva) ao terminar um — isso só
+// confirma antes da hora, pelo mesmo caminho que o OK local do D-pad usaria.
+async function remoteAceitarProximo() {
+  await fetch(`${PLAYER_API}/proximo-aceita`, { method: 'POST' });
+  pollRemote();
+}
+
 // CC: cicla entre desligado → faixa 0 → faixa 1 → … → desligado, mandando pra TV.
 let remoteLegendas = [], remoteLegendasDe = null;
 async function remoteCarregarLegendas(id) {
@@ -262,6 +286,9 @@ async function pollRemote() {
       document.getElementById('remoteTime').textContent = dur ? `${mmss(pos)} / ${mmss(dur)}` : (pos ? mmss(pos) : '');
       if (trocouFilme) render();
     }
+    const proxBox = document.getElementById('remoteProximo');
+    proxBox.classList.toggle('on', estado.proximoFilmeId != null);
+    if (estado.proximoFilmeId != null) document.getElementById('remoteProximoTxt').textContent = 'Próximo: ' + (estado.proximoRotulo || '');
   } catch { /* ignora falha pontual de rede */ }
   finally {
     const ativo = document.getElementById('remote').classList.contains('active');
