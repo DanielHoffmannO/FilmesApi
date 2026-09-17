@@ -185,6 +185,7 @@ video { width: 100%; height: auto; background: #000; }
   var reproducaoConcluida = false;  // apos 'ended', nao deixa um save tardio recriar a retomada
   var proximoPendente = null;       // proximo episodio oferecido apos o 'ended'
   var proximoTimer = null;
+  var proximoOfertaId = 0;          // token: só a resposta da última ofereceProximo conta
 
   function get(url, cb) {
     var x = new XMLHttpRequest();
@@ -658,11 +659,23 @@ video { width: 100%; height: auto; background: #000; }
   function cancelarProximo() {
     if (proximoTimer) { clearInterval(proximoTimer); proximoTimer = null; }
     proximoPendente = null;
+    proximoOfertaId++;  // invalida qualquer resposta de /proximo ainda em voo (ver ofereceProximo)
   }
 
   function ofereceProximo(id) {
+    // 'ended' pode disparar 2x (visto em navegador de TV). cancelarProximo() sozinho nao
+    // bastava: se as 2 chamadas acontecem sincronas (uma logo apos a outra, antes do fetch
+    // da 1a responder), as 2 leem proximoTimer==null e nenhuma cancela nada — cada resposta
+    // cria seu PROPRIO setInterval, a 2a var proximoTimer so guarda o mais recente, e o 1o
+    // fica orfao rodando junto. Os dois "relogios" independentes chamavam irProximo() um
+    // depois do outro: o proximo episodio comecava a tocar e, poucos segundos depois, a
+    // chamada orfa tocava ELE MESMO de novo do zero — parecia "tocou o mesmo episodio de novo".
+    // O token (proximoOfertaId) resolve isso não importa o intervalo entre as 2 chamadas:
+    // só a resposta da ÚLTIMA ofereceProximo (a que "ganhou" o token por último) monta o timer.
+    cancelarProximo();
+    var meuToken = ++proximoOfertaId;
     get(API + '/' + id + '/proximo', function (err, prox) {
-      if (err || !prox || filmeAtual !== id) return;
+      if (err || !prox || filmeAtual !== id || meuToken !== proximoOfertaId) return;
       proximoPendente = prox;
       // Avisa o celular que tem oferta de proximo episodio na tela — sem isso, quem so
       // tem o controle.html na mao nao sabe que apareceu nem consegue confirmar.
