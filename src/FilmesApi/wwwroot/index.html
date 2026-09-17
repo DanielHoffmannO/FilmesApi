@@ -131,6 +131,11 @@ const els = {
   proximoBox: document.getElementById('proximoBox'),
 };
 
+// GET que nunca lança: erro de rede ou resposta não-2xx viram null (chamador decide o fallback).
+async function fetchJsonOuNull(url) {
+  return fetch(url).then(r => r.ok ? r.json() : null).catch(() => null);
+}
+
 // ─── Configuração (valores antes soltos pelo código, alguns repetidos em mais de um
 // lugar com o mesmo literal significando coisas diferentes — ex.: dois "1500" e três "12") ──
 const RETOMAR_MIN_SEGUNDOS = 5;      // abaixo disso não vale a pena retomar do meio
@@ -172,25 +177,23 @@ async function render() {
   const empty = document.getElementById('empty');
   const scrollAntes = window.scrollY;  // não pular pro topo ao re-renderizar
 
+  const mostrarVazio = html => { grid.innerHTML = ''; empty.innerHTML = html; empty.style.display = 'block'; };
+
   const q = els.busca.value.trim();
   const params = new URLSearchParams({ tipo: filtroTipo, visto: filtroVisto });
   if (q) params.set('busca', q);
-  const t = await fetch(`${API}/tela?${params}`).then(r => r.ok ? r.json() : null).catch(() => null);
+  const t = await fetchJsonOuNull(`${API}/tela?${params}`);
 
   if (!t) {
-    grid.innerHTML = '';
-    empty.innerHTML = '<span class="ico">🔍</span>Não consegui falar com o servidor.';
-    empty.style.display = 'block';
+    mostrarVazio('<span class="ico">🔍</span>Não consegui falar com o servidor.');
     return;
   }
 
   const nada = !t.continuarAssistindo.length && !t.filmesSoltos.length && !t.pastasFilme.length && !t.series.length;
   if (nada) {
-    grid.innerHTML = '';
-    empty.innerHTML = t.catalogoVazio
+    mostrarVazio(t.catalogoVazio
       ? `<span class="ico">🎬</span>Catálogo vazio.<br><button onclick="scanMedia()">📂 Escanear a pasta de mídia</button>`
-      : `<span class="ico">🔍</span>${q ? 'Nada encontrado pra “' + esc(q) + '”.' : 'Nada corresponde a esse filtro.'}`;
-    empty.style.display = 'block';
+      : `<span class="ico">🔍</span>${q ? 'Nada encontrado pra “' + esc(q) + '”.' : 'Nada corresponde a esse filtro.'}`);
     return;
   }
   empty.style.display = 'none';
@@ -253,6 +256,11 @@ function barraProgresso(item) {
 
 const pad2 = n => String(n).padStart(2, '0');
 
+// "S01E02" quando dá pra saber temporada/episódio; null senão (chamador decide o fallback).
+function codigoEpisodio(f) {
+  return f.temporada != null ? `S${pad2(f.temporada)}E${pad2(f.episodio)}` : null;
+}
+
 // nome "limpo" do episódio: tira SxxExx embutido, o "8 - "/"8   " do começo e,
 // se sobrar só o nome da série (nome de arquivo genérico), não repete.
 function tituloEpisodio(f) {
@@ -283,7 +291,7 @@ function rowHtml(f, episodio) {
   const retomar = f.posicaoSegundos ? `<span class="resume">▶ ${formatarTempo(f.posicaoSegundos)}</span>` : '';
   let titulo;
   if (episodio) {
-    const cod = f.temporada != null ? `S${pad2(f.temporada)}E${pad2(f.episodio)}` : (f.rotulo || '');
+    const cod = codigoEpisodio(f) || (f.rotulo || '');
     const nome = tituloEpisodio(f);
     titulo = (cod || nome)
       ? `${cod ? `<span class="rep">${esc(cod)}</span>` : ''}${esc(nome)}`
@@ -308,7 +316,7 @@ function continuarRowHtml(c) {
     ? `${pctProgresso(c)}% · faltam ${formatarTempo(c.duracaoSegundos - c.posicaoSegundos)}`
     : `${formatarTempo(c.posicaoSegundos)} assistidos`;
   const nome = c.ehEpisodio
-    ? `<span class="rep">${c.serie} · S${pad2(c.temporada)}E${pad2(c.episodio)}</span>${esc(tituloEpisodio(c))}`
+    ? `<span class="rep">${c.serie} · ${codigoEpisodio(c)}</span>${esc(tituloEpisodio(c))}`
     : esc(c.titulo);
   return `
     <div class="row" onclick="play(${c.id})" title="${tooltipFilme(c)}">
@@ -436,7 +444,7 @@ async function play(id, ehRetry) {
   if (!ehRetry) hlsRetries = 0;  // retry preserva o contador, senão o teto de 3 nunca conta
   duracaoConfiavel = false;
   reproducaoConcluida = false;
-  const prog = await fetch(`${API}/${id}/progresso`).then(r => r.ok ? r.json() : null).catch(() => null);
+  const prog = await fetchJsonOuNull(`${API}/${id}/progresso`);
   if (prog && prog.posicaoSegundos) posicaoParaRetomar = prog.posicaoSegundos;
 
   const inicioPrep = Date.now();

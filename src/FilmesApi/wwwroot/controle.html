@@ -236,10 +236,10 @@ async function remoteProximoEp() {
 }
 
 // CC: cicla entre desligado → faixa 0 → faixa 1 → … → desligado, mandando pra TV.
-let remoteLegendas = [], remoteLegendasDe = null;
+// Só recarrega quando pollRemote detecta troca de filme (trocouFilme) — mesmo sinal que já
+// existe pra filmeAtualRemoto, em vez de um 2º controle de "id de quem já busquei" à parte.
+let remoteLegendas = [];
 async function remoteCarregarLegendas(id) {
-  if (remoteLegendasDe === id) return;
-  remoteLegendasDe = id;
   try { remoteLegendas = (await fetch(`${API}/${id}/legendas`).then(r => r.json())).filter(x => x.convertivel); }
   catch { remoteLegendas = []; }
   els.remoteCCBtn.style.display = remoteLegendas.length ? '' : 'none';
@@ -268,7 +268,6 @@ async function pollRemote() {
     const bar = els.remote;
     if (estado.filmeId === null) {
       bar.classList.remove('active');
-      remoteLegendasDe = null;
       filmeAtualRemoto = null;
       els.remoteCCBtn.style.display = 'none';
       els.remoteProximoEpBtn.style.display = 'none';
@@ -278,8 +277,8 @@ async function pollRemote() {
       if (estadoAnterior && estadoAnterior.filmeId !== null) render();
     } else {
       bar.classList.add('active');
-      remoteCarregarLegendas(estado.filmeId);
       if (trocouFilme) {
+        remoteCarregarLegendas(estado.filmeId);
         filmeAtualRemoto = await fetch(`${API}/${estado.filmeId}`).then(r => r.ok ? r.json() : null).catch(() => null);
         els.remoteProximoEpBtn.style.display = (filmeAtualRemoto && filmeAtualRemoto.ehEpisodio) ? '' : 'none';
       }
