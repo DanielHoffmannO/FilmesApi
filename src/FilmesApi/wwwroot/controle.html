@@ -94,6 +94,13 @@ const POLL_OCIOSO_MS = 3000; // intervalo de poll sem nada tocando (menos urgent
 let filtroTipo = 'all';         // all | filme | serie
 const foldersAbertos = new Set();  // séries expandidas — fecham por padrão, sobrevive ao re-render
 
+// Elementos consultados em 2+ lugares — pegos uma vez só.
+const els = {
+  remote: document.getElementById('remote'),
+  remoteCCBtn: document.getElementById('remoteCCBtn'),
+  remoteProximoEpBtn: document.getElementById('remoteProximoEpBtn'),
+};
+
 document.getElementById('filters').addEventListener('click', e => {
   const btn = e.target.closest('.filter-btn');
   if (!btn) return;
@@ -235,7 +242,7 @@ async function remoteCarregarLegendas(id) {
   remoteLegendasDe = id;
   try { remoteLegendas = (await fetch(`${API}/${id}/legendas`).then(r => r.json())).filter(x => x.convertivel); }
   catch { remoteLegendas = []; }
-  document.getElementById('remoteCCBtn').style.display = remoteLegendas.length ? '' : 'none';
+  els.remoteCCBtn.style.display = remoteLegendas.length ? '' : 'none';
 }
 async function remoteCC() {
   if (!remoteLegendas.length) return;
@@ -258,13 +265,13 @@ async function pollRemote() {
     const trocouFilme = !estadoAnterior || estadoAnterior.filmeId !== estado.filmeId;
     ultimoEstadoRemoto = estado;
 
-    const bar = document.getElementById('remote');
+    const bar = els.remote;
     if (estado.filmeId === null) {
       bar.classList.remove('active');
       remoteLegendasDe = null;
       filmeAtualRemoto = null;
-      document.getElementById('remoteCCBtn').style.display = 'none';
-      document.getElementById('remoteProximoEpBtn').style.display = 'none';
+      els.remoteCCBtn.style.display = 'none';
+      els.remoteProximoEpBtn.style.display = 'none';
       // Só re-renderiza se realmente parou de tocar algo (transição real) -- no primeiro poll
       // da página (estadoAnterior undefined) "nada tocando" já é exatamente o que o render()
       // inicial (linha ~303) desenhou, então um 2º fetch de /tela aqui seria só desperdício.
@@ -274,7 +281,7 @@ async function pollRemote() {
       remoteCarregarLegendas(estado.filmeId);
       if (trocouFilme) {
         filmeAtualRemoto = await fetch(`${API}/${estado.filmeId}`).then(r => r.ok ? r.json() : null).catch(() => null);
-        document.getElementById('remoteProximoEpBtn').style.display = (filmeAtualRemoto && filmeAtualRemoto.ehEpisodio) ? '' : 'none';
+        els.remoteProximoEpBtn.style.display = (filmeAtualRemoto && filmeAtualRemoto.ehEpisodio) ? '' : 'none';
       }
       const f = filmeAtualRemoto;
       document.getElementById('remoteTitulo').textContent = f ? `📺 ${f.rotulo || f.titulo}` : '📺 Reproduzindo…';
@@ -290,7 +297,7 @@ async function pollRemote() {
     if (estado.proximoFilmeId != null) document.getElementById('remoteProximoTxt').textContent = 'Próximo: ' + (estado.proximoRotulo || '');
   } catch { /* ignora falha pontual de rede */ }
   finally {
-    const ativo = document.getElementById('remote').classList.contains('active');
+    const ativo = els.remote.classList.contains('active');
     remoteTimer = setTimeout(pollRemote, ativo ? POLL_ATIVO_MS : POLL_OCIOSO_MS);
   }
 }
