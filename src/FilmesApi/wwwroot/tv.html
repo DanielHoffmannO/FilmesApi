@@ -295,12 +295,15 @@ video { width: 100%; height: auto; background: #000; }
     // episodios (por serie) / filmes soltos / pastas de filme (filme + extras)
     var filmesSoltos = [];
     var pfMap = {}, pfOrdem = [];
-    var serieMap = {}, serieOrdem = [];
+    // chave normalizada (serieChave, tolerante a acento/maiuscula) -> [episodios]; serieNome
+    // guarda o nome bonito de exibicao pra cada chave. Sem isso, "Diarios de Um Vampiro" e
+    // "Diarios de um vampiro" (pastas de fontes diferentes) viravam 2 series na tela.
+    var serieMap = {}, serieOrdem = [], serieNome = {};
     for (i = 0; i < list.length; i++) {
       var m = list[i];
       if (m.ehEpisodio) {
-        var ks = m.serie;
-        if (!serieMap[ks]) { serieMap[ks] = []; serieOrdem.push(ks); }
+        var ks = m.serieChave || m.serie;
+        if (!serieMap[ks]) { serieMap[ks] = []; serieOrdem.push(ks); serieNome[ks] = m.serie; }
         serieMap[ks].push(m);
         continue;
       }
@@ -322,7 +325,11 @@ video { width: 100%; height: auto; background: #000; }
       var x = String(a.titulo).toLowerCase(), y = String(b.titulo).toLowerCase();
       return x < y ? -1 : (x > y ? 1 : 0);
     });
-    serieOrdem.sort(); pfOrdem.sort();
+    serieOrdem.sort(function (a, b) {
+      var x = String(serieNome[a]).toLowerCase(), y = String(serieNome[b]).toLowerCase();
+      return x < y ? -1 : (x > y ? 1 : 0);
+    });
+    pfOrdem.sort();
     for (i = 0; i < serieOrdem.length; i++) {
       serieMap[serieOrdem[i]].sort(function (a, b) {
         return (a.temporada - b.temporada) || (a.episodio - b.episodio) ||
@@ -365,7 +372,7 @@ video { width: 100%; height: auto; background: #000; }
       if (i === 0) html += '<h2>Series (' + serieOrdem.length + ')</h2>';
       for (j = 0; j < sarr.length; j++) seps += itemHtml(sarr[j], sarr[j].rotulo);
       html += grpHtml('s:' + serieOrdem[i],
-        esc(serieOrdem[i]) + ' (' + sarr.length + (sarr.length === 1 ? ' episodio)' : ' episodios)'), seps);
+        esc(serieNome[serieOrdem[i]]) + ' (' + sarr.length + (sarr.length === 1 ? ' episodio)' : ' episodios)'), seps);
     }
     grid.innerHTML = html;
     buildNav();
