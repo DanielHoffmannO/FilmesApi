@@ -179,6 +179,29 @@ video { width: 100%; height: auto; background: #000; }
   var proximoTimer = null;
   var proximoOfertaId = 0;          // token: só a resposta da última ofereceProximo conta
 
+  // ─── Configuração (valores antes soltos pelo código, alguns repetidos em mais de um
+  // lugar com o mesmo literal significando coisas diferentes — ex.: dois "1500" e dois "12") ──
+  var RETOMAR_MIN_SEGUNDOS = 5;      // abaixo disso não vale a pena retomar do meio
+  var RETOMAR_MARGEM_FIM_S = 5;      // dentro desses últimos segundos do fim, considera "já terminou" (não retoma)
+  var RETOMAR_TOLERANCIA_S = 1.5;    // diferença aceitável entre currentTime e a retomada aplicada
+  var MAX_RETOMAR_TENTATIVAS = 4;    // desiste de tentar re-aplicar o seek de retomada
+  var MAX_HLS_RETRIES = 3;           // reconexões automáticas em erro de rede do hls.js
+  var HLS_RETRY_DELAY_MS = 1500;     // espera antes de cada reconexão do hls.js
+  var WATCHDOG_HLS_MS = 15000;       // hls.js anexado sem dado nenhum até cair pro arquivo direto
+  var POLL_STATUS_MS = 1500;         // intervalo de poll de /stream-status enquanto prepara o HLS
+  var POLL_REMUX_MS = 2000;          // intervalo de poll de /remux-status
+  var POLL_REMOTO_MS = 1500;         // intervalo de poll de /player/state (comandos do celular)
+  var MAX_FALHAS_POLL = 12;          // falhas de rede seguidas no poll até desistir com "erro"
+  var PROXIMO_COUNTDOWN_S = 12;      // contagem regressiva antes de tocar o próximo episódio sozinho
+  var AUTOSAVE_THROTTLE_MS = 10000;  // intervalo mínimo entre saves automáticos de progresso
+  var KEEPALIVE_MS = 20000;          // intervalo do aviso "ainda tem alguém aqui" pro transcode
+  var POSICAO_REPORT_MS = 2000;      // intervalo do report de posição pro controle.html
+  var SEEK_STEP_S = 15;              // avanço/retrocesso das setas esquerda/direita durante o filme
+  var AVISO_ORIGINAL_MS = 8000;      // quanto tempo o aviso "arquivo original" fica na tela
+  var DICA_CONTROLES_MS = 7000;      // quanto tempo a dica dos controles fica visível sobre o vídeo
+  var LEGENDA_MSG_MS = 3000;         // quanto tempo o aviso "Legenda: on/off" fica na tela
+  var PLAY_PAUSE_RACE_MS = 80;       // espera pra corrigir corrida com o play/pause nativo do <video>
+
   function get(url, cb) {
     var x = new XMLHttpRequest();
     x.open('GET', url, true);
@@ -428,7 +451,7 @@ video { width: 100%; height: auto; background: #000; }
       destruirHls();
       document.getElementById('pmsg').innerHTML = 'HLS não respondeu, tentando arquivo direto...';
       tocarSemHls(id);
-    }, 15000);
+    }, WATCHDOG_HLS_MS);
   }
 
   function iniciarHls(id, url, tAlvo) {
@@ -448,8 +471,8 @@ video { width: 100%; height: auto; background: #000; }
       // erro fatal de rede: segmento sumiu (transcode reiniciou) — recarrega o filme.
       // Limite de tentativas: senao um erro persistente (TV incompativel, etc.)
       // fica tentando pra sempre sem avisar nada na tela.
-      if (d.type === window.Hls.ErrorTypes.NETWORK_ERROR && hlsRetries++ < 3) {
-        setTimeout(function () { if (filmeAtual === id) tocar(id, true); }, 1500);
+      if (d.type === window.Hls.ErrorTypes.NETWORK_ERROR && hlsRetries++ < MAX_HLS_RETRIES) {
+        setTimeout(function () { if (filmeAtual === id) tocar(id, true); }, HLS_RETRY_DELAY_MS);
       } else {
         document.getElementById('pmsg').innerHTML = 'Falha ao carregar o video (erro ' + d.type + ').';
       }
@@ -465,7 +488,7 @@ video { width: 100%; height: auto; background: #000; }
   function tocarUrl(id, url, comAviso) {
     var v = document.getElementById('video');
     var pmsg = document.getElementById('pmsg');
-    var seg = posicaoRetomar > 5 ? Math.floor(posicaoRetomar) : 0;
+    var seg = posicaoRetomar > RETOMAR_MIN_SEGUNDOS ? Math.floor(posicaoRetomar) : 0;
     // As 3 chamadoras (stream/remux/original) sao sempre arquivo completo com
     // Content-Length — duration nunca cresce depois, ao contrario do HLS.
     duracaoConfiavel = true;
@@ -474,7 +497,7 @@ video { width: 100%; height: auto; background: #000; }
       pmsg.innerHTML = 'Arquivo original (pode nao rodar em TV muito antiga).';
       setTimeout(function () {
         if (pmsg.innerHTML.indexOf('original') !== -1) pmsg.innerHTML = '';
-      }, 8000);
+      }, AVISO_ORIGINAL_MS);
     }
     v.onerror = function () {
       var err = v.error;
@@ -499,7 +522,7 @@ video { width: 100%; height: auto; background: #000; }
       var status = (!err && d) ? d.status : null;
       falhas = err ? falhas + 1 : 0;
 
-      if (status === 'erro' || falhas > 12) { pmsg.innerHTML = msgErro; return; }
+      if (status === 'erro' || falhas > MAX_FALHAS_POLL) { pmsg.innerHTML = msgErro; return; }
       if (status === null || status === 'preparando') {
         pmsg.innerHTML = typeof msgPreparando === 'function' ? msgPreparando(d) : msgPreparando;
         pollTimer = setTimeout(function () {
@@ -516,7 +539,7 @@ video { width: 100%; height: auto; background: #000; }
   // entao toca, como um arquivo normal (Content-Length + Range, ao contrario de um pipe
   // ao vivo que algumas TVs recusam na hora por nao saber o tamanho).
   function pollRemuxEtocar(id) {
-    pollStatus(id, API + '/' + id + '/remux-status', 2000,
+    pollStatus(id, API + '/' + id + '/remux-status', POLL_REMUX_MS,
       function (d) { return 'Preparando audio' + (d && d.progresso != null ? ' (' + d.progresso + '%)' : '...'); },
       'Falha ao preparar o audio.',
       function () { tocarUrl(id, API + '/' + id + '/remux', false); });
@@ -546,10 +569,10 @@ video { width: 100%; height: auto; background: #000; }
   // aqui quando a TV tem algum jeito de tocar HLS (MSE+hls.js OU HLS nativo do
   // <video>) — TV sem nenhum dos dois nem chega, vai direto pro tocarSemHls.
   function pollStatusEtocar(id) {
-    pollStatus(id, API + '/' + id + '/stream-status', 1500, 'Preparando video...', 'Falha ao preparar o video.',
+    pollStatus(id, API + '/' + id + '/stream-status', POLL_STATUS_MS, 'Preparando video...', 'Falha ao preparar o video.',
       function (status) {
         var v = document.getElementById('video');
-        var t = posicaoRetomar > 5 ? Math.floor(posicaoRetomar) : 0;
+        var t = posicaoRetomar > RETOMAR_MIN_SEGUNDOS ? Math.floor(posicaoRetomar) : 0;
         var url = API + '/' + id + '/hls/playlist.m3u8';
         if (status === 'compativel') {
           duracaoConfiavel = true;  // arquivo completo, sem HLS — mesma razao do tocarUrl acima
@@ -625,7 +648,7 @@ video { width: 100%; height: auto; background: #000; }
       // tem o controle.html na mao nao sabe que apareceu nem consegue confirmar.
       send('POST', PLAYER + '/proximo-oferece', { filmeId: prox.id, rotulo: prox.rotulo });
       var pmsg = document.getElementById('pmsg');
-      var resta = 12;
+      var resta = PROXIMO_COUNTDOWN_S;
       function tick() {
         pmsg.innerHTML = 'Proximo: ' + esc(prox.rotulo) + ' &mdash; OK assiste, Voltar cancela  (' + resta + 's)';
         if (resta-- <= 0) irProximo();
@@ -663,7 +686,7 @@ video { width: 100%; height: auto; background: #000; }
     // dica dos controles so nos primeiros segundos, pra nao ficar sobre o video
     var phint = document.getElementById('phint');
     phint.style.display = 'block';
-    setTimeout(function () { phint.style.display = 'none'; }, 7000);
+    setTimeout(function () { phint.style.display = 'none'; }, DICA_CONTROLES_MS);
 
     filmeAtual = id;
     ultimoSalvo = 0;
@@ -688,11 +711,11 @@ video { width: 100%; height: auto; background: #000; }
   // 'loadeddata'/'canplay'/'seeked' pegam, e re-tenta se o seek for revertido.
   function aplicarRetomada() {
     var v = document.getElementById('video');
-    if (!(posicaoRetomar > 5)) return;
+    if (!(posicaoRetomar > RETOMAR_MIN_SEGUNDOS)) return;
     var dur = v.duration;
-    if (duracaoConfiavel && isFinite(dur) && posicaoRetomar >= dur - 5) { posicaoRetomar = 0; return; }
-    if (Math.abs(v.currentTime - posicaoRetomar) <= 1.5) { posicaoRetomar = 0; return; }
-    if (retomarTentativas++ > 4) { posicaoRetomar = 0; return; }
+    if (duracaoConfiavel && isFinite(dur) && posicaoRetomar >= dur - RETOMAR_MARGEM_FIM_S) { posicaoRetomar = 0; return; }
+    if (Math.abs(v.currentTime - posicaoRetomar) <= RETOMAR_TOLERANCIA_S) { posicaoRetomar = 0; return; }
+    if (retomarTentativas++ > MAX_RETOMAR_TENTATIVAS) { posicaoRetomar = 0; return; }
     try { v.currentTime = posicaoRetomar; } catch (e) {}
   }
 
@@ -704,7 +727,7 @@ video { width: 100%; height: auto; background: #000; }
     v.ontimeupdate = function () {
       if (filmeAtual == null || v.paused) return;
       var t = (new Date()).getTime();
-      if (t - ultimoSalvo < 10000) return;
+      if (t - ultimoSalvo < AUTOSAVE_THROTTLE_MS) return;
       ultimoSalvo = t;
       salvarProgresso();
     };
@@ -723,7 +746,7 @@ video { width: 100%; height: auto; background: #000; }
     // de status" o tempo todo (buffer cheio, pausado, etc).
     setInterval(function () {
       if (filmeAtual != null) send('POST', API + '/' + filmeAtual + '/assistindo');
-    }, 20000);
+    }, KEEPALIVE_MS);
 
     // Reporta posicao pro controle.html desenhar a barra de progresso (nao precisa
     // ser preciso — so o suficiente pra nao ficar visualmente parado).
@@ -736,7 +759,7 @@ video { width: 100%; height: auto; background: #000; }
         pos: v.currentTime,
         dur: isFinite(v.duration) && v.duration > 0 ? v.duration : 0
       }));
-    }, 2000);
+    }, POSICAO_REPORT_MS);
   }
 
   // ---- controle remoto (celular, controle.html) ----
@@ -747,7 +770,7 @@ video { width: 100%; height: auto; background: #000; }
   function pollRemoto() {
     get(PLAYER + '/state', function (err, estado) {
       if (!err && estado) aplicarEstadoRemoto(estado);
-      setTimeout(pollRemoto, 1500);
+      setTimeout(pollRemoto, POLL_REMOTO_MS);
     });
   }
 
@@ -865,19 +888,19 @@ video { width: 100%; height: auto; background: #000; }
           if (!algum && tt.length) tt[0].mode = 'showing';
           var pm = document.getElementById('pmsg');
           pm.innerHTML = 'Legenda: ' + (algum ? 'off' : (tt.length ? (tt[0].label || 'on') : 'nenhuma'));
-          setTimeout(function () { var p = document.getElementById('pmsg'); if (p.innerHTML.indexOf('Legenda:') === 0) p.innerHTML = ''; }, 3000);
+          setTimeout(function () { var p = document.getElementById('pmsg'); if (p.innerHTML.indexOf('Legenda:') === 0) p.innerHTML = ''; }, LEGENDA_MSG_MS);
         }
         if (e.preventDefault) e.preventDefault();
         return false;
       }
 
       if (k === 37) {
-        v.currentTime = Math.max(0, v.currentTime - 15);
+        v.currentTime = Math.max(0, v.currentTime - SEEK_STEP_S);
         if (e.preventDefault) e.preventDefault(); return false;
       }
       if (k === 39) {
         var d = v.duration;
-        v.currentTime = isFinite(d) ? Math.min(d - 1, v.currentTime + 15) : v.currentTime + 15;
+        v.currentTime = isFinite(d) ? Math.min(d - 1, v.currentTime + SEEK_STEP_S) : v.currentTime + SEEK_STEP_S;
         if (e.preventDefault) e.preventDefault(); return false;
       }
       if (k === 13 || k === 32) {
@@ -888,7 +911,7 @@ video { width: 100%; height: auto; background: #000; }
         setTimeout(function () {
           if (querPausar && !v.paused) v.pause();
           if (!querPausar && v.paused) { try { v.play(); } catch (er) {} }
-        }, 80);
+        }, PLAY_PAUSE_RACE_MS);
         return false;
       }
       return true;
