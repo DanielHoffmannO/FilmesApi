@@ -29,11 +29,21 @@ public record SerieAgrupada(string Chave, string Nome, List<FilmeResponse> Episo
 /// agrupamento (acento/maiúscula, arco "Livro N", release com SxxExx na pasta) precisava ser
 /// corrigido 3 vezes.
 /// </summary>
+/// <param name="ContinuarAssistindo">Filmes com retomada pendente — só populado quando tipo e
+/// visto estão neutros ("all"), pra não misturar com um filtro ativo.</param>
+/// <param name="FilmesSoltos">Filmes sem pasta compartilhada (ou pasta com só 1 arquivo real).</param>
+/// <param name="PastasFilme">Pastas com 2+ arquivos reais sem episódio (filme + extras).</param>
+/// <param name="Series">Séries com episódios agrupados por <see cref="Services.MediaNomeParser.ChaveAgrupamento"/>.</param>
+/// <param name="CatalogoVazio">Catálogo inteiro (sem filtro nenhum) não tem nenhum filme —
+/// diferente de "nada bate o filtro atual". Vem de graça (o servidor já classificou tudo pra
+/// montar esta mesma resposta), poupa as 3 telas de um <c>GET /api/filmes</c> à parte só pra
+/// essa pergunta.</param>
 public record TelaCatalogoResponse(
     List<FilmeResponse> ContinuarAssistindo,
     List<FilmeResponse> FilmesSoltos,
     List<PastaAgrupada> PastasFilme,
-    List<SerieAgrupada> Series);
+    List<SerieAgrupada> Series,
+    bool CatalogoVazio);
 
 /// <summary>Uma faixa de legenda embutida. <c>Idx</c> é o índice relativo (0,1,2… na ordem
 /// do ffprobe) usado no endpoint <c>/legenda/{idx}</c>. <c>Convertivel</c> = é texto e dá

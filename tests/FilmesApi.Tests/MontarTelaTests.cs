@@ -160,6 +160,20 @@ public class MontarTelaTests
         Assert.Equal(1, tela.ContinuarAssistindo[0].Id);
     }
 
+    // Regressão: sem CatalogoVazio, as 3 telas faziam um GET /api/filmes à parte (classificando
+    // o catálogo inteiro de novo) só pra saber se tinha ALGUMA coisa, além do GET /tela que já
+    // classifica tudo mesmo. CatalogoVazio some com essa segunda chamada.
+    [Fact]
+    public void CatalogoVazio_reflete_a_lista_completa_nao_a_filtrada()
+    {
+        var todos = new List<FilmeResponse> { F(1, "Interestelar") };
+
+        Assert.True(FilmeService.MontarTela([], [], "all", "all", null).CatalogoVazio);
+        // Filtro que não bate nada: catálogo tem filme, só não passou no filtro atual.
+        Assert.False(FilmeService.MontarTela(todos, [], "all", "all", "nao existe").CatalogoVazio);
+        Assert.False(FilmeService.MontarTela(todos, [], "serie", "all", null).CatalogoVazio);
+    }
+
     [Fact]
     public void Contagem_de_pasta_pro_limiar_de_agrupar_usa_a_lista_inteira()
     {

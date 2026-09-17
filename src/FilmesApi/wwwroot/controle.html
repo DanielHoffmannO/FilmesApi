@@ -100,7 +100,6 @@ main{padding:16px 24px;max-width:640px;margin:0 auto}
 <script>
 const API = '/api/filmes';
 const PLAYER_API = '/api/player';
-let temFilmes = false;   // só pra decidir a mensagem "nenhum filme" x "nada nesse filtro"
 let filtroTipo = 'all';         // all | filme | serie
 const foldersAbertos = new Set();  // séries expandidas — fecham por padrão, sobrevive ao re-render
 
@@ -114,18 +113,6 @@ document.getElementById('filters').addEventListener('click', e => {
 });
 
 // esc()/toggleGrupo() vêm de /js/util.js.
-
-async function carregar() {
-  const msg = document.getElementById('msg');
-  try {
-    const todos = await fetch(API).then(r => r.json());
-    temFilmes = todos.length > 0;
-    await render();
-  } catch {
-    msg.style.display = 'block';
-    msg.textContent = 'Falha ao carregar a lista.';
-  }
-}
 
 function rowHtml(f, rotulo) {
   const tocando = ultimoEstadoRemoto && ultimoEstadoRemoto.filmeId === f.id;
@@ -177,7 +164,7 @@ async function render() {
   }
 
   msg.style.display = html ? 'none' : 'block';
-  msg.textContent = temFilmes ? 'Nada nesse filtro.' : 'Nenhum filme. Rode o Scan na lista completa.';
+  if (!html) msg.textContent = t.catalogoVazio ? 'Nenhum filme. Rode o Scan na lista completa.' : 'Nada nesse filtro.';
   grid.innerHTML = html;
 }
 
@@ -276,7 +263,8 @@ async function pollRemote() {
   try {
     const res = await fetch(`${PLAYER_API}/state`);
     const estado = await res.json();
-    const trocouFilme = !ultimoEstadoRemoto || ultimoEstadoRemoto.filmeId !== estado.filmeId;
+    const estadoAnterior = ultimoEstadoRemoto;
+    const trocouFilme = !estadoAnterior || estadoAnterior.filmeId !== estado.filmeId;
     ultimoEstadoRemoto = estado;
 
     const bar = document.getElementById('remote');
@@ -286,7 +274,10 @@ async function pollRemote() {
       filmeAtualRemoto = null;
       document.getElementById('remoteCCBtn').style.display = 'none';
       document.getElementById('remoteProximoEpBtn').style.display = 'none';
-      if (trocouFilme) render();
+      // Só re-renderiza se realmente parou de tocar algo (transição real) -- no primeiro poll
+      // da página (estadoAnterior undefined) "nada tocando" já é exatamente o que o render()
+      // inicial (linha ~303) desenhou, então um 2º fetch de /tela aqui seria só desperdício.
+      if (estadoAnterior && estadoAnterior.filmeId !== null) render();
     } else {
       bar.classList.add('active');
       remoteCarregarLegendas(estado.filmeId);
@@ -313,7 +304,7 @@ async function pollRemote() {
   }
 }
 
-carregar();
+render();
 pollRemote();
 </script>
 </body>
