@@ -89,6 +89,7 @@ main{padding:16px 24px;max-width:640px;margin:0 auto}
     <button onclick="remoteSeek(-10)">« 10s</button>
     <button onclick="remotePlayPause()" id="remotePlayPauseBtn">⏸</button>
     <button onclick="remoteSeek(10)">10s »</button>
+    <button onclick="remoteProximoEp()" id="remoteProximoEpBtn" style="display:none">⏭ Próximo ep</button>
     <button onclick="remoteCC()" id="remoteCCBtn" style="display:none">CC</button>
     <input type="range" id="remoteVolume" min="0" max="1" step="0.05" oninput="remoteVolume(this.value)">
     <button onclick="remoteParar()">⏹ Parar</button>
@@ -240,6 +241,15 @@ async function remoteAceitarProximo() {
   pollRemote();
 }
 
+// Botão manual "próximo episódio" — diferente da oferta automática (remoteAceitarProximo):
+// pula na hora, sem esperar a TV chegar perto do fim e abrir a contagem regressiva sozinha.
+async function remoteProximoEp() {
+  if (!ultimoEstadoRemoto || ultimoEstadoRemoto.filmeId == null) return;
+  const prox = await fetch(`${API}/${ultimoEstadoRemoto.filmeId}/proximo`)
+    .then(r => r.status === 200 ? r.json() : null).catch(() => null);
+  if (prox) enviarParaTv(prox.id);
+}
+
 // CC: cicla entre desligado → faixa 0 → faixa 1 → … → desligado, mandando pra TV.
 let remoteLegendas = [], remoteLegendasDe = null;
 async function remoteCarregarLegendas(id) {
@@ -275,12 +285,14 @@ async function pollRemote() {
       remoteLegendasDe = null;
       filmeAtualRemoto = null;
       document.getElementById('remoteCCBtn').style.display = 'none';
+      document.getElementById('remoteProximoEpBtn').style.display = 'none';
       if (trocouFilme) render();
     } else {
       bar.classList.add('active');
       remoteCarregarLegendas(estado.filmeId);
       if (trocouFilme) {
         filmeAtualRemoto = await fetch(`${API}/${estado.filmeId}`).then(r => r.ok ? r.json() : null).catch(() => null);
+        document.getElementById('remoteProximoEpBtn').style.display = (filmeAtualRemoto && filmeAtualRemoto.ehEpisodio) ? '' : 'none';
       }
       const f = filmeAtualRemoto;
       document.getElementById('remoteTitulo').textContent = f ? `📺 ${f.rotulo || f.titulo}` : '📺 Reproduzindo…';
