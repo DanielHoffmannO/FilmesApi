@@ -196,11 +196,19 @@ function render() {
 
   const filmesSoltos = [];        // filme sem pasta ou sozinho na pasta
   const pastasFilme = new Map();  // pasta -> [filmes]  (2+ arquivos, sem episódios: filme + extras)
-  const seriesMap = new Map();    // nome da série -> [episódios]
+  // chave normalizada (serieChave, tolerante a acento/maiúscula) -> { nome, itens } — evita
+  // "Diários de Um Vampiro" e "Diarios de um vampiro" virarem 2 grupos por causa da pasta.
+  const seriesMap = new Map();
   const push = (map, k, v) => { (map.get(k) || map.set(k, []).get(k)).push(v); };
 
   for (const f of filtered) {
-    if (f.ehEpisodio) { push(seriesMap, f.serie, f); continue; }
+    if (f.ehEpisodio) {
+      const chave = f.serieChave || f.serie;
+      let g = seriesMap.get(chave);
+      if (!g) { g = { nome: f.serie, itens: [] }; seriesMap.set(chave, g); }
+      g.itens.push(f);
+      continue;
+    }
     if (f.pasta !== 'Sem pasta' && porPasta.get(f.pasta) > 1) push(pastasFilme, f.pasta, f);
     else filmesSoltos.push(f);
   }
@@ -210,8 +218,8 @@ function render() {
     if (principais.length === 1) { filmesSoltos.push(principais[0]); pastasFilme.delete(pasta); }
   }
   filmesSoltos.sort((a, b) => a.titulo.localeCompare(b.titulo, 'pt-BR'));
-  for (const arr of seriesMap.values())
-    arr.sort((a, b) => (a.temporada - b.temporada) || (a.episodio - b.episodio)
+  for (const g of seriesMap.values())
+    g.itens.sort((a, b) => (a.temporada - b.temporada) || (a.episodio - b.episodio)
       || a.titulo.localeCompare(b.titulo, 'pt-BR', { numeric: true }));
 
   const grupo = (key, tituloHtml, rows) => {
@@ -250,14 +258,15 @@ function render() {
     html += `</div></div>`;
   }
 
-  const seriesNomes = [...seriesMap.keys()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  if (seriesNomes.length) {
-    html += `<div class="secao"><div class="secao-title">📺 Séries <span class="count">(${seriesNomes.length})</span></div><div class="lista">`;
-    html += seriesNomes.map(nome => {
-      const itens = seriesMap.get(nome);
+  const seriesChaves = [...seriesMap.keys()].sort((a, b) => seriesMap.get(a).nome.localeCompare(seriesMap.get(b).nome, 'pt-BR'));
+  if (seriesChaves.length) {
+    html += `<div class="secao"><div class="secao-title">📺 Séries <span class="count">(${seriesChaves.length})</span></div><div class="lista">`;
+    html += seriesChaves.map(chave => {
+      const g = seriesMap.get(chave);
+      const itens = g.itens;
       const poster = itens.find(f => f.posterUrl);   // um pôster já basta pra série inteira
-      const tituloHtml = `${poster ? posterHtml(poster) : ''}${esc(nome)} <span class="count">(${itens.length} ${itens.length === 1 ? 'episódio' : 'episódios'})</span>`;
-      return grupo('s:' + nome, tituloHtml, itens.map(f => rowHtml(f, true)).join(''));
+      const tituloHtml = `${poster ? posterHtml(poster) : ''}${esc(g.nome)} <span class="count">(${itens.length} ${itens.length === 1 ? 'episódio' : 'episódios'})</span>`;
+      return grupo('s:' + chave, tituloHtml, itens.map(f => rowHtml(f, true)).join(''));
     }).join('');
     html += `</div></div>`;
   }

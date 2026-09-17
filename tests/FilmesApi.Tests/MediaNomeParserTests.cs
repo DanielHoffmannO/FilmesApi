@@ -81,6 +81,68 @@ public class MediaNomeParserTests
         Assert.Equal("Breaking Bad", s1);
     }
 
+    // Regressão: "Avatar A Lenda de Aang/Livro 1 - Água/S1E02....mkv" — a pasta do arco
+    // ("Livro N - Nome") não é só "Livro N", tem mais texto depois do hífen. Sem reconhecer
+    // esse prefixo, ChaveSerie ficava presa em "Livro 1" e nunca subia pra pasta da série de
+    // verdade — 3 arcos viravam 3 séries distintas em vez de 1 com 3 "temporadas".
+    [Theory]
+    [InlineData("Avatar A Lenda de Aang/Livro 1 - Água/S1E02 - A Volta Do Avatar.mkv")]
+    [InlineData("Avatar A Lenda de Aang/Livro 2 - Terra/S2E01 - O Estado Avatar.mkv")]
+    [InlineData("Avatar A Lenda de Aang/Livro 3 - Fogo/S3E06 - O Avatar e o Senhor do Fogo.mkv")]
+    public void ChaveSerie_sobe_pra_pasta_pai_quando_segmento_e_arco_tipo_livro(string path)
+    {
+        Assert.Equal("Avatar A Lenda de Aang", MediaNomeParser.ChaveSerie(path));
+    }
+
+    // Regressão: cada episódio do Severance veio numa pasta própria de release, nome igual
+    // ao arquivo ("Severance.S02E05.1080p.WEB-DL.DUAL.5.1") — sem cortar no marcador SxxExx,
+    // ChaveSerie devolvia a pasta inteira (com resolução/codec/áudio), e cada episódio virava
+    // uma "série" de 1 só, em vez de 5 episódios da mesma série.
+    [Theory]
+    [InlineData("Severance.S02E01.1080p.WEB-DL.DUAL.5.1/Severance.S02E01.1080p.WEB-DL.DUAL.5.1.mkv")]
+    [InlineData("Severance.S02E05.1080p.WEB-DL.DUAL.5.1/Severance.S02E05.1080p.WEB-DL.DUAL.5.1.mkv")]
+    public void ChaveSerie_corta_pasta_de_release_no_marcador_sxxexx(string path)
+    {
+        Assert.Equal("Severance", MediaNomeParser.ChaveSerie(path));
+    }
+
+    // ─── ChaveAgrupamento: tolerância a acento/maiúscula na chave de agrupar ────────────
+
+    [Theory]
+    [InlineData("Diários de Um Vampiro", "Diarios de um vampiro")]
+    [InlineData("Diários de Um Vampiro", "Diários de um Vampiro")]
+    [InlineData("Diários de Um Vampiro", "DIÁRIOS DE UM VAMPIRO")]
+    [InlineData("Breaking  Bad", "Breaking Bad")]  // espaço duplo também não deveria separar
+    public void ChaveAgrupamento_ignora_acento_maiuscula_espaco(string a, string b)
+    {
+        Assert.Equal(MediaNomeParser.ChaveAgrupamento(a), MediaNomeParser.ChaveAgrupamento(b));
+    }
+
+    [Fact]
+    public void ChaveAgrupamento_null_ou_vazio_passa_direto()
+    {
+        Assert.Null(MediaNomeParser.ChaveAgrupamento(null));
+        Assert.Equal("", MediaNomeParser.ChaveAgrupamento(""));
+    }
+
+    // Regressão real: as 5 pastas de "Diários de Um Vampiro" vieram de fontes diferentes com
+    // grafia levemente diferente — sem ChaveAgrupamento normalizando, isso rachava a série em
+    // até 3 grupos na tela (visto em produção) em vez de 1 com as 5 temporadas.
+    [Fact]
+    public void ChaveAgrupamento_junta_temporadas_de_fontes_com_grafia_diferente()
+    {
+        var chaves = new[]
+        {
+            MediaNomeParser.ChaveSerie("Diarios de Um Vampiro 1 Temporada (www.ThePirateFilmes.com)/1 - Pilot.mp4"),
+            MediaNomeParser.ChaveSerie("Diários de Um Vampiro 2ª Temporada [2010 DUAL AUDIO] 720p/2 - x.mp4"),
+            MediaNomeParser.ChaveSerie("Diários de Um Vampiro 3ª Temporada (2011) DUAL AUDIO 720p_Douglasvip/3 - x.mp4"),
+            MediaNomeParser.ChaveSerie("Diários de Um Vampiro 4ª Temporada (2012) BDRip 720p Dual Áudio - Douglasvip/4 - x.mp4"),
+            MediaNomeParser.ChaveSerie("Diários de um Vampiro - 5ª Temporada (2014) 720p Dual Áudio - Douglasvip/5 - x.mp4"),
+        }.Select(MediaNomeParser.ChaveAgrupamento).Distinct().ToList();
+
+        Assert.Single(chaves);
+    }
+
     // ─── Classificar: o pacote que vai pro FilmeResponse ────────────────
 
     [Fact]

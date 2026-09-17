@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace FilmesApi.Services;
@@ -6,13 +7,18 @@ namespace FilmesApi.Services;
 /// <see cref="Models.Filme"/> não guarda nada de série/temporada.</summary>
 /// <param name="EhEpisodio">É episódio de série?</param>
 /// <param name="EhExtra">Trailer/sample/making-of — não entra na sequência de episódios.</param>
-/// <param name="Serie">Nome da série pra agrupar (só quando episódio).</param>
+/// <param name="Serie">Nome da série pra exibir (só quando episódio) — mantém acento/maiúscula
+/// de como a pasta foi nomeada.</param>
+/// <param name="SerieChave">Chave de agrupamento de <see cref="Serie"/>, tolerante a
+/// acento/maiúscula/espaço — pra unir temporadas cujas pastas vieram de fontes diferentes e
+/// escreveram o nome ligeiramente diferente ("Diários de Um Vampiro" vs "Diarios de um
+/// vampiro"). Use esta pra comparar/agrupar; <see cref="Serie"/> só pra exibir.</param>
 /// <param name="Temporada">Temporada (0 quando o nome só tem número solto, ex.: "Capítulo 12").</param>
 /// <param name="Episodio">Número do episódio.</param>
 /// <param name="Rotulo">Como mostrar na lista: "S03E08" / "T1 Ep05" / "Ep 12 · título" / o título.</param>
 /// <param name="Pasta">Pasta pai ("Sem pasta" na raiz de /media) — pro agrupamento "filme + extras".</param>
 public record ClassificacaoMidia(
-    bool EhEpisodio, bool EhExtra, string? Serie,
+    bool EhEpisodio, bool EhExtra, string? Serie, string? SerieChave,
     int? Temporada, int? Episodio, string Rotulo, string Pasta);
 
 /// <summary>
@@ -44,13 +50,21 @@ public static partial class MediaNomeParser
     private static partial Regex ReTemporadaPasta();
 
     // Onde cortar o nome da pasta pra virar o nome da série: no 1º de {temporada, parte N,
-    // ano, "completa/completo", " - ", "["}.
-    [GeneratedRegex(@"\s*(?:[0-9]{1,2}\s*[ªº°]?\s*(?:a\s+)?(?:temporadas?|seasons?)|(?:temporadas?|seasons?)\s*[0-9]{1,2}|parte\s*[0-9]{1,2}|part\s*[0-9]{1,2}|\b[0-9]{1,2}\s*[ªº°]\b|19[0-9]{2}|20[0-9]{2}|completos?|completas?|complete|\s-\s|\[).*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    // ano, SxxExx (pasta de release com o episódio embutido no nome, tipo
+    // "Severance.S02E05.1080p.WEB-DL.DUAL.5.1"), "completa/completo", " - ", "["}.
+    [GeneratedRegex(@"\s*(?:[0-9]{1,2}\s*[ªº°]?\s*(?:a\s+)?(?:temporadas?|seasons?)|(?:temporadas?|seasons?)\s*[0-9]{1,2}|parte\s*[0-9]{1,2}|part\s*[0-9]{1,2}|\b[0-9]{1,2}\s*[ªº°]\b|\bS[0-9]{1,2}[\s._-]*E[0-9]{1,3}\b|19[0-9]{2}|20[0-9]{2}|completos?|completas?|complete|\s-\s|\[).*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ReCorteSerie();
 
-    // Último segmento da pasta é "só temporada" -> subir pro segmento pai.
-    [GeneratedRegex(@"^\s*(?:season|temporada|s|t|disco?|parte|part|cd)\s*[0-9]{1,2}\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex ReSegmentoTemporada();
+    // Último segmento da pasta COMEÇA com um marcador de temporada/arco (pode ter mais coisa
+    // depois, tipo "Livro 1 - Água") -> subir pro segmento pai. Palavras completas só, sem $
+    // no fim de propósito (senão "Livro 1 - Água" não bate).
+    [GeneratedRegex(@"^\s*(?:season|temporada|livro|volume|disco?|parte|part|cd)\s*[0-9]{1,2}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ReSegmentoTemporadaPrefixo();
+
+    // Caso mais arriscado (letra solta "S"/"T") fica com match exato — "S1" sozinho é
+    // claramente temporada, mas um segmento tipo "S1 Alguma Coisa Sem Relação" já não é.
+    [GeneratedRegex(@"^\s*[ST]\s*[0-9]{1,2}\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ReSegmentoTemporadaExata();
 
     [GeneratedRegex(@"\b(trailer|sample|amostra|promo|extras?|featurette|bastidores|deleted|nfo|readme)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ReExtra();
@@ -144,7 +158,8 @@ public static partial class MediaNomeParser
         {
             // "Serie/Season 1/ep.mkv" -> usa "Serie"
             var baseSeg = segs[^1];
-            if (segs.Length > 1 && ReSegmentoTemporada().IsMatch(baseSeg)) baseSeg = segs[^2];
+            if (segs.Length > 1 && (ReSegmentoTemporadaPrefixo().IsMatch(baseSeg) || ReSegmentoTemporadaExata().IsMatch(baseSeg)))
+                baseSeg = segs[^2];
 
             var nome = RePontos().Replace(baseSeg, " ");
             nome = ReCorteSerie().Replace(nome, "").Trim(' ', '-', '–', '—');
@@ -161,18 +176,52 @@ public static partial class MediaNomeParser
         return prefixo.Length > 0 ? prefixo : n;
     }
 
+    // Projeto roda com InvariantGlobalization=true (ver .csproj) — sem ICU, string.Normalize()
+    // e CharUnicodeInfo não funcionam de forma confiável (passa no teste, que roda com ICU
+    // completo no SDK, mas falha silenciosamente na imagem publicada). Por isso a troca de
+    // acento é uma tabela ordinal explícita, igual ao resto do parser já faz.
+    private static char SemAcentoMinuscula(char c) => c switch
+    {
+        'á' or 'à' or 'â' or 'ã' or 'ä' or 'Á' or 'À' or 'Â' or 'Ã' or 'Ä' => 'a',
+        'é' or 'è' or 'ê' or 'ë' or 'É' or 'È' or 'Ê' or 'Ë' => 'e',
+        'í' or 'ì' or 'î' or 'ï' or 'Í' or 'Ì' or 'Î' or 'Ï' => 'i',
+        'ó' or 'ò' or 'ô' or 'õ' or 'ö' or 'Ó' or 'Ò' or 'Ô' or 'Õ' or 'Ö' => 'o',
+        'ú' or 'ù' or 'û' or 'ü' or 'Ú' or 'Ù' or 'Û' or 'Ü' => 'u',
+        'ç' or 'Ç' => 'c',
+        'ñ' or 'Ñ' => 'n',
+        'ý' or 'Ý' or 'ÿ' => 'y',
+        >= 'A' and <= 'Z' => (char)(c + 32),
+        _ => c,
+    };
+
+    /// <summary>Chave de agrupamento tolerante a acento/maiúscula/espaço — mesma série
+    /// escrita de jeitos ligeiramente diferentes em pastas de fontes diferentes ("Diários de
+    /// Um Vampiro" / "Diarios de um vampiro" / "Diários de um Vampiro") cai na mesma chave.
+    /// Só serve pra comparar/agrupar — quem exibe usa <see cref="ChaveSerie"/> sem alterar.</summary>
+    public static string? ChaveAgrupamento(string? serie)
+    {
+        if (string.IsNullOrEmpty(serie)) return serie;
+
+        var sb = new StringBuilder(serie.Length);
+        foreach (var c in serie) sb.Append(SemAcentoMinuscula(c));
+
+        return Regex.Replace(sb.ToString(), @"\s+", " ").Trim();
+    }
+
     /// <summary>Classificação completa — o que o <c>FilmeResponse</c> entrega pras telas.</summary>
     public static ClassificacaoMidia Classificar(string? arquivoPath, string titulo)
     {
         var pasta = PastaDe(arquivoPath);
         var ordem = OrdemEpisodio(arquivoPath);
         if (ordem is not (int temp, int ep))
-            return new ClassificacaoMidia(false, EhExtra(arquivoPath), null, null, null, titulo, pasta);
+            return new ClassificacaoMidia(false, EhExtra(arquivoPath), null, null, null, null, titulo, pasta);
 
+        var serie = ChaveSerie(arquivoPath);
         return new ClassificacaoMidia(
             EhEpisodio: true,
             EhExtra: EhExtra(arquivoPath),
-            Serie: ChaveSerie(arquivoPath),
+            Serie: serie,
+            SerieChave: ChaveAgrupamento(serie),
             Temporada: temp,
             Episodio: ep,
             Rotulo: MontarRotulo(SemExtensao(NomeArquivo(arquivoPath)), temp, ep),
