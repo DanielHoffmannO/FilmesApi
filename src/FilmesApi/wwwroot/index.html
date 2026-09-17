@@ -121,6 +121,16 @@ let filtroTipo = 'all';   // all | filme | serie
 let filtroVisto = 'all';  // all | assistido | nao-assistido
 const foldersAbertos = new Set();  // pastas/séries expandidas — sobrevive ao re-render
 
+// Elementos consultados em 2+ lugares (funções diferentes) — pegos uma vez só. Os que só
+// aparecem 1x no código (grid, empty, loadbar, etc.) ficam com getElementById direto ali mesmo.
+const els = {
+  video: document.getElementById('video'),
+  converting: document.getElementById('converting'),
+  player: document.getElementById('player'),
+  busca: document.getElementById('busca'),
+  proximoBox: document.getElementById('proximoBox'),
+};
+
 // ─── Configuração (valores antes soltos pelo código, alguns repetidos em mais de um
 // lugar com o mesmo literal significando coisas diferentes — ex.: dois "1500" e três "12") ──
 const RETOMAR_MIN_SEGUNDOS = 5;      // abaixo disso não vale a pena retomar do meio
@@ -162,7 +172,7 @@ async function render() {
   const empty = document.getElementById('empty');
   const scrollAntes = window.scrollY;  // não pular pro topo ao re-renderizar
 
-  const q = document.getElementById('busca').value.trim();
+  const q = els.busca.value.trim();
   const params = new URLSearchParams({ tipo: filtroTipo, visto: filtroVisto });
   if (q) params.set('busca', q);
   const t = await fetch(`${API}/tela?${params}`).then(r => r.ok ? r.json() : null).catch(() => null);
@@ -341,7 +351,7 @@ function pararWatchdogLiveEdge() {
 function iniciarWatchdogLiveEdge(id) {
   pararWatchdogLiveEdge();
   watchdogLiveEdge = setInterval(async () => {
-    const video = document.getElementById('video');
+    const video = els.video;
     if (filmeAtual !== id || video.paused || video.ended || reproducaoConcluida) {
       vigiaPos = -1; vigiaDesde = 0;
       return;
@@ -349,7 +359,7 @@ function iniciarWatchdogLiveEdge(id) {
     if (video.currentTime !== vigiaPos) {
       vigiaPos = video.currentTime;
       vigiaDesde = Date.now();
-      const converting = document.getElementById('converting');
+      const converting = els.converting;
       if (converting.dataset.liveEdge) { converting.style.display = 'none'; delete converting.dataset.liveEdge; }
       return;
     }
@@ -358,7 +368,7 @@ function iniciarWatchdogLiveEdge(id) {
 
     const status = await checarStatus(id);
     if (filmeAtual !== id) return;
-    const converting = document.getElementById('converting');
+    const converting = els.converting;
     if (status === 'erro') {
       converting.innerHTML = 'A conversão falhou no meio do vídeo. <button onclick="play(filmeAtual)">Tentar de novo</button>';
       converting.style.display = 'block';
@@ -408,15 +418,15 @@ function iniciarHls(video, url, inicio) {
 }
 
 async function play(id, ehRetry) {
-  const video = document.getElementById('video');
-  const converting = document.getElementById('converting');
+  const video = els.video;
+  const converting = els.converting;
   cancelarProximo();
   removerLegendas();
   video.removeAttribute('src');
   destruirHls();
   pararWatchdogLiveEdge();
   converting.style.display = 'none';
-  document.getElementById('player').classList.add('active');
+  els.player.classList.add('active');
 
   filmeAtual = id;
   ultimoSalvo = 0;
@@ -502,7 +512,7 @@ async function carregarLegendas(id) {
   catch { return; }
   if (filmeAtual !== id) return;  // trocou de filme enquanto buscava
 
-  const video = document.getElementById('video');
+  const video = els.video;
   removerLegendas();
   faixas.filter(x => x.convertivel).forEach(x => {
     const tr = document.createElement('track');
@@ -522,7 +532,7 @@ function cancelarProximo() {
   if (proximoInterval) { clearInterval(proximoInterval); proximoInterval = null; }
   proximoInfo = null;
   proximoOfertaId++;  // invalida qualquer resposta de /proximo ainda em voo (ver ofereceProximo)
-  document.getElementById('proximoBox').classList.remove('on');
+  els.proximoBox.classList.remove('on');
 }
 
 async function ofereceProximo(id) {
@@ -545,7 +555,7 @@ async function ofereceProximo(id) {
 
   proximoInfo = prox;
   document.getElementById('proximoTit').textContent = prox.rotulo + (prox.serie ? ' — ' + prox.serie : '');
-  document.getElementById('proximoBox').classList.add('on');
+  els.proximoBox.classList.add('on');
 
   let resta = PROXIMO_COUNTDOWN_S;
   const tick = () => {
@@ -566,15 +576,15 @@ async function closePlayer() {
   const id = filmeAtual;
   cancelarProximo();
   await salvarProgresso();  // grava ANTES de rebuscar, senão a lista volta desatualizada
-  const video = document.getElementById('video');
+  const video = els.video;
   removerLegendas();
   destruirHls();
   pararWatchdogLiveEdge();
   video.pause();
   video.src = '';
   filmeAtual = null;
-  document.getElementById('player').classList.remove('active');
-  document.getElementById('converting').style.display = 'none';
+  els.player.classList.remove('active');
+  els.converting.style.display = 'none';
   await atualizarAposReproducao(id);
 }
 
@@ -599,7 +609,7 @@ let reproducaoConcluida = false;
 // currentTime pra 0 logo depois. 'loadeddata'/'canplay'/'seeked' já pegam, e
 // re-tentamos algumas vezes caso o primeiro seek seja revertido.
 function aplicarRetomada() {
-  const video = document.getElementById('video');
+  const video = els.video;
   if (!(posicaoParaRetomar > RETOMAR_MIN_SEGUNDOS)) return;
   const dur = video.duration;
   if (duracaoConfiavel && isFinite(dur) && posicaoParaRetomar >= dur - RETOMAR_MARGEM_FIM_S) { posicaoParaRetomar = 0; return; }
@@ -609,7 +619,7 @@ function aplicarRetomada() {
 }
 
 function configurarProgresso() {
-  const video = document.getElementById('video');
+  const video = els.video;
 
   video.addEventListener('loadeddata', aplicarRetomada);
   video.addEventListener('canplay', aplicarRetomada);
@@ -624,7 +634,7 @@ function configurarProgresso() {
     if (r.height > 0 && e.clientY > r.bottom - PLAYER_CONTROLS_HEIGHT_PX) return;
     alternarPausa();
   });
-  document.getElementById('player').addEventListener('click', e => {
+  els.player.addEventListener('click', e => {
     if (e.target.id === 'player') alternarPausa();  // bordas pretas em volta do vídeo
   });
 
@@ -656,7 +666,7 @@ function configurarProgresso() {
 }
 
 function salvarProgresso() {
-  const video = document.getElementById('video');
+  const video = els.video;
   if (filmeAtual == null || reproducaoConcluida || !(video.currentTime > 15)) return Promise.resolve();
   return fetch(`${API}/${filmeAtual}/progresso`, {
     method: 'PUT',
@@ -700,11 +710,11 @@ document.getElementById('filters').addEventListener('click', e => {
 });
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closePlayer(); document.getElementById('busca').blur(); }
+  if (e.key === 'Escape') { closePlayer(); els.busca.blur(); }
   // "/" foca a busca (a não ser que já esteja digitando em algum campo)
   if (e.key === '/' && !/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) {
     e.preventDefault();
-    document.getElementById('busca').focus();
+    els.busca.focus();
   }
 });
 configurarProgresso();

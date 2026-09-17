@@ -202,6 +202,18 @@ video { width: 100%; height: auto; background: #000; }
   var LEGENDA_MSG_MS = 3000;         // quanto tempo o aviso "Legenda: on/off" fica na tela
   var PLAY_PAUSE_RACE_MS = 80;       // espera pra corrigir corrida com o play/pause nativo do <video>
 
+  // Elementos consultados em 2+ lugares (funções diferentes) — pegos uma vez só. phint só
+  // aparece 1x no código e fica com getElementById direto ali mesmo.
+  var els = {
+    video: document.getElementById('video'),
+    pmsg: document.getElementById('pmsg'),
+    grid: document.getElementById('grid'),
+    player: document.getElementById('player'),
+    msg: document.getElementById('msg'),
+    bar: document.getElementById('bar'),
+    list: document.getElementById('list')
+  };
+
   function get(url, cb) {
     var x = new XMLHttpRequest();
     x.open('GET', url, true);
@@ -252,8 +264,8 @@ video { width: 100%; height: auto; background: #000; }
   // fonte so, sem regex duplicada aqui.
 
   function load() {
-    document.getElementById('msg').style.display = 'block';
-    document.getElementById('msg').innerHTML = 'Carregando...';
+    els.msg.style.display = 'block';
+    els.msg.innerHTML = 'Carregando...';
     render();
   }
 
@@ -263,8 +275,8 @@ video { width: 100%; height: auto; background: #000; }
   // episodios) vem prontos de /api/filmes/tela -- esta tela so desenha o que chega, sem
   // logica propria de agrupar (mesma fonte do index.html e do controle.html).
   function render() {
-    var grid = document.getElementById('grid');
-    var msg = document.getElementById('msg');
+    var grid = els.grid;
+    var msg = els.msg;
     var i, j;
 
     var url = API + '/tela?tipo=' + encodeURIComponent(filtroTipo) + '&visto=all';
@@ -349,8 +361,8 @@ video { width: 100%; height: auto; background: #000; }
 
   function buildNav() {
     // ordem de navegacao: barra de filtros + cabecalhos de serie + itens visiveis
-    var bar = document.getElementById('bar').getElementsByTagName('a');
-    var grid = document.getElementById('grid');
+    var bar = els.bar.getElementsByTagName('a');
+    var grid = els.grid;
     links = [];
     var i, j;
     for (i = 0; i < bar.length; i++) links.push(bar[i]);
@@ -378,7 +390,7 @@ video { width: 100%; height: auto; background: #000; }
 
   function toggleGrp(el) {
     var g = el.getAttribute('data-g');
-    var boxes = document.getElementById('grid').getElementsByClassName('eps');
+    var boxes = els.grid.getElementsByClassName('eps');
     for (var i = 0; i < boxes.length; i++) {
       if (boxes[i].getAttribute('data-g') === g) {
         var aberto = boxes[i].style.display !== 'none';
@@ -411,7 +423,7 @@ video { width: 100%; height: auto; background: #000; }
     if (fg) {
       var fv = el.getAttribute('data-fv');
       filtroTipo = fv;  // só resta o grupo "tipo" nessa tela
-      var bar = document.getElementById('bar').getElementsByTagName('a');
+      var bar = els.bar.getElementsByTagName('a');
       for (var i = 0; i < bar.length; i++) {
         if (bar[i].getAttribute('data-fg') !== fg) continue;
         bar[i].className = bar[i].className.replace(/ ?on/, '');
@@ -445,17 +457,17 @@ video { width: 100%; height: auto; background: #000; }
   function armarWatchdog(id) {
     pararWatchdog();
     hlsWatchdog = setTimeout(function () {
-      var v = document.getElementById('video');
+      var v = els.video;
       if (filmeAtual !== id || v.readyState >= 2) return;  // ja tem dado -> hls ta ok
       logDiag('watchdog: hls sem dado em 15s (readyState=' + v.readyState + '), filme ' + id + ' — caindo pro arquivo direto');
       destruirHls();
-      document.getElementById('pmsg').innerHTML = 'HLS não respondeu, tentando arquivo direto...';
+      els.pmsg.innerHTML = 'HLS não respondeu, tentando arquivo direto...';
       tocarSemHls(id);
     }, WATCHDOG_HLS_MS);
   }
 
   function iniciarHls(id, url, tAlvo) {
-    var v = document.getElementById('video');
+    var v = els.video;
     destruirHls();
     armarWatchdog(id);
     hls = new window.Hls(tAlvo ? { startPosition: tAlvo } : {});
@@ -474,7 +486,7 @@ video { width: 100%; height: auto; background: #000; }
       if (d.type === window.Hls.ErrorTypes.NETWORK_ERROR && hlsRetries++ < MAX_HLS_RETRIES) {
         setTimeout(function () { if (filmeAtual === id) tocar(id, true); }, HLS_RETRY_DELAY_MS);
       } else {
-        document.getElementById('pmsg').innerHTML = 'Falha ao carregar o video (erro ' + d.type + ').';
+        els.pmsg.innerHTML = 'Falha ao carregar o video (erro ' + d.type + ').';
       }
     });
     v.onerror = function () {
@@ -486,8 +498,8 @@ video { width: 100%; height: auto; background: #000; }
   }
 
   function tocarUrl(id, url, comAviso) {
-    var v = document.getElementById('video');
-    var pmsg = document.getElementById('pmsg');
+    var v = els.video;
+    var pmsg = els.pmsg;
     var seg = posicaoRetomar > RETOMAR_MIN_SEGUNDOS ? Math.floor(posicaoRetomar) : 0;
     // As 3 chamadoras (stream/remux/original) sao sempre arquivo completo com
     // Content-Length — duration nunca cresce depois, ao contrario do HLS.
@@ -518,7 +530,7 @@ video { width: 100%; height: auto; background: #000; }
     falhas = falhas || 0;
     get(url, function (err, d) {
       if (filmeAtual !== id) return;  // trocou de filme enquanto esperava
-      var pmsg = document.getElementById('pmsg');
+      var pmsg = els.pmsg;
       var status = (!err && d) ? d.status : null;
       falhas = err ? falhas + 1 : 0;
 
@@ -550,7 +562,7 @@ video { width: 100%; height: auto; background: #000; }
   // de rip WEB-DL — o video ja e compativel), espera o /remux ficar pronto em cache
   // (video copiado, so o audio vira AAC); senao, ultimo recurso, arquivo original cru.
   function tocarSemHls(id) {
-    var pmsg = document.getElementById('pmsg');
+    var pmsg = els.pmsg;
     get(API + '/' + id + '/pode-direto', function (e2, pd) {
       if (filmeAtual !== id) return;
       if (!e2 && pd && pd.compativel) {
@@ -571,7 +583,7 @@ video { width: 100%; height: auto; background: #000; }
   function pollStatusEtocar(id) {
     pollStatus(id, API + '/' + id + '/stream-status', POLL_STATUS_MS, 'Preparando video...', 'Falha ao preparar o video.',
       function (status) {
-        var v = document.getElementById('video');
+        var v = els.video;
         var t = posicaoRetomar > RETOMAR_MIN_SEGUNDOS ? Math.floor(posicaoRetomar) : 0;
         var url = API + '/' + id + '/hls/playlist.m3u8';
         if (status === 'compativel') {
@@ -599,7 +611,7 @@ video { width: 100%; height: auto; background: #000; }
   }
 
   function removerLegendas() {
-    var v = document.getElementById('video');
+    var v = els.video;
     var tr = v.getElementsByTagName('track');
     while (tr.length) v.removeChild(tr[0]);
   }
@@ -609,7 +621,7 @@ video { width: 100%; height: auto; background: #000; }
   function carregarLegendas(id) {
     get(API + '/' + id + '/legendas', function (err, faixas) {
       if (err || !faixas || filmeAtual !== id) return;
-      var v = document.getElementById('video');
+      var v = els.video;
       removerLegendas();
       for (var i = 0; i < faixas.length; i++) {
         if (!faixas[i].convertivel) continue;
@@ -647,7 +659,7 @@ video { width: 100%; height: auto; background: #000; }
       // Avisa o celular que tem oferta de proximo episodio na tela — sem isso, quem so
       // tem o controle.html na mao nao sabe que apareceu nem consegue confirmar.
       send('POST', PLAYER + '/proximo-oferece', { filmeId: prox.id, rotulo: prox.rotulo });
-      var pmsg = document.getElementById('pmsg');
+      var pmsg = els.pmsg;
       var resta = PROXIMO_COUNTDOWN_S;
       function tick() {
         pmsg.innerHTML = 'Proximo: ' + esc(prox.rotulo) + ' &mdash; OK assiste, Voltar cancela  (' + resta + 's)';
@@ -675,11 +687,11 @@ video { width: 100%; height: auto; background: #000; }
     // aqui no D-pad ou remotamente — fonte unica de verdade no servidor. Fire-and-forget,
     // nao atrasa nem interfere na reproducao local.
     if (!ehRetry) send('POST', PLAYER + '/selecionar/' + id);
-    document.getElementById('list').className = 'hide';
-    document.getElementById('player').className = 'on';
+    els.list.className = 'hide';
+    els.player.className = 'on';
     document.body.className = 'playing';
-    var v = document.getElementById('video');
-    var pmsg = document.getElementById('pmsg');
+    var v = els.video;
+    var pmsg = els.pmsg;
     pmsg.innerHTML = 'Preparando...';
     v.removeAttribute('src');
 
@@ -710,7 +722,7 @@ video { width: 100%; height: auto; background: #000; }
   // aplicar so no 'loadedmetadata' nao cola (o navegador volta pra 0 depois).
   // 'loadeddata'/'canplay'/'seeked' pegam, e re-tenta se o seek for revertido.
   function aplicarRetomada() {
-    var v = document.getElementById('video');
+    var v = els.video;
     if (!(posicaoRetomar > RETOMAR_MIN_SEGUNDOS)) return;
     var dur = v.duration;
     if (duracaoConfiavel && isFinite(dur) && posicaoRetomar >= dur - RETOMAR_MARGEM_FIM_S) { posicaoRetomar = 0; return; }
@@ -720,7 +732,7 @@ video { width: 100%; height: auto; background: #000; }
   }
 
   function configurarProgresso() {
-    var v = document.getElementById('video');
+    var v = els.video;
     v.onloadeddata = aplicarRetomada;
     v.oncanplay = aplicarRetomada;
     v.onseeked = aplicarRetomada;
@@ -789,7 +801,7 @@ video { width: 100%; height: auto; background: #000; }
     }
     if (filmeAtual === null) return;
 
-    var v = document.getElementById('video');
+    var v = els.video;
     if (estado.playing && v.paused) { try { v.play(); } catch (e) {} }
     if (!estado.playing && !v.paused) { try { v.pause(); } catch (e) {} }
     if (estado.volume !== anterior.volume) v.volume = estado.volume;
@@ -808,7 +820,7 @@ video { width: 100%; height: auto; background: #000; }
   // Casa o idx (indice da faixa no arquivo original) com o <track> certo — carregarLegendas
   // criou eles na mesma ordem de /legendas, com a url terminando em /legenda/{idx}.
   function aplicarLegendaRemota(idx) {
-    var v = document.getElementById('video');
+    var v = els.video;
     var tt = v.textTracks;
     var tracks = v.getElementsByTagName('track');
     for (var i = 0; i < tt.length; i++) {
@@ -821,7 +833,7 @@ video { width: 100%; height: auto; background: #000; }
   // cb (opcional) roda quando o PUT termina — usado pelo fecharPlayer pra so
   // recarregar a lista depois que o progresso ja foi gravado.
   function salvarProgresso(cb) {
-    var v = document.getElementById('video');
+    var v = els.video;
     if (filmeAtual == null || reproducaoConcluida || !(v.currentTime > 15)) { if (typeof cb === 'function') cb(); return; }
     var x = new XMLHttpRequest();
     x.open('PUT', API + '/' + filmeAtual + '/progresso', true);
@@ -845,13 +857,13 @@ video { width: 100%; height: auto; background: #000; }
     // grava o progresso e so entao recarrega a lista, senao o "continuar
     // assistindo" volta antes do PUT e fica desatualizado.
     salvarProgresso(function () { load(); });
-    var v = document.getElementById('video');
+    var v = els.video;
     try { v.pause(); } catch (e) {}
     v.removeAttribute('src');
     try { v.load(); } catch (e) {}
     filmeAtual = null;
-    document.getElementById('player').className = '';
-    document.getElementById('list').className = '';
+    els.player.className = '';
+    els.list.className = '';
     document.body.className = '';
   }
 
@@ -859,7 +871,7 @@ video { width: 100%; height: auto; background: #000; }
   document.onkeydown = function (e) {
     e = e || window.event;
     var k = e.keyCode;
-    var playerAtivo = document.getElementById('player').className === 'on';
+    var playerAtivo = els.player.className === 'on';
 
     // Voltar (varia por fabricante: 8, 27, 461, 10009, 166)
     if (k === 8 || k === 27 || k === 461 || k === 10009 || k === 166) {
@@ -870,7 +882,7 @@ video { width: 100%; height: auto; background: #000; }
     if (playerAtivo) {
       // Nesta TV a navegacao e por seta — durante o filme: <- -> pulam 15s, OK pausa.
       // Cima/baixo (volume) ficam com o controle nativo do <video>.
-      var v = document.getElementById('video');
+      var v = els.video;
 
       // Oferta de proximo episodio na tela: OK assiste agora, resto ignora
       // (Voltar ja foi tratado acima -> fecharPlayer -> cancelarProximo).
@@ -886,9 +898,9 @@ video { width: 100%; height: auto; background: #000; }
           for (xi = 0; xi < tt.length; xi++) if (tt[xi].mode === 'showing') algum = true;
           for (xi = 0; xi < tt.length; xi++) tt[xi].mode = 'disabled';
           if (!algum && tt.length) tt[0].mode = 'showing';
-          var pm = document.getElementById('pmsg');
+          var pm = els.pmsg;
           pm.innerHTML = 'Legenda: ' + (algum ? 'off' : (tt.length ? (tt[0].label || 'on') : 'nenhuma'));
-          setTimeout(function () { var p = document.getElementById('pmsg'); if (p.innerHTML.indexOf('Legenda:') === 0) p.innerHTML = ''; }, LEGENDA_MSG_MS);
+          setTimeout(function () { var p = els.pmsg; if (p.innerHTML.indexOf('Legenda:') === 0) p.innerHTML = ''; }, LEGENDA_MSG_MS);
         }
         if (e.preventDefault) e.preventDefault();
         return false;
@@ -924,14 +936,14 @@ video { width: 100%; height: auto; background: #000; }
   };
 
   // clique tambem funciona (mouse/touch de alguns controles)
-  document.getElementById('grid').onclick = function (e) {
+  els.grid.onclick = function (e) {
     e = e || window.event;
     var t = e.target || e.srcElement;
     while (t && t !== this && (!t.className ||
            (t.className.indexOf('item') === -1 && t.className.indexOf('grp') === -1))) t = t.parentNode;
     if (t && t !== this) { ativar(t); return false; }
   };
-  document.getElementById('bar').onclick = function (e) {
+  els.bar.onclick = function (e) {
     e = e || window.event;
     var t = e.target || e.srcElement;
     if (t && t.tagName === 'A') { ativar(t); return false; }
