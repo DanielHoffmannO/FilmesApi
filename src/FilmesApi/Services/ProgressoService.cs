@@ -19,6 +19,21 @@ public class ProgressoService
     /// </summary>
     private static double MargemFim(double duracao) => Math.Min(90, duracao * 0.1);
 
+    /// <summary>O que fazer com um relato de posição — <c>Descartar*</c> quando é cedo demais
+    /// pra valer a retomada ou perto demais do fim; <c>Inserir</c>/<c>Atualizar</c> senão.
+    /// Extraída como decisão pura (sem tocar o banco) pra dar pra testar a regra de negócio
+    /// sem precisar de EF Core/SQLite no teste — mesmo padrão de
+    /// <see cref="HlsTranscodeService.ClassificarCompatibilidade"/>.</summary>
+    internal enum DecisaoSalvarProgresso { Descartar, DescartarEMarcarAssistido, Inserir, Atualizar }
+
+    internal static DecisaoSalvarProgresso DecidirSalvamento(double posicao, double? duracao, bool jaTemProgresso)
+    {
+        var pertoDoFim = duracao is > 0 && posicao >= duracao.Value - MargemFim(duracao.Value);
+        if (posicao < MinSegundosParaSalvar || pertoDoFim)
+            return pertoDoFim ? DecisaoSalvarProgresso.DescartarEMarcarAssistido : DecisaoSalvarProgresso.Descartar;
+        return jaTemProgresso ? DecisaoSalvarProgresso.Atualizar : DecisaoSalvarProgresso.Inserir;
+    }
+
     private readonly AppDbContext _db;
 
     public ProgressoService(AppDbContext db) => _db = db;
@@ -30,29 +45,30 @@ public class ProgressoService
         if (filme is null) return false;
 
         posicao = Math.Max(0, posicao);
-        var pertoDoFim = duracao is > 0 && posicao >= duracao.Value - MargemFim(duracao.Value);
+        var decisao = DecidirSalvamento(posicao, duracao, filme.Progresso is not null);
 
-        if (posicao < MinSegundosParaSalvar || pertoDoFim)
+        switch (decisao)
         {
-            // Começo do filme ou praticamente no fim: não guarda ponto de retomada.
-            if (filme.Progresso is not null) _db.Progressos.Remove(filme.Progresso);
-            if (pertoDoFim) filme.Assistido = true;
-        }
-        else if (filme.Progresso is null)
-        {
-            _db.Progressos.Add(new ProgressoReproducao
-            {
-                FilmeId = filmeId,
-                PosicaoSegundos = posicao,
-                DuracaoSegundos = duracao,
-                AtualizadoEm = DateTime.UtcNow,
-            });
-        }
-        else
-        {
-            filme.Progresso.PosicaoSegundos = posicao;
-            filme.Progresso.DuracaoSegundos = duracao ?? filme.Progresso.DuracaoSegundos;
-            filme.Progresso.AtualizadoEm = DateTime.UtcNow;
+            case DecisaoSalvarProgresso.Descartar:
+            case DecisaoSalvarProgresso.DescartarEMarcarAssistido:
+                // Começo do filme ou praticamente no fim: não guarda ponto de retomada.
+                if (filme.Progresso is not null) _db.Progressos.Remove(filme.Progresso);
+                if (decisao == DecisaoSalvarProgresso.DescartarEMarcarAssistido) filme.Assistido = true;
+                break;
+            case DecisaoSalvarProgresso.Inserir:
+                _db.Progressos.Add(new ProgressoReproducao
+                {
+                    FilmeId = filmeId,
+                    PosicaoSegundos = posicao,
+                    DuracaoSegundos = duracao,
+                    AtualizadoEm = DateTime.UtcNow,
+                });
+                break;
+            case DecisaoSalvarProgresso.Atualizar:
+                filme.Progresso!.PosicaoSegundos = posicao;
+                filme.Progresso.DuracaoSegundos = duracao ?? filme.Progresso.DuracaoSegundos;
+                filme.Progresso.AtualizadoEm = DateTime.UtcNow;
+                break;
         }
 
         try { await _db.SaveChangesAsync(); }
