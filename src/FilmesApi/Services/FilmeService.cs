@@ -62,6 +62,89 @@ public class FilmeService
         return lista.Select(ComClassificacao).ToList();
     }
 
+    /// <summary>Filtra (tipo/visto/busca) e agrupa (filme solto / pasta filme+extras / série)
+    /// pra tela desenhar direto — função pura, testável sem banco. <c>continuarCandidatos</c>
+    /// já vem enriquecido e na ordem certa (mais recente primeiro); esta função só decide se
+    /// a seção aparece (tipo e visto neutros) e aplica a busca nela também.</summary>
+    public static TelaCatalogoResponse MontarTela(
+        List<FilmeResponse> todos, List<FilmeResponse> continuarCandidatos,
+        string tipo, string visto, string? busca)
+    {
+        var q = string.IsNullOrWhiteSpace(busca) ? null : busca.Trim().ToLowerInvariant();
+        bool PassaBusca(FilmeResponse f) =>
+            q is null || (f.Titulo + " " + (f.Serie ?? "") + " " + (f.Pasta ?? "")).ToLowerInvariant().Contains(q);
+
+        var continuarAssistindo = tipo == "all" && visto == "all"
+            ? continuarCandidatos.Where(PassaBusca).ToList()
+            : [];
+
+        bool PassaFiltro(FilmeResponse f) =>
+            (visto != "assistido" || f.Assistido) &&
+            (visto != "nao-assistido" || !f.Assistido) &&
+            (tipo != "filme" || !f.EhEpisodio) &&
+            (tipo != "serie" || f.EhEpisodio) &&
+            PassaBusca(f);
+
+        // Contagem por pasta na lista INTEIRA (não na filtrada) — senão a busca "achataria"
+        // uma pasta de filme+extras só por esconder temporariamente os outros arquivos dela.
+        var porPasta = todos.GroupBy(f => f.Pasta).ToDictionary(g => g.Key, g => g.Count());
+
+        var filmesSoltos = new List<FilmeResponse>();
+        var pastasFilme = new Dictionary<string, List<FilmeResponse>>();
+        var series = new Dictionary<string, (string Nome, List<FilmeResponse> Itens)>();
+
+        foreach (var f in todos.Where(PassaFiltro))
+        {
+            if (f.EhEpisodio)
+            {
+                var chave = f.SerieChave ?? f.Serie ?? "";
+                if (!series.TryGetValue(chave, out var g)) { g = (f.Serie ?? "", []); series[chave] = g; }
+                g.Itens.Add(f);
+                continue;
+            }
+            if (f.Pasta != "Sem pasta" && porPasta.GetValueOrDefault(f.Pasta) > 1)
+            {
+                if (!pastasFilme.TryGetValue(f.Pasta, out var lista)) { lista = []; pastasFilme[f.Pasta] = lista; }
+                lista.Add(f);
+            }
+            else filmesSoltos.Add(f);
+        }
+
+        // pasta com 1 filme "de verdade" + só extras (trailer/sample) -> mostra o filme direto
+        foreach (var pasta in pastasFilme.Keys.ToList())
+        {
+            var principais = pastasFilme[pasta].Where(f => !f.EhExtra).ToList();
+            if (principais.Count == 1)
+            {
+                filmesSoltos.Add(principais[0]);
+                pastasFilme.Remove(pasta);
+            }
+        }
+
+        filmesSoltos.Sort((a, b) => string.Compare(a.Titulo, b.Titulo, StringComparison.OrdinalIgnoreCase));
+
+        foreach (var lista in series.Values.Select(v => v.Itens))
+            lista.Sort((a, b) =>
+            {
+                var c = (a.Temporada ?? 0).CompareTo(b.Temporada ?? 0);
+                if (c != 0) return c;
+                c = (a.Episodio ?? 0).CompareTo(b.Episodio ?? 0);
+                return c != 0 ? c : string.Compare(a.Titulo, b.Titulo, StringComparison.OrdinalIgnoreCase);
+            });
+
+        var pastasOrdenadas = pastasFilme
+            .OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(kv => new PastaAgrupada(kv.Key, kv.Value))
+            .ToList();
+
+        var seriesOrdenadas = series
+            .OrderBy(kv => kv.Value.Nome, StringComparer.OrdinalIgnoreCase)
+            .Select(kv => new SerieAgrupada(kv.Key, kv.Value.Nome, kv.Value.Itens))
+            .ToList();
+
+        return new TelaCatalogoResponse(continuarAssistindo, filmesSoltos, pastasOrdenadas, seriesOrdenadas);
+    }
+
     public async Task<FilmeResponse?> ObterAsync(int id)
     {
         var f = await _db.Filmes.AsNoTracking()

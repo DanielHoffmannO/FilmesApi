@@ -132,8 +132,7 @@ main{padding:16px 24px;max-width:1000px;margin:0 auto}
 
 <script>
 const API = '/api/filmes';
-let filmes = [];
-let continuar = [];
+let filmes = [];   // só pro "catálogo vazio" x "nada bate o filtro" — agrupar/filtrar é tudo no servidor
 let filtroTipo = 'all';   // all | filme | serie
 let filtroVisto = 'all';  // all | assistido | nao-assistido
 const foldersAbertos = new Set();  // pastas/séries expandidas — sobrevive ao re-render
@@ -147,11 +146,10 @@ function loadbar(ligado) {
 async function load() {
   loadbar(true);
   try {
-    const [resF, resC] = await Promise.all([fetch(API), fetch(`${API}/continuar`)]);
+    const resF = await fetch(API);
     if (!resF.ok) throw new Error('api');
     filmes = await resF.json();
-    continuar = resC.ok ? await resC.json() : [];
-    render();
+    await render();
   } catch {
     document.getElementById('grid').innerHTML = '';
     const empty = document.getElementById('empty');
@@ -162,25 +160,29 @@ async function load() {
   }
 }
 
-// Série/episódio/rótulo vêm prontos da API (MediaNomeParser no servidor) — uma fonte só.
-// esc()/attr() vêm de /js/util.js (compartilhado com tv.html e controle.html).
-
-function render() {
+// Filtro (tipo/visto/busca) e agrupamento (filme solto / pasta filme+extras / série com
+// episódios) vêm prontos de /api/filmes/tela — esta tela só desenha o que chega, sem
+// nenhuma lógica própria de agrupar (era assim que o mesmo bug precisava ser corrigido
+// em 3 lugares diferentes: index.html, controle.html e tv.html).
+async function render() {
   const grid = document.getElementById('grid');
   const empty = document.getElementById('empty');
   const scrollAntes = window.scrollY;  // não pular pro topo ao re-renderizar
 
-  const q = document.getElementById('busca').value.trim().toLowerCase();
-  const filtered = filmes.filter(f => {
-    if (filtroVisto === 'assistido' && !f.assistido) return false;
-    if (filtroVisto === 'nao-assistido' && f.assistido) return false;
-    if (filtroTipo === 'filme' && f.ehEpisodio) return false;
-    if (filtroTipo === 'serie' && !f.ehEpisodio) return false;
-    if (q && !((f.titulo + ' ' + (f.serie || '') + ' ' + (f.pasta || '')).toLowerCase().includes(q))) return false;
-    return true;
-  });
+  const q = document.getElementById('busca').value.trim();
+  const params = new URLSearchParams({ tipo: filtroTipo, visto: filtroVisto });
+  if (q) params.set('busca', q);
+  const t = await fetch(`${API}/tela?${params}`).then(r => r.ok ? r.json() : null).catch(() => null);
 
-  if (!filtered.length) {
+  if (!t) {
+    grid.innerHTML = '';
+    empty.innerHTML = '<span class="ico">🔍</span>Não consegui falar com o servidor.';
+    empty.style.display = 'block';
+    return;
+  }
+
+  const nada = !t.continuarAssistindo.length && !t.filmesSoltos.length && !t.pastasFilme.length && !t.series.length;
+  if (nada) {
     grid.innerHTML = '';
     empty.innerHTML = filmes.length
       ? `<span class="ico">🔍</span>${q ? 'Nada encontrado pra “' + esc(q) + '”.' : 'Nada corresponde a esse filtro.'}`
@@ -189,38 +191,6 @@ function render() {
     return;
   }
   empty.style.display = 'none';
-
-  // nº de arquivos por pasta na lista COMPLETA (pra não "achatar" pasta ao filtrar)
-  const porPasta = new Map();
-  for (const f of filmes) porPasta.set(f.pasta, (porPasta.get(f.pasta) || 0) + 1);
-
-  const filmesSoltos = [];        // filme sem pasta ou sozinho na pasta
-  const pastasFilme = new Map();  // pasta -> [filmes]  (2+ arquivos, sem episódios: filme + extras)
-  // chave normalizada (serieChave, tolerante a acento/maiúscula) -> { nome, itens } — evita
-  // "Diários de Um Vampiro" e "Diarios de um vampiro" virarem 2 grupos por causa da pasta.
-  const seriesMap = new Map();
-  const push = (map, k, v) => { (map.get(k) || map.set(k, []).get(k)).push(v); };
-
-  for (const f of filtered) {
-    if (f.ehEpisodio) {
-      const chave = f.serieChave || f.serie;
-      let g = seriesMap.get(chave);
-      if (!g) { g = { nome: f.serie, itens: [] }; seriesMap.set(chave, g); }
-      g.itens.push(f);
-      continue;
-    }
-    if (f.pasta !== 'Sem pasta' && porPasta.get(f.pasta) > 1) push(pastasFilme, f.pasta, f);
-    else filmesSoltos.push(f);
-  }
-  // pasta com 1 filme "de verdade" + só extras (trailer/sample) → mostra o filme direto
-  for (const [pasta, itens] of pastasFilme) {
-    const principais = itens.filter(f => !f.ehExtra);
-    if (principais.length === 1) { filmesSoltos.push(principais[0]); pastasFilme.delete(pasta); }
-  }
-  filmesSoltos.sort((a, b) => a.titulo.localeCompare(b.titulo, 'pt-BR'));
-  for (const g of seriesMap.values())
-    g.itens.sort((a, b) => (a.temporada - b.temporada) || (a.episodio - b.episodio)
-      || a.titulo.localeCompare(b.titulo, 'pt-BR', { numeric: true }));
 
   const grupo = (key, tituloHtml, rows) => {
     const aberto = foldersAbertos.has(key);
@@ -231,42 +201,32 @@ function render() {
       </div>`;
   };
 
-  const continuarVis = continuar.filter(c => {
-    if (!q) return true;
-    const f = filmes.find(x => x.id === c.id);
-    return ((c.titulo + ' ' + (f ? (f.serie || '') + ' ' + (f.pasta || '') : '')).toLowerCase()).includes(q);
-  });
-
   let html = '';
-  if (filtroTipo === 'all' && filtroVisto === 'all' && continuarVis.length) {
+  if (t.continuarAssistindo.length) {
     html += `
     <div class="secao">
-      <div class="secao-title">▶ Continuar assistindo <span class="count">(${continuarVis.length})</span></div>
-      <div class="lista">${continuarVis.map(continuarRowHtml).join('')}</div>
+      <div class="secao-title">▶ Continuar assistindo <span class="count">(${t.continuarAssistindo.length})</span></div>
+      <div class="lista">${t.continuarAssistindo.map(continuarRowHtml).join('')}</div>
     </div>`;
   }
 
-  const totalFilmes = filmesSoltos.length + [...pastasFilme.values()].reduce((s, a) => s + a.length, 0);
+  const totalFilmes = t.filmesSoltos.length + t.pastasFilme.reduce((s, p) => s + p.itens.length, 0);
   if (totalFilmes) {
     html += `<div class="secao"><div class="secao-title">🎬 Filmes <span class="count">(${totalFilmes})</span></div><div class="lista">`;
-    if (filmesSoltos.length) html += filmesSoltos.map(f => rowHtml(f)).join('');
-    html += [...pastasFilme.keys()].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(pasta => {
-      const itens = pastasFilme.get(pasta);
-      return grupo('f:' + pasta, `📁 ${esc(pasta)} <span class="count">(${itens.length} arquivos)</span>`,
-        itens.map(f => rowHtml(f)).join(''));
-    }).join('');
+    html += t.filmesSoltos.map(f => rowHtml(f)).join('');
+    html += t.pastasFilme.map(p =>
+      grupo('f:' + p.pasta, `📁 ${esc(p.pasta)} <span class="count">(${p.itens.length} arquivos)</span>`,
+        p.itens.map(f => rowHtml(f)).join(''))
+    ).join('');
     html += `</div></div>`;
   }
 
-  const seriesChaves = [...seriesMap.keys()].sort((a, b) => seriesMap.get(a).nome.localeCompare(seriesMap.get(b).nome, 'pt-BR'));
-  if (seriesChaves.length) {
-    html += `<div class="secao"><div class="secao-title">📺 Séries <span class="count">(${seriesChaves.length})</span></div><div class="lista">`;
-    html += seriesChaves.map(chave => {
-      const g = seriesMap.get(chave);
-      const itens = g.itens;
-      const poster = itens.find(f => f.posterUrl);   // um pôster já basta pra série inteira
-      const tituloHtml = `${poster ? posterHtml(poster) : ''}${esc(g.nome)} <span class="count">(${itens.length} ${itens.length === 1 ? 'episódio' : 'episódios'})</span>`;
-      return grupo('s:' + chave, tituloHtml, itens.map(f => rowHtml(f, true)).join(''));
+  if (t.series.length) {
+    html += `<div class="secao"><div class="secao-title">📺 Séries <span class="count">(${t.series.length})</span></div><div class="lista">`;
+    html += t.series.map(s => {
+      const poster = s.episodios.find(f => f.posterUrl);   // um pôster já basta pra série inteira
+      const tituloHtml = `${poster ? posterHtml(poster) : ''}${esc(s.nome)} <span class="count">(${s.episodios.length} ${s.episodios.length === 1 ? 'episódio' : 'episódios'})</span>`;
+      return grupo('s:' + s.chave, tituloHtml, s.episodios.map(f => rowHtml(f, true)).join(''));
     }).join('');
     html += `</div></div>`;
   }
@@ -339,17 +299,17 @@ function rowHtml(f, episodio) {
     </div>`;
 }
 
+// c já vem completo (FilmeResponse) de /api/filmes/tela — sem precisar procurar em nada.
 function continuarRowHtml(c) {
   const info = c.duracaoSegundos
     ? `${pctProgresso(c)}% · faltam ${formatarTempo(c.duracaoSegundos - c.posicaoSegundos)}`
     : `${formatarTempo(c.posicaoSegundos)} assistidos`;
-  const f = filmes.find(x => x.id === c.id);
-  const nome = (f && f.ehEpisodio)
-    ? `<span class="rep">${f.serie} · S${pad2(f.temporada)}E${pad2(f.episodio)}</span>${esc(tituloEpisodio(f))}`
+  const nome = c.ehEpisodio
+    ? `<span class="rep">${c.serie} · S${pad2(c.temporada)}E${pad2(c.episodio)}</span>${esc(tituloEpisodio(c))}`
     : esc(c.titulo);
   return `
-    <div class="row" onclick="play(${c.id})" title="${f ? tooltipFilme(f) : attr(c.titulo)}">
-      ${f ? posterHtml(f) : '<span class="rposter"></span>'}
+    <div class="row" onclick="play(${c.id})" title="${tooltipFilme(c)}">
+      ${posterHtml(c)}
       <span class="rtit">${nome}</span>
       <span class="resume">▶ ${info}</span>
       ${barraProgresso(c)}
@@ -358,9 +318,7 @@ function continuarRowHtml(c) {
 
 async function toggleAssistido(id) {
   await fetch(`${API}/${id}/assistido`, { method: 'PUT' });
-  const f = filmes.find(x => x.id === id);
-  if (f) f.assistido = !f.assistido;
-  render();
+  render();  // re-busca já refletindo a mudança — sem cache local pra remendar
 }
 
 let hls = null;
@@ -627,18 +585,9 @@ async function closePlayer() {
   await atualizarAposReproducao(id);
 }
 
-// Refaz só o "continuar assistindo" e o filme que acabou de rodar — sem rebuscar
-// o catálogo inteiro só pra atualizar uma barra de progresso.
+// render() já busca /tela de novo — reflete a posição/progresso salvo sem precisar
+// remendar nada em cache local.
 async function atualizarAposReproducao(id) {
-  const [cont, filme] = await Promise.all([
-    fetch(`${API}/continuar`).then(r => r.ok ? r.json() : null).catch(() => null),
-    id != null ? fetch(`${API}/${id}`).then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null)
-  ]);
-  if (cont) continuar = cont;
-  if (filme) {
-    const f = filmes.find(x => x.id === id);
-    if (f) Object.assign(f, filme);
-  }
   render();
 }
 

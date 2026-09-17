@@ -99,8 +99,7 @@ main{padding:16px 24px;max-width:640px;margin:0 auto}
 <script>
 const API = '/api/filmes';
 const PLAYER_API = '/api/player';
-let filmes = [];
-let continuar = [];
+let temFilmes = false;   // só pra decidir a mensagem "nenhum filme" x "nada nesse filtro"
 let filtroTipo = 'all';         // all | filme | serie
 const foldersAbertos = new Set();  // séries expandidas — fecham por padrão, sobrevive ao re-render
 
@@ -118,11 +117,9 @@ document.getElementById('filters').addEventListener('click', e => {
 async function carregar() {
   const msg = document.getElementById('msg');
   try {
-    filmes = await fetch(API).then(r => r.json());
-    continuar = await fetch(API + '/continuar').then(r => r.json()).catch(() => []);
-    msg.style.display = filmes.length ? 'none' : 'block';
-    if (!filmes.length) msg.textContent = 'Nenhum filme. Rode o Scan na lista completa.';
-    render();
+    const todos = await fetch(API).then(r => r.json());
+    temFilmes = todos.length > 0;
+    await render();
   } catch {
     msg.style.display = 'block';
     msg.textContent = 'Falha ao carregar a lista.';
@@ -141,55 +138,52 @@ function rowHtml(f, rotulo) {
 
 async function toggleAssistido(id) {
   await fetch(`${API}/${id}/assistido`, { method: 'PUT' });
-  const f = filmes.find(x => x.id === id);
-  if (f) f.assistido = !f.assistido;
-  render();
+  render();  // re-busca já refletindo a mudança — sem cache local pra remendar
 }
 
-function render() {
+// Filtro e agrupamento vêm prontos de /api/filmes/tela (mesma fonte do index.html e do
+// tv.html) — esta tela só desenha. Sem filtro de "visto" nem busca aqui (essa tela é o
+// controle remoto simplificado), então só manda o tipo.
+async function render() {
   const grid = document.getElementById('grid');
+  const msg = document.getElementById('msg');
+  const params = new URLSearchParams({ tipo: filtroTipo, visto: 'all' });
+  const t = await fetch(`${API}/tela?${params}`).then(r => r.ok ? r.json() : null).catch(() => null);
+
+  if (!t) { msg.style.display = 'block'; msg.textContent = 'Falha ao carregar a lista.'; return; }
+
   let html = '';
-
-  if (filtroTipo === 'all' && continuar.length) {
+  if (t.continuarAssistindo.length) {
     html += '<div class="secao-title">Continuar assistindo</div>';
-    for (const c of continuar) html += rowHtml(c);
+    for (const c of t.continuarAssistindo) html += rowHtml(c);
   }
 
-  const filtrados = filmes.filter(f => {
-    if (filtroTipo === 'filme' && f.ehEpisodio) return false;
-    if (filtroTipo === 'serie' && !f.ehEpisodio) return false;
-    return true;
-  });
-  const soltos = filtrados.filter(f => !f.ehEpisodio).sort((a, b) => a.titulo.localeCompare(b.titulo));
-  // chave normalizada (serieChave) -> { nome, itens } — mesmo cuidado do index.html, senão
-  // "Diários de Um Vampiro" e "Diarios de um vampiro" viram 2 grupos por causa da pasta.
-  const series = {};
-  for (const f of filtrados) {
-    if (!f.ehEpisodio) continue;
-    const chave = f.serieChave || f.serie;
-    (series[chave] ??= { nome: f.serie, itens: [] }).itens.push(f);
-  }
-
+  // Essa tela não distingue "pasta de filme+extras" de filme solto — lista tudo junto,
+  // ordenado por título (o index.html completo é que mostra a separação por pasta).
+  const soltos = [...t.filmesSoltos, ...t.pastasFilme.flatMap(p => p.itens)]
+    .sort((a, b) => a.titulo.localeCompare(b.titulo));
   if (soltos.length) {
     html += '<div class="secao-title">Filmes (' + soltos.length + ')</div>';
     for (const f of soltos) html += rowHtml(f);
   }
-  const chavesSerie = Object.keys(series).sort((a, b) => series[a].nome.localeCompare(series[b].nome));
-  for (const chave of chavesSerie) {
-    const g = series[chave];
-    const eps = g.itens.sort((a, b) => (a.temporada - b.temporada) || (a.episodio - b.episodio));
-    const aberto = foldersAbertos.has(chave);
-    html += `<div class="grupo ${aberto ? '' : 'collapsed'}" data-key="${esc(chave)}">
-      <div class="grupo-hd" onclick="toggleGrupo(this, foldersAbertos)"><span class="caret">${aberto ? '▾' : '▸'}</span>${esc(g.nome)} <span class="count">(${eps.length} ${eps.length === 1 ? 'episódio' : 'episódios'})</span></div>
-      <div class="grupo-body">${eps.map(ep => rowHtml(ep, ep.rotulo)).join('')}</div>
+
+  for (const s of t.series) {
+    const aberto = foldersAbertos.has(s.chave);
+    html += `<div class="grupo ${aberto ? '' : 'collapsed'}" data-key="${esc(s.chave)}">
+      <div class="grupo-hd" onclick="toggleGrupo(this, foldersAbertos)"><span class="caret">${aberto ? '▾' : '▸'}</span>${esc(s.nome)} <span class="count">(${s.episodios.length} ${s.episodios.length === 1 ? 'episódio' : 'episódios'})</span></div>
+      <div class="grupo-body">${s.episodios.map(ep => rowHtml(ep, ep.rotulo)).join('')}</div>
     </div>`;
   }
-  grid.innerHTML = html || '<div class="msg">Nada encontrado.</div>';
+
+  msg.style.display = html ? 'none' : 'block';
+  msg.textContent = temFilmes ? 'Nada nesse filtro.' : 'Nenhum filme. Rode o Scan na lista completa.';
+  grid.innerHTML = html;
 }
 
 // ─── Controle remoto (TV) — mesmo código que existia no index.html ────────
 let ultimoEstadoRemoto = null;
 let remoteTimer = null;
+let filmeAtualRemoto = null;  // cache do filme tocando agora — só busca de novo quando muda
 
 function mmss(s) {
   s = Math.max(0, Math.round(s || 0));
@@ -279,12 +273,16 @@ async function pollRemote() {
     if (estado.filmeId === null) {
       bar.classList.remove('active');
       remoteLegendasDe = null;
+      filmeAtualRemoto = null;
       document.getElementById('remoteCCBtn').style.display = 'none';
       if (trocouFilme) render();
     } else {
       bar.classList.add('active');
       remoteCarregarLegendas(estado.filmeId);
-      const f = filmes.find(x => x.id === estado.filmeId) || continuar.find(x => x.id === estado.filmeId);
+      if (trocouFilme) {
+        filmeAtualRemoto = await fetch(`${API}/${estado.filmeId}`).then(r => r.ok ? r.json() : null).catch(() => null);
+      }
+      const f = filmeAtualRemoto;
       document.getElementById('remoteTitulo').textContent = f ? `📺 ${f.rotulo || f.titulo}` : '📺 Reproduzindo…';
       document.getElementById('remotePlayPauseBtn').textContent = estado.playing ? '⏸' : '▶';
       document.getElementById('remoteVolume').value = estado.volume;

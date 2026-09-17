@@ -164,8 +164,7 @@ video { width: 100%; height: auto; background: #000; }
   var pollTimer = null;
   var hlsRetries = 0;
   var hlsWatchdog = null;
-  var filmes = [];
-  var continuar = [];
+  var temFilmes = false;  // só pra "nenhum filme" x "nada nesse filtro" -- agrupar é tudo no servidor
   var filtroTipo = 'all';   // all | filme | serie
   var filtroVisto = 'all';  // all | sim | nao
   var links = [];      // itens navegaveis atuais
@@ -244,138 +243,91 @@ video { width: 100%; height: auto; background: #000; }
         document.getElementById('msg').innerHTML = 'Falha ao carregar (erro ' + err + ').';
         return;
       }
-      filmes = data || [];
-      get(API + '/continuar', function (e2, d2) {
-        continuar = (!e2 && d2) ? d2 : [];
-        render();
-      });
+      temFilmes = !!(data && data.length);
+      render();
     });
   }
 
   // formatarTempo() vem de /js/util.js.
 
+  // Filtro (tipo/visto) e agrupamento (filme solto / pasta filme+extras / serie com
+  // episodios) vem prontos de /api/filmes/tela -- esta tela so desenha o que chega, sem
+  // logica propria de agrupar (mesma fonte do index.html e do controle.html).
   function render() {
     var grid = document.getElementById('grid');
     var msg = document.getElementById('msg');
     var i, j;
 
-    // nº de arquivos por pasta na lista COMPLETA (pra nao "achatar" pasta ao filtrar)
-    var porPasta = {};
-    for (i = 0; i < filmes.length; i++) {
-      var pp = filmes[i].pasta;
-      porPasta[pp] = (porPasta[pp] || 0) + 1;
-    }
+    var vistoParam = filtroVisto === 'sim' ? 'assistido' : (filtroVisto === 'nao' ? 'nao-assistido' : 'all');
+    var url = API + '/tela?tipo=' + encodeURIComponent(filtroTipo) + '&visto=' + encodeURIComponent(vistoParam);
 
-    var list = [];
-    for (i = 0; i < filmes.length; i++) {
-      var f = filmes[i];
-      if (filtroVisto === 'sim' && !f.assistido) continue;
-      if (filtroVisto === 'nao' && f.assistido) continue;
-      if (filtroTipo === 'filme' && f.ehEpisodio) continue;
-      if (filtroTipo === 'serie' && !f.ehEpisodio) continue;
-      list.push(f);
-    }
-    if (!list.length) {
-      grid.innerHTML = '';
-      msg.style.display = 'block';
-      msg.innerHTML = filmes.length ? 'Nada nesse filtro.' : 'Nenhum filme. Rode o Scan no celular.';
-      buildNav();
-      return;
-    }
-    msg.style.display = 'none';
-
-    function itemHtml(m, rotulo) {
-      return '<a class="item" href="#" data-id="' + m.id + '">' +
-             esc(rotulo || m.titulo) +
-             (m.anoLancamento ? ' <span class="ano">(' + m.anoLancamento + ')</span>' : '') +
-             (m.assistido ? ' <span class="visto">&#10003; assistido</span>' : '') +
-             '</a>';
-    }
-
-    // episodios (por serie) / filmes soltos / pastas de filme (filme + extras)
-    var filmesSoltos = [];
-    var pfMap = {}, pfOrdem = [];
-    // chave normalizada (serieChave, tolerante a acento/maiuscula) -> [episodios]; serieNome
-    // guarda o nome bonito de exibicao pra cada chave. Sem isso, "Diarios de Um Vampiro" e
-    // "Diarios de um vampiro" (pastas de fontes diferentes) viravam 2 series na tela.
-    var serieMap = {}, serieOrdem = [], serieNome = {};
-    for (i = 0; i < list.length; i++) {
-      var m = list[i];
-      if (m.ehEpisodio) {
-        var ks = m.serieChave || m.serie;
-        if (!serieMap[ks]) { serieMap[ks] = []; serieOrdem.push(ks); serieNome[ks] = m.serie; }
-        serieMap[ks].push(m);
-        continue;
+    get(url, function (err, t) {
+      if (err || !t) {
+        grid.innerHTML = '';
+        msg.style.display = 'block';
+        msg.innerHTML = 'Falha ao carregar a lista.';
+        buildNav();
+        return;
       }
-      var pa = m.pasta;
-      if (pa !== 'Sem pasta' && porPasta[pa] > 1) {
-        if (!pfMap[pa]) { pfMap[pa] = []; pfOrdem.push(pa); }
-        pfMap[pa].push(m);
-      } else {
-        filmesSoltos.push(m);
+
+      var nada = !t.continuarAssistindo.length && !t.filmesSoltos.length && !t.pastasFilme.length && !t.series.length;
+      if (nada) {
+        grid.innerHTML = '';
+        msg.style.display = 'block';
+        msg.innerHTML = temFilmes ? 'Nada nesse filtro.' : 'Nenhum filme. Rode o Scan no celular.';
+        buildNav();
+        return;
       }
-    }
-    // pasta com 1 filme "de verdade" + so extras -> mostra o filme direto
-    for (i = 0; i < pfOrdem.length; i++) {
-      var arr0 = pfMap[pfOrdem[i]], princ = [];
-      for (j = 0; j < arr0.length; j++) if (!arr0[j].ehExtra) princ.push(arr0[j]);
-      if (princ.length === 1) { filmesSoltos.push(princ[0]); delete pfMap[pfOrdem[i]]; pfOrdem.splice(i, 1); i--; }
-    }
-    filmesSoltos.sort(function (a, b) {
-      var x = String(a.titulo).toLowerCase(), y = String(b.titulo).toLowerCase();
-      return x < y ? -1 : (x > y ? 1 : 0);
-    });
-    serieOrdem.sort(function (a, b) {
-      var x = String(serieNome[a]).toLowerCase(), y = String(serieNome[b]).toLowerCase();
-      return x < y ? -1 : (x > y ? 1 : 0);
-    });
-    pfOrdem.sort();
-    for (i = 0; i < serieOrdem.length; i++) {
-      serieMap[serieOrdem[i]].sort(function (a, b) {
-        return (a.temporada - b.temporada) || (a.episodio - b.episodio) ||
-               (String(a.titulo) < String(b.titulo) ? -1 : 1);
-      });
-    }
+      msg.style.display = 'none';
 
-    var totalFilmes = filmesSoltos.length;
-    for (i = 0; i < pfOrdem.length; i++) totalFilmes += pfMap[pfOrdem[i]].length;
-
-    var html = '';
-    if (filtroTipo === 'all' && filtroVisto === 'all' && continuar.length) {
-      html += '<h2>Continuar assistindo</h2><div class="movies">';
-      for (i = 0; i < continuar.length; i++) {
-        var c = continuar[i];
-        var pct = c.duracaoSegundos ? Math.round(100 * c.posicaoSegundos / c.duracaoSegundos) : 0;
-        var nota = pct ? (pct + '%') : formatarTempo(c.posicaoSegundos);
-        html += '<a class="item" href="#" data-id="' + c.id + '">' +
-                esc(c.titulo) + ' <span class="ano">(' + nota + ')</span></a>';
+      function itemHtml(m, rotulo) {
+        return '<a class="item" href="#" data-id="' + m.id + '">' +
+               esc(rotulo || m.titulo) +
+               (m.anoLancamento ? ' <span class="ano">(' + m.anoLancamento + ')</span>' : '') +
+               (m.assistido ? ' <span class="visto">&#10003; assistido</span>' : '') +
+               '</a>';
       }
-      html += '</div>';
-    }
 
-    if (totalFilmes) {
-      html += '<h2>Filmes (' + totalFilmes + ')</h2>';
-      if (filmesSoltos.length) {
-        html += '<div class="movies">';
-        for (i = 0; i < filmesSoltos.length; i++) html += itemHtml(filmesSoltos[i]);
+      var totalFilmes = t.filmesSoltos.length;
+      for (i = 0; i < t.pastasFilme.length; i++) totalFilmes += t.pastasFilme[i].itens.length;
+
+      var html = '';
+      if (t.continuarAssistindo.length) {
+        html += '<h2>Continuar assistindo</h2><div class="movies">';
+        for (i = 0; i < t.continuarAssistindo.length; i++) {
+          var c = t.continuarAssistindo[i];
+          var pct = c.duracaoSegundos ? Math.round(100 * c.posicaoSegundos / c.duracaoSegundos) : 0;
+          var nota = pct ? (pct + '%') : formatarTempo(c.posicaoSegundos);
+          html += '<a class="item" href="#" data-id="' + c.id + '">' +
+                  esc(c.titulo) + ' <span class="ano">(' + nota + ')</span></a>';
+        }
         html += '</div>';
       }
-      for (i = 0; i < pfOrdem.length; i++) {
-        var parr = pfMap[pfOrdem[i]], peps = '';
-        for (j = 0; j < parr.length; j++) peps += itemHtml(parr[j]);
-        html += grpHtml('f:' + pfOrdem[i], esc(pfOrdem[i]) + ' (' + parr.length + ' arquivos)', peps);
-      }
-    }
 
-    for (i = 0; i < serieOrdem.length; i++) {
-      var sarr = serieMap[serieOrdem[i]], seps = '';
-      if (i === 0) html += '<h2>Series (' + serieOrdem.length + ')</h2>';
-      for (j = 0; j < sarr.length; j++) seps += itemHtml(sarr[j], sarr[j].rotulo);
-      html += grpHtml('s:' + serieOrdem[i],
-        esc(serieNome[serieOrdem[i]]) + ' (' + sarr.length + (sarr.length === 1 ? ' episodio)' : ' episodios)'), seps);
-    }
-    grid.innerHTML = html;
-    buildNav();
+      if (totalFilmes) {
+        html += '<h2>Filmes (' + totalFilmes + ')</h2>';
+        if (t.filmesSoltos.length) {
+          html += '<div class="movies">';
+          for (i = 0; i < t.filmesSoltos.length; i++) html += itemHtml(t.filmesSoltos[i]);
+          html += '</div>';
+        }
+        for (i = 0; i < t.pastasFilme.length; i++) {
+          var pasta = t.pastasFilme[i], peps = '';
+          for (j = 0; j < pasta.itens.length; j++) peps += itemHtml(pasta.itens[j]);
+          html += grpHtml('f:' + pasta.pasta, esc(pasta.pasta) + ' (' + pasta.itens.length + ' arquivos)', peps);
+        }
+      }
+
+      for (i = 0; i < t.series.length; i++) {
+        var s = t.series[i], seps = '';
+        if (i === 0) html += '<h2>Series (' + t.series.length + ')</h2>';
+        for (j = 0; j < s.episodios.length; j++) seps += itemHtml(s.episodios[j], s.episodios[j].rotulo);
+        html += grpHtml('s:' + s.chave,
+          esc(s.nome) + ' (' + s.episodios.length + (s.episodios.length === 1 ? ' episodio)' : ' episodios)'), seps);
+      }
+      grid.innerHTML = html;
+      buildNav();
+    });
   }
 
   // cabecalho dobravel (.grp) + itens (.eps) — respeita gruposAbertos
