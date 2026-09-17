@@ -1,0 +1,37 @@
+/* Compartilhado entre index.html e controle.html (telas de celular/PC, navegador moderno) —
+   regras que hoje eram copiadas quase idênticas nos dois arquivos. tv.html NÃO carrega este
+   arquivo: tem reset próprio, mais minimalista de propósito ("sem flexbox, sem grid, sem media
+   queries: só o que TV velha entende" — nem box-sizing:border-box é garantido no WebKit dela),
+   e não usa nenhuma destas classes. */
+:root {
+  --bg-1: #0d0d0d;
+  --bg-2: #111;
+  --bg-3: #181818;
+  --border: #333;
+  --muted: #888;
+  --accent: #e50914;
+  --ok: #2ecc40;
+}
+* { margin: 0; padding: 0; box-sizing: border-box }
+body { font-family: system-ui, sans-serif; background: var(--bg-1); color: #eee; min-height: 100vh }
+header { background: var(--bg-2); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #222 }
+h1 { font-size: 20px; font-weight: 600 }
+.filter-btn { background: none; border: 1px solid var(--border); color: var(--muted); padding: 6px 12px; border-radius: 20px; font-size: 12px }
+.filter-btn.active { border-color: var(--accent); color: #fff }
+.secao-title { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 6px; padding: 0 12px }
+#grid { display: flex; flex-direction: column }
+.row { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 6px; position: relative }
+.row .rtit { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px }
+.row .rano { font-size: 12px; color: #777; font-variant-numeric: tabular-nums; white-space: nowrap }
+.row .badge { font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 3px; padding: 1px 7px; white-space: nowrap; user-select: none }
+.row .badge.on { background: var(--ok); color: #000; border-color: var(--ok) }
+.row.assistido .rtit { color: #8a8a8a }
+.row .rprog { position: absolute; left: 12px; right: 12px; bottom: 1px; height: 2px; background: #2a2a2a; border-radius: 1px; overflow: hidden }
+.row .rprog>div { height: 100%; background: var(--accent) }
+.grupo.collapsed .grupo-body { display: none }
+.grupo-hd { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 6px; cursor: pointer; user-select: none; font-size: 14px; font-weight: 600; color: #ddd }
+.grupo-hd .caret { display: inline-block; width: 12px; color: var(--muted); font-size: 11px }
+.grupo-hd .count { font-size: 12px; color: #666; font-weight: 400 }
+/* truncamento com reticências — mesma sequência de 3 propriedades que existia repetida
+   (rtit acima incluso) em cada tela que precisa de texto de largura variável. */
+.remote .titulo, .remote-proximo span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
