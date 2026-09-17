@@ -131,11 +131,6 @@ video { width: 100%; height: auto; background: #000; }
     <a href="#" data-fg="tipo" data-fv="filme">Filmes</a>
     <a href="#" data-fg="tipo" data-fv="serie">Series</a>
     <span class="sep">|</span>
-    <span class="lbl">Status</span>
-    <a href="#" data-fg="visto" data-fv="all" class="on">Todos</a>
-    <a href="#" data-fg="visto" data-fv="nao">Nao assistidos</a>
-    <a href="#" data-fg="visto" data-fv="sim">Assistidos</a>
-    <span class="sep">|</span>
     <a href="#" id="reload">Recarregar</a>
   </div>
   <div id="msg">Carregando...</div>
@@ -166,7 +161,6 @@ video { width: 100%; height: auto; background: #000; }
   var hlsWatchdog = null;
   var temFilmes = false;  // só pra "nenhum filme" x "nada nesse filtro" -- agrupar é tudo no servidor
   var filtroTipo = 'all';   // all | filme | serie
-  var filtroVisto = 'all';  // all | sim | nao
   var links = [];      // itens navegaveis atuais
   var idx = 0;
   var gruposAbertos = {};  // series/pastas expandidas — sobrevive ao re-render
@@ -258,8 +252,7 @@ video { width: 100%; height: auto; background: #000; }
     var msg = document.getElementById('msg');
     var i, j;
 
-    var vistoParam = filtroVisto === 'sim' ? 'assistido' : (filtroVisto === 'nao' ? 'nao-assistido' : 'all');
-    var url = API + '/tela?tipo=' + encodeURIComponent(filtroTipo) + '&visto=' + encodeURIComponent(vistoParam);
+    var url = API + '/tela?tipo=' + encodeURIComponent(filtroTipo) + '&visto=all';
 
     get(url, function (err, t) {
       if (err || !t) {
@@ -402,7 +395,7 @@ video { width: 100%; height: auto; background: #000; }
     var fg = el.getAttribute('data-fg');
     if (fg) {
       var fv = el.getAttribute('data-fv');
-      if (fg === 'tipo') filtroTipo = fv; else filtroVisto = fv;
+      filtroTipo = fv;  // só resta o grupo "tipo" nessa tela
       var bar = document.getElementById('bar').getElementsByTagName('a');
       for (var i = 0; i < bar.length; i++) {
         if (bar[i].getAttribute('data-fg') !== fg) continue;
