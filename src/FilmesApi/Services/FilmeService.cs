@@ -34,7 +34,7 @@ public class FilmeService
             f.Progresso != null ? f.Progresso.PosicaoSegundos : (double?)null,
             f.Progresso != null ? f.Progresso.DuracaoSegundos : null,
             f.PosterUrl, f.Sinopse, f.TituloOriginal,
-            false, false, null, null, null, "", "Sem pasta");
+            false, false, null, null, null, null, "", "Sem pasta");
 
     /// <summary>Preenche série/episódio/rótulo a partir do caminho do arquivo.</summary>
     public static FilmeResponse ComClassificacao(FilmeResponse f)
@@ -45,6 +45,7 @@ public class FilmeService
             EhEpisodio = c.EhEpisodio,
             EhExtra = c.EhExtra,
             Serie = c.Serie,
+            SerieChave = c.SerieChave,
             Temporada = c.Temporada,
             Episodio = c.Episodio,
             Rotulo = c.Rotulo,
@@ -80,7 +81,7 @@ public class FilmeService
         if (atual is null || !atual.EhEpisodio || atual.EhExtra) return null;
 
         var episodios = (await ListarAsync())
-            .Where(f => f.EhEpisodio && !f.EhExtra && f.Serie == atual.Serie)
+            .Where(f => f.EhEpisodio && !f.EhExtra && f.SerieChave == atual.SerieChave)
             .OrderBy(f => f.Temporada ?? 0)
             .ThenBy(f => f.Episodio ?? 0)
             .ThenBy(f => f.Titulo, StringComparer.OrdinalIgnoreCase)

@@ -8,7 +8,7 @@ public record FilmeResponse(
     bool Assistido, DateTime DataAdicionado,
     double? PosicaoSegundos, double? DuracaoSegundos,
     string? PosterUrl = null, string? Sinopse = null, string? TituloOriginal = null,
-    bool EhEpisodio = false, bool EhExtra = false, string? Serie = null,
+    bool EhEpisodio = false, bool EhExtra = false, string? Serie = null, string? SerieChave = null,
     int? Temporada = null, int? Episodio = null, string Rotulo = "", string Pasta = "Sem pasta");
 
 public record ScanResultado(int Importados, int Removidos, int TitulosLimpos = 0);

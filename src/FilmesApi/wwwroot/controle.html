@@ -161,19 +161,26 @@ function render() {
     return true;
   });
   const soltos = filtrados.filter(f => !f.ehEpisodio).sort((a, b) => a.titulo.localeCompare(b.titulo));
+  // chave normalizada (serieChave) -> { nome, itens } — mesmo cuidado do index.html, senão
+  // "Diários de Um Vampiro" e "Diarios de um vampiro" viram 2 grupos por causa da pasta.
   const series = {};
-  for (const f of filtrados) if (f.ehEpisodio) (series[f.serie] ??= []).push(f);
+  for (const f of filtrados) {
+    if (!f.ehEpisodio) continue;
+    const chave = f.serieChave || f.serie;
+    (series[chave] ??= { nome: f.serie, itens: [] }).itens.push(f);
+  }
 
   if (soltos.length) {
     html += '<div class="secao-title">Filmes (' + soltos.length + ')</div>';
     for (const f of soltos) html += rowHtml(f);
   }
-  const nomesSerie = Object.keys(series).sort();
-  for (const nome of nomesSerie) {
-    const eps = series[nome].sort((a, b) => (a.temporada - b.temporada) || (a.episodio - b.episodio));
-    const aberto = foldersAbertos.has(nome);
-    html += `<div class="grupo ${aberto ? '' : 'collapsed'}" data-key="${esc(nome)}">
-      <div class="grupo-hd" onclick="toggleGrupo(this, foldersAbertos)"><span class="caret">${aberto ? '▾' : '▸'}</span>${esc(nome)} <span class="count">(${eps.length} ${eps.length === 1 ? 'episódio' : 'episódios'})</span></div>
+  const chavesSerie = Object.keys(series).sort((a, b) => series[a].nome.localeCompare(series[b].nome));
+  for (const chave of chavesSerie) {
+    const g = series[chave];
+    const eps = g.itens.sort((a, b) => (a.temporada - b.temporada) || (a.episodio - b.episodio));
+    const aberto = foldersAbertos.has(chave);
+    html += `<div class="grupo ${aberto ? '' : 'collapsed'}" data-key="${esc(chave)}">
+      <div class="grupo-hd" onclick="toggleGrupo(this, foldersAbertos)"><span class="caret">${aberto ? '▾' : '▸'}</span>${esc(g.nome)} <span class="count">(${eps.length} ${eps.length === 1 ? 'episódio' : 'episódios'})</span></div>
       <div class="grupo-body">${eps.map(ep => rowHtml(ep, ep.rotulo)).join('')}</div>
     </div>`;
   }
