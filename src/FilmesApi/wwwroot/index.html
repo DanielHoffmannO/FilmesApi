@@ -16,42 +16,28 @@
 })();
 </script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🎬%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="/css/base.css">
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:system-ui,sans-serif;background:#0d0d0d;color:#eee;min-height:100vh}
-header{background:#111;padding:16px 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #222}
-h1{font-size:20px;font-weight:600}
+/* Reset, header, .filter-btn, #grid, .row/.grupo-hd e as cores em variável (--accent etc.)
+   vêm de css/base.css (compartilhado com controle.html). Aqui só o que é específico
+   desta tela. */
 .actions{display:flex;gap:8px}
-button{background:#222;color:#eee;border:1px solid #333;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:13px}
+button{background:#222;color:#eee;border:1px solid var(--border);padding:8px 14px;border-radius:6px;cursor:pointer;font-size:13px}
 button:hover{background:#333}
 .filters{padding:12px 24px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-bottom:1px solid #1a1a1a}
-.filter-btn{background:none;border:1px solid #333;color:#888;padding:6px 12px;border-radius:20px;font-size:12px}
-.filter-btn.active{border-color:#e50914;color:#fff}
 .filter-label{font-size:11px;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-left:12px}
 .filter-label:first-child{margin-left:0}
 .filter-sep{width:1px;align-self:stretch;background:#222;margin:2px 4px}
 main{padding:16px 24px;max-width:1000px;margin:0 auto}
-#grid{display:flex;flex-direction:column}
 .lista{display:flex;flex-direction:column}
-.row{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:6px;cursor:pointer;position:relative}
-.row:hover{background:#181818}
+.row{cursor:pointer}
+.row:hover{background:var(--bg-3)}
 .rposter{width:28px;height:40px;flex-shrink:0;border-radius:3px;background:#1a1a1a;object-fit:cover}
-.row .rtit{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}
-.row .rep{color:#888;font-variant-numeric:tabular-nums;margin-right:8px}
-.row .rano{font-size:12px;color:#777;font-variant-numeric:tabular-nums;white-space:nowrap}
-.row .resume{font-size:12px;color:#e50914;white-space:nowrap}
-.row .badge{font-size:11px;color:#888;border:1px solid #333;border-radius:3px;padding:1px 7px;white-space:nowrap;user-select:none}
+.row .rep{color:var(--muted);font-variant-numeric:tabular-nums;margin-right:8px}
+.row .resume{font-size:12px;color:var(--accent);white-space:nowrap}
 .row .badge:hover{border-color:#666;color:#ccc}
-.row .badge.on{background:#2ecc40;color:#000;border-color:#2ecc40}
-.row.assistido .rtit{color:#8a8a8a}
-.row .rprog{position:absolute;left:12px;right:12px;bottom:1px;height:2px;background:#2a2a2a;border-radius:1px;overflow:hidden}
-.row .rprog>div{height:100%;background:#e50914}
 .grupo{margin-bottom:2px}
-.grupo-hd{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:6px;cursor:pointer;user-select:none;font-size:14px;font-weight:600;color:#ddd}
-.grupo-hd:hover{background:#181818}
-.grupo-hd .caret{display:inline-block;width:12px;color:#888;font-size:11px}
-.grupo-hd .count{font-size:12px;color:#666;font-weight:400}
-.grupo.collapsed .grupo-body{display:none}
+.grupo-hd:hover{background:var(--bg-3)}
 .grupo-body{padding-left:22px}
 .player-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:100;flex-direction:column;align-items:center;justify-content:center}
 .player-overlay.active{display:flex}
@@ -59,27 +45,26 @@ main{padding:16px 24px;max-width:1000px;margin:0 auto}
 .player-close{position:absolute;top:16px;right:24px;font-size:28px;color:#fff;cursor:pointer;z-index:101}
 .converting{display:none;color:#ccc;font-size:14px;margin-top:16px;white-space:pre-line;text-align:center;max-width:80vw}
 .converting button{margin-top:14px;display:inline-block}
-#proximoBox{display:none;position:absolute;right:24px;bottom:80px;background:#181818;border:1px solid #333;border-radius:8px;padding:14px 16px;max-width:320px;z-index:102}
+#proximoBox{display:none;position:absolute;right:24px;bottom:80px;background:var(--bg-3);border:1px solid var(--border);border-radius:8px;padding:14px 16px;max-width:320px;z-index:102}
 #proximoBox.on{display:block}
-#proximoBox .lbl{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px}
+#proximoBox .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
 #proximoBox .tit{font-size:14px;margin:4px 0 10px;color:#fff}
 #proximoBox button{margin-right:8px}
-#proximoBox .go{background:#e50914;border-color:#e50914;color:#fff}
-#loadbar{position:fixed;top:0;left:0;height:3px;width:0;background:#e50914;z-index:200;opacity:0;transition:width .3s ease}
+#proximoBox .go{background:var(--accent);border-color:var(--accent);color:#fff}
+#loadbar{position:fixed;top:0;left:0;height:3px;width:0;background:var(--accent);z-index:200;opacity:0;transition:width .3s ease}
 #loadbar.on{opacity:1;width:75%}
 #loadbar.done{opacity:0;width:100%;transition:width .2s ease,opacity .4s ease .2s}
 .secao{margin-bottom:26px}
-.secao-title{font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px;padding:0 12px}
 .secao-title .count{color:#555;font-weight:400}
 .empty{text-align:center;color:#777;padding:70px 20px;font-size:16px}
 .empty .ico{font-size:52px;display:block;margin-bottom:12px;opacity:.6}
 .empty button{margin-top:16px}
-.search{background:#1a1a1a;border:1px solid #333;color:#eee;padding:7px 12px;border-radius:20px;font-size:13px;width:200px;transition:width .2s,border-color .2s}
-.search:focus{outline:none;border-color:#e50914;width:260px}
+.search{background:#1a1a1a;border:1px solid var(--border);color:#eee;padding:7px 12px;border-radius:20px;font-size:13px;width:200px;transition:width .2s,border-color .2s}
+.search:focus{outline:none;border-color:var(--accent);width:260px}
 .header-links{display:flex;gap:14px;align-items:center;font-size:13px}
-.header-links a{color:#888;text-decoration:none}
+.header-links a{color:var(--muted);text-decoration:none}
 .header-links a:hover{color:#fff}
-.scan-msg{position:fixed;bottom:20px;right:20px;background:#2ecc40;color:#000;padding:10px 16px;border-radius:6px;font-size:13px;display:none}
+.scan-msg{position:fixed;bottom:20px;right:20px;background:var(--ok);color:#000;padding:10px 16px;border-radius:6px;font-size:13px;display:none}
 </style>
 </head>
 <body>

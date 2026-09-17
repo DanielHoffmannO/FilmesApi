@@ -5,57 +5,42 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Controle da TV</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📱%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="/css/base.css">
 <style>
 /* Mesmo visual do index.html (celular/desktop) — só a lista principal some daqui,
-   fica só "achar o filme e mandar pra TV" + o controle remoto embaixo. */
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:system-ui,sans-serif;background:#0d0d0d;color:#eee;min-height:100vh;padding-bottom:96px}
-header{background:#111;padding:16px 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #222}
-h1{font-size:20px;font-weight:600}
-header a{color:#888;text-decoration:none;font-size:13px}
+   fica só "achar o filme e mandar pra TV" + o controle remoto embaixo.
+   Reset, header, .filter-btn, #grid, .row/.grupo-hd e as cores em variável (--accent etc.)
+   vêm de css/base.css (compartilhado com index.html). Aqui só o que é específico desta tela. */
+body{padding-bottom:96px}
+header a{color:var(--muted);text-decoration:none;font-size:13px}
 header a:hover{color:#fff}
 main{padding:16px 24px;max-width:640px;margin:0 auto}
 .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
-.filter-btn{background:none;border:1px solid #333;color:#888;padding:6px 12px;border-radius:20px;font-size:12px}
-.filter-btn.active{border-color:#e50914;color:#fff}
-.secao-title{font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px;padding:0 12px}
-#grid{display:flex;flex-direction:column}
-.row{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:6px;position:relative}
-.row.tocando{background:#181818}
-.row .rtit{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}
-.row .rano{font-size:12px;color:#777;font-variant-numeric:tabular-nums;white-space:nowrap}
-.row .badge{font-size:11px;color:#888;border:1px solid #333;border-radius:3px;padding:1px 7px;white-space:nowrap;user-select:none}
+.row.tocando{background:var(--bg-3)}
 .row .badge:active{border-color:#666;color:#ccc}
-.row .badge.on{background:#2ecc40;color:#000;border-color:#2ecc40}
-.row.assistido .rtit{color:#8a8a8a}
-.row .rprog{position:absolute;left:12px;right:12px;bottom:1px;height:2px;background:#2a2a2a;border-radius:1px;overflow:hidden}
-.row .rprog>div{height:100%;background:#e50914}
 .cast-btn{background:none;border:none;color:#666;font-size:18px;cursor:pointer;padding:2px 6px;line-height:1}
 .cast-btn:active{color:#fff}
-.grupo.collapsed .grupo-body{display:none}
-.grupo-hd{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:6px;font-size:14px;font-weight:600;color:#ddd;margin:14px 0 2px;cursor:pointer;user-select:none}
-.grupo-hd .caret{display:inline-block;width:12px;color:#888;font-size:11px}
-.grupo-hd .count{font-size:12px;color:#666;font-weight:400}
+.grupo-hd{margin:14px 0 2px}
 .grupo-body{padding-left:12px}
 .msg{text-align:center;color:#777;padding:60px 20px;font-size:15px}
 
 /* ─── barra de controle remoto — igual à que existia no index.html ─── */
-.remote{position:fixed;left:0;right:0;bottom:0;background:#111;border-top:1px solid #222;padding:10px 16px;display:none;flex-direction:column;gap:8px;z-index:50}
+.remote{position:fixed;left:0;right:0;bottom:0;background:var(--bg-2);border-top:1px solid #222;padding:10px 16px;display:none;flex-direction:column;gap:8px;z-index:50}
 .remote.active{display:flex}
 .remote-l1{display:flex;align-items:baseline;gap:10px}
-.remote .titulo{font-size:12px;color:#ccc;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.remote .titulo{font-size:12px;color:#ccc;flex:1;min-width:0}
 .remote-time{font-size:11px;color:#aaa;font-variant-numeric:tabular-nums;white-space:nowrap}
-.remote-prog{height:8px;background:#333;border-radius:4px;cursor:pointer;overflow:hidden}
-.remote-prog-fill{height:100%;background:#e50914;width:0;transition:width .3s linear}
+.remote-prog{height:8px;background:var(--border);border-radius:4px;cursor:pointer;overflow:hidden}
+.remote-prog-fill{height:100%;background:var(--accent);width:0;transition:width .3s linear}
 .remote-l2{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.remote button{background:#222;color:#eee;border:1px solid #333;border-radius:6px;padding:8px 12px;font-size:13px;cursor:pointer}
+.remote button{background:#222;color:#eee;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;cursor:pointer}
 .remote button:active{background:#333}
-.remote button.on{border-color:#e50914;color:#e50914}
+.remote button.on{border-color:var(--accent);color:var(--accent)}
 .remote input[type=range]{width:100px}
-.remote-proximo{display:none;align-items:center;gap:10px;background:#181818;border:1px solid #333;border-radius:6px;padding:8px 10px;font-size:12px;color:#ccc}
+.remote-proximo{display:none;align-items:center;gap:10px;background:var(--bg-3);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:12px;color:#ccc}
 .remote-proximo.on{display:flex}
-.remote-proximo span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.remote-proximo button{background:#e50914;border-color:#e50914;color:#fff;padding:6px 10px;font-size:12px;white-space:nowrap}
+.remote-proximo span{flex:1;min-width:0}
+.remote-proximo button{background:var(--accent);border-color:var(--accent);color:#fff;padding:6px 10px;font-size:12px;white-space:nowrap}
 </style>
 </head>
 <body>
