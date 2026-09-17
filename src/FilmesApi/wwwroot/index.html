@@ -132,7 +132,6 @@ main{padding:16px 24px;max-width:1000px;margin:0 auto}
 
 <script>
 const API = '/api/filmes';
-let filmes = [];   // só pro "catálogo vazio" x "nada bate o filtro" — agrupar/filtrar é tudo no servidor
 let filtroTipo = 'all';   // all | filme | serie
 let filtroVisto = 'all';  // all | assistido | nao-assistido
 const foldersAbertos = new Set();  // pastas/séries expandidas — sobrevive ao re-render
@@ -145,19 +144,8 @@ function loadbar(ligado) {
 
 async function load() {
   loadbar(true);
-  try {
-    const resF = await fetch(API);
-    if (!resF.ok) throw new Error('api');
-    filmes = await resF.json();
-    await render();
-  } catch {
-    document.getElementById('grid').innerHTML = '';
-    const empty = document.getElementById('empty');
-    empty.textContent = 'Não consegui falar com o servidor. Recarregue a página.';
-    empty.style.display = 'block';
-  } finally {
-    loadbar(false);
-  }
+  try { await render(); }
+  finally { loadbar(false); }
 }
 
 // Filtro (tipo/visto/busca) e agrupamento (filme solto / pasta filme+extras / série com
@@ -184,9 +172,9 @@ async function render() {
   const nada = !t.continuarAssistindo.length && !t.filmesSoltos.length && !t.pastasFilme.length && !t.series.length;
   if (nada) {
     grid.innerHTML = '';
-    empty.innerHTML = filmes.length
-      ? `<span class="ico">🔍</span>${q ? 'Nada encontrado pra “' + esc(q) + '”.' : 'Nada corresponde a esse filtro.'}`
-      : `<span class="ico">🎬</span>Catálogo vazio.<br><button onclick="scanMedia()">📂 Escanear a pasta de mídia</button>`;
+    empty.innerHTML = t.catalogoVazio
+      ? `<span class="ico">🎬</span>Catálogo vazio.<br><button onclick="scanMedia()">📂 Escanear a pasta de mídia</button>`
+      : `<span class="ico">🔍</span>${q ? 'Nada encontrado pra “' + esc(q) + '”.' : 'Nada corresponde a esse filtro.'}`;
     empty.style.display = 'block';
     return;
   }

@@ -159,7 +159,6 @@ video { width: 100%; height: auto; background: #000; }
   var pollTimer = null;
   var hlsRetries = 0;
   var hlsWatchdog = null;
-  var temFilmes = false;  // só pra "nenhum filme" x "nada nesse filtro" -- agrupar é tudo no servidor
   var filtroTipo = 'all';   // all | filme | serie
   var links = [];      // itens navegaveis atuais
   var idx = 0;
@@ -232,14 +231,7 @@ video { width: 100%; height: auto; background: #000; }
   function load() {
     document.getElementById('msg').style.display = 'block';
     document.getElementById('msg').innerHTML = 'Carregando...';
-    get(API, function (err, data) {
-      if (err) {
-        document.getElementById('msg').innerHTML = 'Falha ao carregar (erro ' + err + ').';
-        return;
-      }
-      temFilmes = !!(data && data.length);
-      render();
-    });
+    render();
   }
 
   // formatarTempo() vem de /js/util.js.
@@ -267,7 +259,7 @@ video { width: 100%; height: auto; background: #000; }
       if (nada) {
         grid.innerHTML = '';
         msg.style.display = 'block';
-        msg.innerHTML = temFilmes ? 'Nada nesse filtro.' : 'Nenhum filme. Rode o Scan no celular.';
+        msg.innerHTML = t.catalogoVazio ? 'Nenhum filme. Rode o Scan no celular.' : 'Nada nesse filtro.';
         buildNav();
         return;
       }

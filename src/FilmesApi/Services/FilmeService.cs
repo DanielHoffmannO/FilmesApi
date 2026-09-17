@@ -142,7 +142,7 @@ public class FilmeService
             .Select(kv => new SerieAgrupada(kv.Key, kv.Value.Nome, kv.Value.Itens))
             .ToList();
 
-        return new TelaCatalogoResponse(continuarAssistindo, filmesSoltos, pastasOrdenadas, seriesOrdenadas);
+        return new TelaCatalogoResponse(continuarAssistindo, filmesSoltos, pastasOrdenadas, seriesOrdenadas, todos.Count == 0);
     }
 
     public async Task<FilmeResponse?> ObterAsync(int id)
