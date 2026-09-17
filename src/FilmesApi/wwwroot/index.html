@@ -556,24 +556,32 @@ async function carregarLegendas(id) {
 }
 
 // ─── Próximo episódio ─────────────────────────────────────────────────
-let proximoInfo = null, proximoTimer = null, proximoInterval = null;
+let proximoInfo = null, proximoInterval = null, proximoOfertaId = 0;
 
 function cancelarProximo() {
-  if (proximoTimer) { clearTimeout(proximoTimer); proximoTimer = null; }
   if (proximoInterval) { clearInterval(proximoInterval); proximoInterval = null; }
   proximoInfo = null;
+  proximoOfertaId++;  // invalida qualquer resposta de /proximo ainda em voo (ver ofereceProximo)
   document.getElementById('proximoBox').classList.remove('on');
 }
 
 async function ofereceProximo(id) {
-  cancelarProximo();  // 'ended' pode disparar 2x em alguns navegadores
+  // 'ended' pode disparar 2x em alguns navegadores. cancelarProximo() sozinho não basta: se
+  // as 2 chamadas acontecem síncronas (uma logo após a outra, antes do fetch da 1ª
+  // responder), as 2 leem o estado ainda limpo e nenhuma cancela nada — cada resposta monta
+  // seu PRÓPRIO setInterval e só o mais recente fica em proximoInterval; o outro roda órfão
+  // e chama irProximo() de novo pouco depois, reiniciando o episódio que acabou de começar.
+  // O token (proximoOfertaId) resolve isso não importa o intervalo entre as 2 chamadas: só a
+  // resposta da ÚLTIMA ofereceProximo (que "ganhou" o token por último) monta o timer.
+  cancelarProximo();
+  const meuToken = ++proximoOfertaId;
   let prox;
   try {
     const r = await fetch(`${API}/${id}/proximo`);
     if (r.status !== 200) return;
     prox = await r.json();
   } catch { return; }
-  if (filmeAtual !== id || !prox) return;
+  if (filmeAtual !== id || !prox || meuToken !== proximoOfertaId) return;
 
   proximoInfo = prox;
   document.getElementById('proximoTit').textContent = prox.rotulo + (prox.serie ? ' — ' + prox.serie : '');
