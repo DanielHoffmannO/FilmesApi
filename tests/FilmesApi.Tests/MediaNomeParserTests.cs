@@ -240,6 +240,27 @@ public class MediaNomeParserTests
         Assert.Equal("Filmes", c.Pasta);
     }
 
+    // Regressão real: "Quadrilogia A Era do Gelo .../A Era do Gelo 2 2006 .../filme.mkv" —
+    // cada filme sozinho na sua própria subpasta (nomeada com o título de CADA filme, não um
+    // "Volume N" genérico) nunca batia "2+ arquivos" com a pasta imediata, e cada um ia pra
+    // filme solto em vez de agrupar como coleção. Pasta() agora sobe até a pasta-mãe quando
+    // acha "trilogia/quadrilogia/coleção/..." num segmento ANTES do último.
+    [Theory]
+    [InlineData("Quadrilogia A Era do Gelo 2002 - 2012 [1080p] WWW.BLUDV.COM/A Era do Gelo 2 2006 [1080p] WWW.BLUDV.COM/A.Era.do.Gelo.2.2006.mkv")]
+    [InlineData("Quadrilogia A Era do Gelo 2002 - 2012 [1080p] WWW.BLUDV.COM/A Era do Gelo 4 2012 [1080p] WWW.BLUDV.COM/A.Era.do.Gelo.4.2012.mkv")]
+    public void ClassificarFilme_sobe_pra_pasta_mae_quando_e_uma_colecao(string path)
+    {
+        var c = MediaNomeParser.Classificar(path, "x");
+        Assert.Equal("Quadrilogia A Era do Gelo 2002 - 2012 [1080p] WWW.BLUDV.COM", c.Pasta);
+    }
+
+    [Fact]
+    public void ClassificarFilme_pasta_sem_palavra_de_colecao_fica_como_esta()
+    {
+        var c = MediaNomeParser.Classificar("Toy Story 2 (1999)/Toy Story 2 (1999) 1080p.mp4", "x");
+        Assert.Equal("Toy Story 2 (1999)", c.Pasta);
+    }
+
     [Fact]
     public void Classificar_episodio_com_temporada_na_pasta()
     {
@@ -258,6 +279,26 @@ public class MediaNomeParserTests
     public void Classificar_marca_extra(string path)
     {
         Assert.True(MediaNomeParser.Classificar(path, "x").EhExtra);
+    }
+
+    // Regressão real: "Democracia em Vertigem" tinha 2 arquivos "reais" na pasta (o filme +
+    // um vídeo de propaganda do site com extensão de vídeo de verdade), então nunca colapsava
+    // pra filme solto — o uploader nomeia a propaganda só com o domínio, sem nenhuma palavra
+    // de trailer/sample/promo que o ReExtra já pegaria.
+    [Theory]
+    [InlineData("Filme (2019)/COMANDOTORRENTS.COM.mp4")]
+    [InlineData("Filme (2019)/TorrentDosFilmes.SE.mp4")]
+    public void EhExtra_reconhece_arquivo_que_e_so_o_dominio_do_site(string path)
+    {
+        Assert.True(MediaNomeParser.EhExtra(path));
+    }
+
+    [Fact]
+    public void EhExtra_nao_confunde_titulo_de_filme_com_dominio()
+    {
+        // "Ainda.Estou.Aqui.mkv" não é um domínio (não termina em .com/.net/...) -- garante
+        // que ReNomeEhSoDominio não fica geral demais.
+        Assert.False(MediaNomeParser.EhExtra("Filme (2024)/Ainda.Estou.Aqui.2024.1080p.mkv"));
     }
 
     [Fact]

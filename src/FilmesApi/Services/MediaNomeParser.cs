@@ -73,6 +73,13 @@ public static partial class MediaNomeParser
     [GeneratedRegex(@"1xbet", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ReXbet();
 
+    // Nome de arquivo que é SÓ o domínio do site que fez o upload ("COMANDOTORRENTS.COM.mp4",
+    // "TorrentDosFilmes.SE.mp4") — não é o filme, é propaganda solta que o uploader incluiu
+    // junto (o real costuma vir como .url/.png, mas às vezes vem com extensão de vídeo de
+    // verdade e passa pelo scan como se fosse um filme a mais na pasta).
+    [GeneratedRegex(@"^[a-z0-9-]+\.(?:com|net|org|to|se|xyz|info)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ReNomeEhSoDominio();
+
     // Tokens de qualidade/codec/origem que não fazem parte do nome da obra (pra busca no TMDB).
     [GeneratedRegex(@"\b(1080p|2160p|720p|480p|4k|uhd|hd|sd|bluray|blu-ray|bdrip|brrip|web-?dl|web-?rip|webrip|hdtv|dvdrip|remux|x264|x265|h ?264|h ?265|hevc|avc|aac|ac3|eac3|dts|ddp?5 ?1|10bit|hdr|dv|dolby|vision|dual|dublado|dery|legendado|nacional|multi|complete|prox)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ReRuido();
@@ -90,6 +97,17 @@ public static partial class MediaNomeParser
     [GeneratedRegex(@"-[A-Z0-9]{3,}$", RegexOptions.CultureInvariant)]
     private static partial Regex ReAssinaturaRelease();
 
+    // "WWW.SITE.COM" solto (sem colchete/parênteses ao redor) grudado no nome — mesma ideia
+    // do ReAnuncioSite, mas pro caso mais comum de vir sem colchete nenhum.
+    [GeneratedRegex(@"\bwww\.[a-z0-9-]+\.(?:com|net|org|to|se|xyz|info)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ReDominioSolto();
+
+    // Pasta "coleção" (várias obras, cada uma no seu próprio subdiretório) — "Trilogia",
+    // "Quadrilogia" etc. na pasta-mãe. Sem isso, cada filme (sozinho na sua subpasta) nunca
+    // bate o limiar de "2+ arquivos" pra virar grupo e some espalhado como filme solto.
+    [GeneratedRegex(@"\b(?:trilogia|tetralogia|quadrilogia|pentalogia|hexalogia|colecao|coleção|coletanea|coletânea|antologia|saga|box)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex RePastaColecao();
+
     private static string NomeArquivo(string? path) =>
         string.IsNullOrEmpty(path) ? "" : Regex.Replace(path, @"^.*/", "");
 
@@ -105,7 +123,16 @@ public static partial class MediaNomeParser
     private static string PastaDe(string? arquivoPath)
     {
         var s = SegmentosPasta(arquivoPath);
-        return s.Length > 0 ? string.Join('/', s) : "Sem pasta";
+        if (s.Length == 0) return "Sem pasta";
+
+        // Se algum segmento ANTES do último (a pasta do próprio filme) é uma pasta-mãe de
+        // coleção ("Quadrilogia A Era do Gelo .../A Era do Gelo 2 2006 .../filme.mkv"),
+        // agrupa por ela — cada filme sozinho na sua subpasta nunca bateria "2+ arquivos".
+        for (var i = 0; i < s.Length - 1; i++)
+            if (RePastaColecao().IsMatch(s[i]))
+                return string.Join('/', s[..(i + 1)]);
+
+        return string.Join('/', s);
     }
 
     /// <summary>Temporada indicada pela pasta (qualquer segmento), ou null.</summary>
@@ -125,8 +152,8 @@ public static partial class MediaNomeParser
 
     public static bool EhExtra(string? arquivoPath)
     {
-        var n = NomeArquivo(arquivoPath);
-        return ReExtra().IsMatch(n) || ReXbet().IsMatch(n);
+        var n = SemExtensao(NomeArquivo(arquivoPath));
+        return ReExtra().IsMatch(n) || ReXbet().IsMatch(n) || ReNomeEhSoDominio().IsMatch(n);
     }
 
     public static bool EhEpisodio(string? arquivoPath) => OrdemEpisodio(arquivoPath) is not null;
@@ -252,6 +279,7 @@ public static partial class MediaNomeParser
 
         var nome = RePontos().Replace(basename, " ");
         nome = ReAnuncioSite().Replace(nome, " ");
+        nome = ReDominioSolto().Replace(nome, " ");
         nome = ReRuido().Replace(nome, " ");
         if (pareceRelease) nome = ReAssinaturaRelease().Replace(nome, "");
         nome = Regex.Replace(nome, @"[\[\]()]+", " ");
