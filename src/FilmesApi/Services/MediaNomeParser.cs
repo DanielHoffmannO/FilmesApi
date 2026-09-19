@@ -108,6 +108,15 @@ public static partial class MediaNomeParser
     [GeneratedRegex(@"\b(?:trilogia|tetralogia|quadrilogia|pentalogia|hexalogia|colecao|coleção|coletanea|coletânea|antologia|saga|box)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex RePastaColecao();
 
+    // Número solto no início do nome, aceitando só espaço como separador ("01 O Paraíso
+    // Verde.avi", sem hífen/ponto/dois-pontos nenhum) — mais permissivo que ReEpPrefixo de
+    // propósito. Só é consultado quando ContarNumeradosPorPasta já garantiu que a pasta tem
+    // MUITOS arquivos assim (ver MinArquivosAntologia); fora desse contexto controlado, um
+    // filme comum cujo título começa com número ("12 Homens e uma Sentença") daria falso
+    // positivo fácil demais.
+    [GeneratedRegex(@"^\s*([0-9]{1,3})\s+\S", RegexOptions.CultureInvariant)]
+    private static partial Regex ReEpNumeroAntologia();
+
     private static string NomeArquivo(string? path) =>
         string.IsNullOrEmpty(path) ? "" : Regex.Replace(path, @"^.*/", "");
 
@@ -148,6 +157,12 @@ public static partial class MediaNomeParser
         return null;
     }
 
+    // Abaixo disso, "pasta com N arquivos numerados sem temporada nenhuma" é tratada como
+    // coleção de filmes (ex.: Coleção Rocky, 2 arquivos) — acima, como antologia sem
+    // marcação de temporada (ex.: Além da Imaginação, 43 episódios). Bem acima de qualquer
+    // coleção de filme realista, bem abaixo do que uma temporada de série costuma ter.
+    private const int MinArquivosAntologia = 15;
+
     // ─── API pública ────────────────────────────────────────────────────
 
     public static bool EhExtra(string? arquivoPath)
@@ -156,12 +171,26 @@ public static partial class MediaNomeParser
         return ReExtra().IsMatch(n) || ReXbet().IsMatch(n) || ReNomeEhSoDominio().IsMatch(n);
     }
 
-    public static bool EhEpisodio(string? arquivoPath) => OrdemEpisodio(arquivoPath) is not null;
+    /// <summary>Quantos arquivos, entre os informados, têm número solto no início do nome
+    /// (mesmo padrão frouxo de <see cref="ReEpNumeroAntologia"/>) — agrupado por pasta.
+    /// Usa-se pra decidir se uma pasta sem NENHUM marcador de temporada é uma coleção de
+    /// filmes numerados (poucos arquivos, fica filme) ou uma antologia sem marcação nenhuma
+    /// (muitos, vira episódios) — ver <see cref="MinArquivosAntologia"/>.</summary>
+    public static Dictionary<string, int> ContarNumeradosPorPasta(IEnumerable<string?> arquivoPaths) =>
+        arquivoPaths
+            .Where(p => !string.IsNullOrEmpty(p) && ReEpNumeroAntologia().IsMatch(SemExtensao(NomeArquivo(p))))
+            .GroupBy(PastaDe)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+    public static bool EhEpisodio(string? arquivoPath, int arquivosNumeradosNaPasta = 0) =>
+        OrdemEpisodio(arquivoPath, arquivosNumeradosNaPasta) is not null;
 
     /// <summary>(temporada, episódio) do arquivo, ou null se não é episódio. Ordem de sinal:
     /// SxxExx / NxNN no nome &gt; "Episódio N" no nome &gt; número solto no nome QUANDO a pasta
-    /// diz a temporada (senão seria falso-positivo com pasta de filmes numerados).</summary>
-    public static (int Temporada, int Episodio)? OrdemEpisodio(string? arquivoPath)
+    /// diz a temporada (senão seria falso-positivo com pasta de filmes numerados) &gt; número
+    /// solto (até sem separador) quando a pasta tem MUITOS arquivos assim, ver
+    /// <paramref name="arquivosNumeradosNaPasta"/> e <see cref="ContarNumeradosPorPasta"/>.</summary>
+    public static (int Temporada, int Episodio)? OrdemEpisodio(string? arquivoPath, int arquivosNumeradosNaPasta = 0)
     {
         var nome = SemExtensao(NomeArquivo(arquivoPath));
 
@@ -183,6 +212,12 @@ public static partial class MediaNomeParser
                 var g = m.Groups[1].Success ? m.Groups[1] : m.Groups[2];  // [1]=colchete, [2]=solto
                 return (t, ParseInt(g.Value));
             }
+        }
+
+        if (tempPasta is null && arquivosNumeradosNaPasta >= MinArquivosAntologia)
+        {
+            m = ReEpNumeroAntologia().Match(nome);
+            if (m.Success) return (0, ParseInt(m.Groups[1].Value));
         }
         return null;
     }
@@ -288,11 +323,16 @@ public static partial class MediaNomeParser
         return nome.Length > 0 ? nome : basename;
     }
 
-    /// <summary>Classificação completa — o que o <c>FilmeResponse</c> entrega pras telas.</summary>
-    public static ClassificacaoMidia Classificar(string? arquivoPath, string titulo)
+    /// <summary>Classificação completa — o que o <c>FilmeResponse</c> entrega pras telas.
+    /// <paramref name="contagemNumeradosPorPasta"/> vem de <see cref="ContarNumeradosPorPasta"/>
+    /// calculado sobre o catálogo inteiro (ver <c>FilmeService.ListarAsync</c>) — sem isso,
+    /// pasta de antologia sem marcador de temporada nunca vira episódio.</summary>
+    public static ClassificacaoMidia Classificar(
+        string? arquivoPath, string titulo, IReadOnlyDictionary<string, int>? contagemNumeradosPorPasta = null)
     {
         var pasta = PastaDe(arquivoPath);
-        var ordem = OrdemEpisodio(arquivoPath);
+        var arquivosNumerados = contagemNumeradosPorPasta?.GetValueOrDefault(pasta) ?? 0;
+        var ordem = OrdemEpisodio(arquivoPath, arquivosNumerados);
         if (ordem is not (int temp, int ep))
             return new ClassificacaoMidia(false, EhExtra(arquivoPath), null, null, null, null, titulo, pasta);
 
