@@ -184,6 +184,44 @@ public class MediaNomeParserTests
         Assert.Equal("Severance", MediaNomeParser.ChaveSerie(path));
     }
 
+    // Regressão real: "Hora da Aventura - TORRENTMEGAFILMES/7ª Temporada - Completa -
+    // TORRENTMEGAFILMES/S07E05....mkv" — o nível do meio ("7ª Temporada - Completa - SITE")
+    // começa com ordinal+"Temporada" (não bate ReSegmentoTemporadaPrefixo, que exige a palavra
+    // ANTES do número), então ChaveSerie tentava limpar ali mesmo e o corte (que casa "7ª
+    // Temporada" também) comia a pasta inteira, sobrando "" — o código antigo desistia e caía
+    // no fallback de "arquivo solto", devolvendo o NOME DO ARQUIVO inteiro (com ".mkv" e tudo)
+    // como se fosse a série. Agora sobe mais um nível quando um segmento limpa pra vazio.
+    [Fact]
+    public void ChaveSerie_sobe_mais_um_nivel_quando_o_segmento_limpa_pra_vazio()
+    {
+        var chave = MediaNomeParser.ChaveSerie(
+            "Hora da Aventura - TORRENTMEGAFILMES/7ª Temporada - Completa - TORRENTMEGAFILMES/S07E05 - Futebol - TORRENTMEGAFILMES.TV.mkv");
+        Assert.Equal("Hora da Aventura", chave);
+    }
+
+    // Regressão real: "COMANDO.TO - Contos do Loop 1ª Temporada Completa [1080p] [DUAL]" —
+    // o domínio do uploader vem ANTES do nome de verdade, separado por " - ". O corte normal
+    // (que assume ruído DEPOIS de um prefixo limpo) parava no primeiro " - " e devolvia
+    // "COMANDO TO" como se fosse o nome da série, perdendo "Contos do Loop" de vez.
+    [Fact]
+    public void ChaveSerie_ignora_dominio_do_uploader_no_comeco_do_nome()
+    {
+        var chave = MediaNomeParser.ChaveSerie(
+            "COMANDO.TO - Contos do Loop 1ª Temporada Completa [1080p] [DUAL]/Contos.do.Loop.S01E06.1080p.WEB-DL.x264.DUAL.COMANDO.TO.mp4");
+        Assert.Equal("Contos do Loop", chave);
+    }
+
+    // Regressão real: "Hora da Aventura" (grafia de release) e "Hora de Aventura" (título
+    // oficial BR, já com 85 episódios no catálogo) são a mesma série — sem apelido, a
+    // temporada 7 (fonte diferente) virava uma segunda série à parte.
+    [Fact]
+    public void ChaveAgrupamento_resolve_apelido_hora_da_aventura()
+    {
+        Assert.Equal(
+            MediaNomeParser.ChaveAgrupamento("Hora de Aventura"),
+            MediaNomeParser.ChaveAgrupamento("Hora da Aventura"));
+    }
+
     // ─── ChaveAgrupamento: tolerância a acento/maiúscula na chave de agrupar ────────────
 
     [Theory]
