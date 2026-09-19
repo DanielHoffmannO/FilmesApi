@@ -138,6 +138,65 @@ public class FilmeService
             }
         }
 
+        // Franquia por título: junta filmes/pastas da MESMA franquia que moram em pastas sem
+        // relação nenhuma (sem pasta-mãe "Trilogia .../" ligando elas -- RePastaColecao não
+        // cobre esse caso). Cobre tanto "cada filme solto na sua pasta" (Toy Story 1/2/3, cada
+        // um sozinho) quanto "1 filme solto + outros já numa pasta de verdade juntos"
+        // (Homem-Aranha 1 sozinho; Homem-Aranha 2 e 3 já juntos em "TRILOGIA.../", pasta real
+        // com 2 arquivos). Só corta um marcador de SEQUÊNCIA do título (número/romano no
+        // fim) -- não é correspondência de nome parecido (isso juntaria "Poder" com "Poder
+        // Absoluto" à toa).
+        var candidatosFranquia = new List<(string Chave, string PastaOrigem, List<FilmeResponse> Itens)>();
+        foreach (var f in filmesSoltos)
+        {
+            var chave = MediaNomeParser.ChaveBaseFranquia(f.Titulo);
+            if (!string.IsNullOrEmpty(chave)) candidatosFranquia.Add((chave, "", [f]));
+        }
+        foreach (var (pastaChave, itensPasta) in pastasFilme)
+        {
+            // Só considera a pasta inteira pra franquia se TODOS os itens dela concordam na
+            // mesma chave -- uma pasta "filme + extras" onde os títulos não convergem pra uma
+            // franquia só não entra (ex.: 2 cortes/versões do mesmo filme com títulos diferentes).
+            var chavesDaPasta = itensPasta
+                .Select(f => MediaNomeParser.ChaveBaseFranquia(f.Titulo))
+                .Where(c => !string.IsNullOrEmpty(c))
+                .Distinct()
+                .ToList();
+            if (chavesDaPasta.Count == 1) candidatosFranquia.Add((chavesDaPasta[0]!, pastaChave, itensPasta));
+        }
+
+        var gruposFranquia = new List<PastaAgrupada>();
+        var pastasDeFranquiaParaRemover = new List<string>();
+        var idsSoltosDeFranquiaParaRemover = new HashSet<int>();
+        foreach (var grupo in candidatosFranquia.GroupBy(c => c.Chave).Where(g => g.Count() > 1))
+        {
+            var itensDoGrupo = grupo.SelectMany(c => c.Itens).ToList();
+            var nomesBase = new Dictionary<string, int>();
+            foreach (var f in itensDoGrupo)
+            {
+                var nome = MediaNomeParser.NomeBaseFranquia(f.Titulo);
+                nomesBase[nome] = nomesBase.GetValueOrDefault(nome) + 1;
+            }
+            var nomeExibicao = nomesBase
+                .OrderByDescending(nc => nc.Value)
+                .ThenBy(nc => nc.Key, StringComparer.OrdinalIgnoreCase)
+                .First().Key;
+            var itensOrdenados = itensDoGrupo
+                .OrderBy(f => f.AnoLancamento ?? int.MaxValue)
+                .ThenBy(f => f.Titulo, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            gruposFranquia.Add(new PastaAgrupada("franquia:" + grupo.Key, nomeExibicao, itensOrdenados));
+
+            foreach (var c in grupo)
+            {
+                if (c.PastaOrigem.Length > 0) pastasDeFranquiaParaRemover.Add(c.PastaOrigem);
+                else idsSoltosDeFranquiaParaRemover.Add(c.Itens[0].Id);
+            }
+        }
+        foreach (var p in pastasDeFranquiaParaRemover) pastasFilme.Remove(p);
+        if (idsSoltosDeFranquiaParaRemover.Count > 0)
+            filmesSoltos.RemoveAll(f => idsSoltosDeFranquiaParaRemover.Contains(f.Id));
+
         filmesSoltos.Sort((a, b) => string.Compare(a.Titulo, b.Titulo, StringComparison.OrdinalIgnoreCase));
 
         foreach (var lista in series.Values.Select(v => v.Itens))
@@ -151,6 +210,7 @@ public class FilmeService
 
         var pastasOrdenadas = pastasFilme
             .Select(kv => new PastaAgrupada(kv.Key, MediaNomeParser.NomePastaExibicao(kv.Key), kv.Value))
+            .Concat(gruposFranquia)
             .OrderBy(p => p.Nome, StringComparer.OrdinalIgnoreCase)
             .ToList();
 

@@ -64,6 +64,64 @@ public class MontarTelaTests
         Assert.Equal(1, solto.Id);
     }
 
+    // ─── Franquia de filme por título (Homem-Aranha 1 fora da "TRILOGIA", Toy Story) ────
+
+    [Fact]
+    public void Franquia_agrupa_filmes_soltos_cada_um_na_sua_propria_pasta()
+    {
+        // Toy Story real: cada filme mora sozinho na sua própria pasta -- sem pasta-mãe
+        // "Trilogia .../" nenhuma ligando eles.
+        var todos = new List<FilmeResponse>
+        {
+            F(1, "Toy Story", pasta: "Toy Story (1995)"),
+            F(2, "Toy Story 2", pasta: "Toy Story 2 (1999)"),
+            F(3, "Toy Story 3", pasta: "Toy Story 3 (2010)"),
+        };
+        var tela = FilmeService.MontarTela(todos, [], "all", "all", null);
+
+        Assert.Empty(tela.FilmesSoltos);
+        var grupo = Assert.Single(tela.PastasFilme);
+        Assert.Equal("Toy Story", grupo.Nome);
+        Assert.Equal(3, grupo.Itens.Count);
+    }
+
+    [Fact]
+    public void Franquia_junta_filme_solto_com_pasta_de_verdade_da_mesma_franquia()
+    {
+        // Caso real: Homem-Aranha 1 sozinho na própria pasta; 2 e 3 JÁ agrupados numa pasta
+        // de release ("TRILOGIA...", 2 arquivos reais). O filme solto tem que entrar no MESMO
+        // grupo da pasta de verdade, não formar um terceiro grupo à parte.
+        var todos = new List<FilmeResponse>
+        {
+            F(1, "Homem Aranha", pasta: "Homem-Aranha (2002)"),
+            F(2, "Homem Aranha 2", pasta: "TRILOGIA Homem-Aranha"),
+            F(3, "Homem Aranha 3", pasta: "TRILOGIA Homem-Aranha"),
+        };
+        var tela = FilmeService.MontarTela(todos, [], "all", "all", null);
+
+        Assert.Empty(tela.FilmesSoltos);
+        var grupo = Assert.Single(tela.PastasFilme);
+        Assert.Equal("Homem Aranha", grupo.Nome);
+        Assert.Equal(3, grupo.Itens.Count);
+        Assert.Equal([1, 2, 3], grupo.Itens.Select(i => i.Id).OrderBy(i => i));
+    }
+
+    [Fact]
+    public void Franquia_nao_agrupa_titulos_parecidos_sem_marcador_de_sequencia()
+    {
+        // "Poder" e "Poder Absoluto" não têm relação nenhuma -- não podem virar uma
+        // "franquia" só por compartilhar a primeira palavra.
+        var todos = new List<FilmeResponse>
+        {
+            F(1, "Poder", pasta: "Poder (2010)"),
+            F(2, "Poder Absoluto", pasta: "Poder Absoluto (2015)"),
+        };
+        var tela = FilmeService.MontarTela(todos, [], "all", "all", null);
+
+        Assert.Empty(tela.PastasFilme);
+        Assert.Equal(2, tela.FilmesSoltos.Count);
+    }
+
     [Fact]
     public void Episodios_agrupam_por_serieChave_mesmo_com_nomes_de_exibicao_diferentes()
     {

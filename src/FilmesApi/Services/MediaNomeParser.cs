@@ -102,6 +102,14 @@ public static partial class MediaNomeParser
     [GeneratedRegex(@"\bwww\.[a-z0-9-]+\.(?:com|net|org|to|se|xyz|info)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ReDominioSolto();
 
+    // Remove um marcador de sequência solto no FIM do título -- "Homem Aranha 2" -> "Homem
+    // Aranha", "Toy Story 3" -> "Toy Story", "Rocky V" -> "Rocky". Começa em 2 de propósito:
+    // o primeiro filme de uma franquia quase nunca tem "1" no nome. Romano só até X (10),
+    // cobertura realista de sequência de filme -- sem $ maior que isso pra não arriscar
+    // cortar palavra de verdade que termine parecido.
+    [GeneratedRegex(@"\s+(?:(?:parte|part)\s+)?(?:[2-9]|1[0-9]|20|II|III|IV|VI|VII|VIII|IX|X|V)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ReSequenciaFranquia();
+
     // Pasta "coleção" (várias obras, cada uma no seu próprio subdiretório) — "Trilogia",
     // "Quadrilogia" etc. na pasta-mãe. Sem isso, cada filme (sozinho na sua subpasta) nunca
     // bate o limiar de "2+ arquivos" pra virar grupo e some espalhado como filme solto.
@@ -279,6 +287,13 @@ public static partial class MediaNomeParser
         ["t v d"] = "diarios de um vampiro",
     };
 
+    private static string NormalizarAcentoCase(string s)
+    {
+        var sb = new StringBuilder(s.Length);
+        foreach (var c in s) sb.Append(SemAcentoMinuscula(c));
+        return Regex.Replace(sb.ToString(), @"\s+", " ").Trim();
+    }
+
     /// <summary>Chave de agrupamento tolerante a acento/maiúscula/espaço — mesma série
     /// escrita de jeitos ligeiramente diferentes em pastas de fontes diferentes ("Diários de
     /// Um Vampiro" / "Diarios de um vampiro" / "Diários de um Vampiro") cai na mesma chave.
@@ -287,13 +302,25 @@ public static partial class MediaNomeParser
     public static string? ChaveAgrupamento(string? serie)
     {
         if (string.IsNullOrEmpty(serie)) return serie;
-
-        var sb = new StringBuilder(serie.Length);
-        foreach (var c in serie) sb.Append(SemAcentoMinuscula(c));
-
-        var chave = Regex.Replace(sb.ToString(), @"\s+", " ").Trim();
+        var chave = NormalizarAcentoCase(serie);
         return ApelidosSerie.GetValueOrDefault(chave, chave);
     }
+
+    /// <summary>Título sem o marcador de sequência do fim (ver <see cref="ReSequenciaFranquia"/>),
+    /// preservando acento/maiúscula — pra exibir.</summary>
+    public static string NomeBaseFranquia(string titulo) => ReSequenciaFranquia().Replace(titulo, "").TrimEnd();
+
+    /// <summary>Chave de agrupamento de franquia por título — tolerante a acento/maiúscula
+    /// (mesma normalização de <see cref="ChaveAgrupamento"/>), mais o corte do marcador de
+    /// sequência (<see cref="NomeBaseFranquia"/>). Une filmes de uma franquia que moram em
+    /// pastas TOTALMENTE separadas, sem pasta-mãe nenhuma ligando eles — diferente de
+    /// <see cref="RePastaColecao"/>, que só resolve o caso de cada filme numa subpasta DENTRO
+    /// de um wrapper "Trilogia .../". Só corta número/romano de sequência — não é
+    /// correspondência de nome parecido (isso juntaria "Poder" com "Poder Absoluto" à toa);
+    /// sem marcador de sequência no fim, o título passa direto e só bate com uma cópia
+    /// idêntica dele mesmo.</summary>
+    public static string? ChaveBaseFranquia(string? titulo) =>
+        string.IsNullOrEmpty(titulo) ? titulo : NormalizarAcentoCase(NomeBaseFranquia(titulo));
 
     /// <summary>Nome de exibição de uma pasta "filme + extras" (trailer/sample junto) — a
     /// pasta pode estar em qualquer profundidade ("extra/Nome Feio"), só o último segmento

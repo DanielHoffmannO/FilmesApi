@@ -203,6 +203,54 @@ public class MediaNomeParserTests
         Assert.Equal("", MediaNomeParser.ChaveAgrupamento(""));
     }
 
+    // ─── ChaveBaseFranquia/NomeBaseFranquia: franquia de filme por título ───────────────
+    // Caso real: Homem-Aranha 1 numa pasta própria, Homem-Aranha 2 e 3 numa pasta
+    // "TRILOGIA..." separada — sem pasta-mãe nenhuma ligando as três (diferente do caso que
+    // RePastaColecao resolve). Só dá pra juntar comparando o título já limpo.
+
+    [Theory]
+    [InlineData("Homem Aranha 2", "Homem Aranha")]
+    [InlineData("Homem Aranha 3", "Homem Aranha")]
+    [InlineData("Toy Story 2", "Toy Story")]
+    [InlineData("Toy Story 3", "Toy Story")]
+    [InlineData("Rocky V", "Rocky")]
+    [InlineData("Missão Impossível Parte 2", "Missão Impossível")]
+    public void NomeBaseFranquia_corta_o_marcador_de_sequencia_do_fim(string titulo, string esperado)
+    {
+        Assert.Equal(esperado, MediaNomeParser.NomeBaseFranquia(titulo));
+    }
+
+    [Theory]
+    [InlineData("Homem Aranha")]       // sem número no fim -- já é a base, nada pra cortar
+    [InlineData("Toy Story")]
+    [InlineData("Poder")]
+    [InlineData("Poder Absoluto")]     // "Absoluto" não é marcador de sequência nenhum
+    [InlineData("V for Vendetta")]     // "V" no MEIO do título, não sozinho no fim
+    [InlineData("Se7en")]              // dígito colado na palavra, não separado por espaço
+    public void NomeBaseFranquia_titulo_sem_sequencia_fica_igual(string titulo)
+    {
+        Assert.Equal(titulo, MediaNomeParser.NomeBaseFranquia(titulo));
+    }
+
+    [Fact]
+    public void ChaveBaseFranquia_junta_filmes_da_mesma_franquia()
+    {
+        var chaves = new[] { "Homem Aranha", "Homem Aranha 2", "Homem Aranha 3" }
+            .Select(MediaNomeParser.ChaveBaseFranquia).Distinct().ToList();
+        Assert.Single(chaves);
+    }
+
+    // Regressão do próprio risco que motivou não implementar por correspondência de nome
+    // parecido: "Poder" e "Poder Absoluto" NÃO podem cair na mesma chave só por compartilhar
+    // a primeira palavra -- só corte de marcador de sequência conta, não prefixo comum.
+    [Fact]
+    public void ChaveBaseFranquia_nao_confunde_titulos_parecidos_sem_sequencia()
+    {
+        Assert.NotEqual(
+            MediaNomeParser.ChaveBaseFranquia("Poder"),
+            MediaNomeParser.ChaveBaseFranquia("Poder Absoluto"));
+    }
+
     // Regressão real: as 5 pastas de "Diários de Um Vampiro" vieram de fontes diferentes com
     // grafia levemente diferente — sem ChaveAgrupamento normalizando, isso rachava a série em
     // até 3 grupos na tela (visto em produção) em vez de 1 com as 5 temporadas.
