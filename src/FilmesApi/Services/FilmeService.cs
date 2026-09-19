@@ -91,14 +91,20 @@ public class FilmeService
 
         var filmesSoltos = new List<FilmeResponse>();
         var pastasFilme = new Dictionary<string, List<FilmeResponse>>();
-        var series = new Dictionary<string, (string Nome, List<FilmeResponse> Itens)>();
+        // Nomes: conta ocorrência de cada Serie "bruto" dentro do grupo -- decide o nome de
+        // exibição pelo MAIS FREQUENTE (não o primeiro visto), senão um apelido/pasta de
+        // release feia com poucos episódios podia "vencer" a exibição de um grupo com
+        // centenas de episódios só por coincidência de ordem (ver ApelidosSerie).
+        var series = new Dictionary<string, (Dictionary<string, int> Nomes, List<FilmeResponse> Itens)>();
 
         foreach (var f in todos.Where(PassaFiltro))
         {
             if (f.EhEpisodio)
             {
                 var chave = f.SerieChave ?? f.Serie ?? "";
-                if (!series.TryGetValue(chave, out var g)) { g = (f.Serie ?? "", []); series[chave] = g; }
+                if (!series.TryGetValue(chave, out var g)) { g = ([], []); series[chave] = g; }
+                var nome = f.Serie ?? "";
+                g.Nomes[nome] = g.Nomes.GetValueOrDefault(nome) + 1;
                 g.Itens.Add(f);
                 continue;
             }
@@ -137,9 +143,16 @@ public class FilmeService
             .Select(kv => new PastaAgrupada(kv.Key, kv.Value))
             .ToList();
 
+        // Nome de exibição = o mais frequente no grupo; empate resolvido alfabeticamente,
+        // só pra dar um resultado determinístico (não devia acontecer na prática).
+        string NomeMaisFrequente(Dictionary<string, int> nomes) => nomes
+            .OrderByDescending(nc => nc.Value)
+            .ThenBy(nc => nc.Key, StringComparer.OrdinalIgnoreCase)
+            .First().Key;
+
         var seriesOrdenadas = series
-            .OrderBy(kv => kv.Value.Nome, StringComparer.OrdinalIgnoreCase)
-            .Select(kv => new SerieAgrupada(kv.Key, kv.Value.Nome, kv.Value.Itens))
+            .Select(kv => new SerieAgrupada(kv.Key, NomeMaisFrequente(kv.Value.Nomes), kv.Value.Itens))
+            .OrderBy(s => s.Nome, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         return new TelaCatalogoResponse(continuarAssistindo, filmesSoltos, pastasOrdenadas, seriesOrdenadas, todos.Count == 0);

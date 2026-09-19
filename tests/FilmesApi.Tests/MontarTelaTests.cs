@@ -81,6 +81,32 @@ public class MontarTelaTests
         Assert.Equal(2, grupo.Episodios[1].Id);
     }
 
+    // Regressão real: um grupo mesclado (via SerieChave/apelido) tinha nomes "brutos"
+    // diferentes por temporada — "Diários de Um Vampiro" em 127 episódios contra "T V D S07
+    // WWW TORRENTDOSFILMES COM" em só 22. Escolher o PRIMEIRO nome visto (ordem de
+    // DataAdicionado) podia fazer o nome feio da release vencer a exibição só por coincidência
+    // de qual arquivo foi adicionado mais recentemente ao catálogo.
+    [Fact]
+    public void Nome_de_exibicao_da_serie_e_o_mais_frequente_nao_o_primeiro_visto()
+    {
+        var todos = new List<FilmeResponse>();
+        // 3 episódios com o nome feio de release, adicionados ANTES (Id menor = mais antigo
+        // na ordem de inserção da lista, mas isso não deveria importar de qualquer forma).
+        for (var i = 1; i <= 3; i++)
+            todos.Add(F(i, $"{i} - x", ehEpisodio: true,
+                serie: "T V D S07 WWW TORRENTDOSFILMES COM", serieChave: "diarios de um vampiro", temporada: 7, episodio: i));
+        // 10 episódios com o nome "de verdade" -- deve vencer por frequência, mesmo entrando depois.
+        for (var i = 4; i <= 13; i++)
+            todos.Add(F(i, $"{i} - x", ehEpisodio: true,
+                serie: "Diários de Um Vampiro", serieChave: "diarios de um vampiro", temporada: 1, episodio: i));
+
+        var tela = FilmeService.MontarTela(todos, [], "all", "all", null);
+
+        var grupo = Assert.Single(tela.Series);
+        Assert.Equal("Diários de Um Vampiro", grupo.Nome);
+        Assert.Equal(13, grupo.Episodios.Count);
+    }
+
     [Fact]
     public void Filtro_tipo_filme_exclui_episodios()
     {

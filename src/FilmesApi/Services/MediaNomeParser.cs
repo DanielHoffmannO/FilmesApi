@@ -51,8 +51,9 @@ public static partial class MediaNomeParser
 
     // Onde cortar o nome da pasta pra virar o nome da série: no 1º de {temporada, parte N,
     // ano, SxxExx (pasta de release com o episódio embutido no nome, tipo
-    // "Severance.S02E05.1080p.WEB-DL.DUAL.5.1"), "completa/completo", " - ", "["}.
-    [GeneratedRegex(@"\s*(?:[0-9]{1,2}\s*[ªº°]?\s*(?:a\s+)?(?:temporadas?|seasons?)|(?:temporadas?|seasons?)\s*[0-9]{1,2}|parte\s*[0-9]{1,2}|part\s*[0-9]{1,2}|\b[0-9]{1,2}\s*[ªº°]\b|\bS[0-9]{1,2}[\s._-]*E[0-9]{1,3}\b|19[0-9]{2}|20[0-9]{2}|completos?|completas?|complete|\s-\s|\[).*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    // "Severance.S02E05.1080p.WEB-DL.DUAL.5.1"), Sxx solto (só a temporada, sem episódio, tipo
+    // "T.V.D.S07.WWW.TORRENTDOSFILMES.COM"), "completa/completo", " - ", "["}.
+    [GeneratedRegex(@"\s*(?:[0-9]{1,2}\s*[ªº°]?\s*(?:a\s+)?(?:temporadas?|seasons?)|(?:temporadas?|seasons?)\s*[0-9]{1,2}|parte\s*[0-9]{1,2}|part\s*[0-9]{1,2}|\b[0-9]{1,2}\s*[ªº°]\b|\bS[0-9]{1,2}[\s._-]*E[0-9]{1,3}\b|\bS[0-9]{1,2}\b|19[0-9]{2}|20[0-9]{2}|completos?|completas?|complete|\s-\s|\[).*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ReCorteSerie();
 
     // Último segmento da pasta COMEÇA com um marcador de temporada/arco (pode ter mais coisa
@@ -194,10 +195,23 @@ public static partial class MediaNomeParser
         _ => c,
     };
 
+    // Apelido conhecido -> chave canônica. Acento/maiúscula sozinhos não resolvem "The Vampire
+    // Diaries" == "Diários de Um Vampiro" == "T V D" (temporadas da mesma série vieram de 3
+    // fontes com nome em idioma/abreviação diferentes) — são palavras diferentes, não só
+    // grafia diferente. Lista pequena e explícita, cresce sob demanda quando aparecer outro
+    // caso assim na prática; as chaves aqui já estão no formato pós-normalização (minúsculo,
+    // sem acento).
+    private static readonly Dictionary<string, string> ApelidosSerie = new()
+    {
+        ["the vampire diaries"] = "diarios de um vampiro",
+        ["t v d"] = "diarios de um vampiro",
+    };
+
     /// <summary>Chave de agrupamento tolerante a acento/maiúscula/espaço — mesma série
     /// escrita de jeitos ligeiramente diferentes em pastas de fontes diferentes ("Diários de
     /// Um Vampiro" / "Diarios de um vampiro" / "Diários de um Vampiro") cai na mesma chave.
-    /// Só serve pra comparar/agrupar — quem exibe usa <see cref="ChaveSerie"/> sem alterar.</summary>
+    /// Também resolve apelidos conhecidos (<see cref="ApelidosSerie"/>). Só serve pra
+    /// comparar/agrupar — quem exibe usa <see cref="ChaveSerie"/> sem alterar.</summary>
     public static string? ChaveAgrupamento(string? serie)
     {
         if (string.IsNullOrEmpty(serie)) return serie;
@@ -205,7 +219,8 @@ public static partial class MediaNomeParser
         var sb = new StringBuilder(serie.Length);
         foreach (var c in serie) sb.Append(SemAcentoMinuscula(c));
 
-        return Regex.Replace(sb.ToString(), @"\s+", " ").Trim();
+        var chave = Regex.Replace(sb.ToString(), @"\s+", " ").Trim();
+        return ApelidosSerie.GetValueOrDefault(chave, chave);
     }
 
     /// <summary>Classificação completa — o que o <c>FilmeResponse</c> entrega pras telas.</summary>
