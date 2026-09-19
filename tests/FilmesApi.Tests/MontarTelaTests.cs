@@ -43,7 +43,8 @@ public class MontarTelaTests
 
         Assert.Empty(tela.FilmesSoltos);
         var grupo = Assert.Single(tela.PastasFilme);
-        Assert.Equal("Filme (2020)", grupo.Pasta);
+        Assert.Equal("Filme (2020)", grupo.Chave);
+        Assert.Equal("Filme 2020", grupo.Nome);  // NomePastaExibicao tira os parênteses
         Assert.Equal(2, grupo.Itens.Count);
     }
 
