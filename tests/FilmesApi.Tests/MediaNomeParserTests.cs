@@ -58,6 +58,84 @@ public class MediaNomeParserTests
         Assert.Null(MediaNomeParser.OrdemEpisodio(path));
     }
 
+    // ─── OrdemEpisodio com contagem: antologia sem NENHUM marcador de temporada ─────────
+    // Regressão real: "Além da Imaginação" (43 episódios, só "01 Título.avi" — nem hífen/ponto
+    // separando número de título, e nenhuma pasta "Temporada N"/"Season N" em lugar nenhum)
+    // nunca virava série — cada arquivo caía como filme solto e a pasta inteira (43 "filmes")
+    // "achatava" como pasta de filme+extras. Estruturalmente indistinguível de uma coleção de
+    // filme numerada (Coleção Rocky) sem olhar pra QUANTOS arquivos assim tem na pasta.
+
+    [Fact]
+    public void OrdemEpisodio_numero_com_so_espaco_sem_contagem_nao_vira_episodio()
+    {
+        // Sem o parâmetro de contagem (default 0, comportamento de sempre) um "01 Título.avi"
+        // solto continua filme — cobre quem ainda chama OrdemEpisodio(path) só com 1 argumento.
+        Assert.Null(MediaNomeParser.OrdemEpisodio("Extra/Alem da Imaginação/01 O Paraíso Verde.avi"));
+    }
+
+    [Fact]
+    public void OrdemEpisodio_poucos_arquivos_numerados_continua_colecao_de_filme()
+    {
+        // Mesmo formato de nome da Coleção Rocky, mas explícito com a contagem real da pasta
+        // (2) -- bem abaixo do limiar, continua null.
+        Assert.Null(MediaNomeParser.OrdemEpisodio("Colecao Rocky/1 - Rocky (1976).mp4", arquivosNumeradosNaPasta: 2));
+    }
+
+    [Fact]
+    public void OrdemEpisodio_muitos_arquivos_numerados_vira_episodio_mesmo_sem_separador()
+    {
+        var r = MediaNomeParser.OrdemEpisodio(
+            "Extra/Alem da Imaginação/01 O Paraíso Verde.avi", arquivosNumeradosNaPasta: 43);
+        Assert.Equal((0, 1), r);
+    }
+
+    [Fact]
+    public void OrdemEpisodio_pasta_com_temporada_explicita_nunca_usa_o_fallback_de_antologia()
+    {
+        // Se a pasta já diz a temporada, o tier normal (ReEpPrefixo, com separador exigido)
+        // já resolve -- o fallback frouxo de antologia só entra quando NÃO há temporada
+        // nenhuma na pasta, pra não abrir uma porta de falso positivo desnecessária ali.
+        var r = MediaNomeParser.OrdemEpisodio(
+            "Show 2 Temporada/01 Sem Separador.mkv", arquivosNumeradosNaPasta: 43);
+        Assert.Null(r);
+    }
+
+    [Fact]
+    public void ContarNumeradosPorPasta_agrupa_por_pasta_e_ignora_nomes_sem_numero()
+    {
+        var contagem = MediaNomeParser.ContarNumeradosPorPasta([
+            "Extra/Alem da Imaginação/01 Título.avi",
+            "Extra/Alem da Imaginação/02 Título.avi",
+            "Colecao Rocky/1 - Rocky (1976).mp4",
+            "Filmes/Interestelar (2014).mkv",  // sem número no início -- não conta
+            null,
+        ]);
+
+        Assert.Equal(2, contagem["Extra/Alem da Imaginação"]);
+        Assert.Equal(1, contagem["Colecao Rocky"]);
+        Assert.False(contagem.ContainsKey("Filmes"));
+    }
+
+    [Fact]
+    public void Classificar_usa_a_contagem_pra_decidir_antologia()
+    {
+        // Título sem nenhuma outra palavra-gatilho ("Episódio"/"Capítulo" já bate ReEpNum
+        // sozinho, sem precisar da contagem) -- só o número solto no início mesmo.
+        var arquivos = Enumerable.Range(1, 20)
+            .Select(i => $"Extra/Alem da Imaginação/{i:00} Um Titulo Qualquer {i}.avi")
+            .ToList();
+        var contagem = MediaNomeParser.ContarNumeradosPorPasta(arquivos);
+
+        var c = MediaNomeParser.Classificar(arquivos[0], "01 Um Titulo Qualquer 1");
+
+        Assert.False(c.EhEpisodio);  // sem passar a contagem, comportamento de sempre
+
+        var comContagem = MediaNomeParser.Classificar(arquivos[0], "01 Um Titulo Qualquer 1", contagem);
+        Assert.True(comContagem.EhEpisodio);
+        Assert.Equal(0, comContagem.Temporada);
+        Assert.Equal(1, comContagem.Episodio);
+    }
+
     // ─── ChaveSerie: nome pra agrupar ───────────────────────────────────
 
     [Theory]

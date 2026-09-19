@@ -36,10 +36,12 @@ public class FilmeService
             f.PosterUrl, f.Sinopse, f.TituloOriginal,
             false, false, null, null, null, null, "", "Sem pasta");
 
-    /// <summary>Preenche série/episódio/rótulo a partir do caminho do arquivo.</summary>
-    public static FilmeResponse ComClassificacao(FilmeResponse f)
+    /// <summary>Preenche série/episódio/rótulo a partir do caminho do arquivo.
+    /// <paramref name="contagemNumeradosPorPasta"/> — ver <see cref="MediaNomeParser.ContarNumeradosPorPasta"/>,
+    /// calculado uma vez sobre o catálogo inteiro por quem chama em lote (<see cref="ListarAsync"/>).</summary>
+    public static FilmeResponse ComClassificacao(FilmeResponse f, IReadOnlyDictionary<string, int>? contagemNumeradosPorPasta = null)
     {
-        var c = MediaNomeParser.Classificar(f.ArquivoPath, f.Titulo);
+        var c = MediaNomeParser.Classificar(f.ArquivoPath, f.Titulo, contagemNumeradosPorPasta);
         return f with
         {
             EhEpisodio = c.EhEpisodio,
@@ -59,7 +61,16 @@ public class FilmeService
         if (assistido.HasValue) query = query.Where(f => f.Assistido == assistido.Value);
 
         var lista = await query.OrderByDescending(f => f.DataAdicionado).Select(ToResponse).ToListAsync();
-        return lista.Select(ComClassificacao).ToList();
+
+        // Sobre o catálogo INTEIRO, não só a lista (possivelmente filtrada por "assistido"
+        // acima) — a decisão "essa pasta é antologia" não pode depender de quantos episódios
+        // já foram marcados como vistos.
+        var todosOsCaminhos = assistido.HasValue
+            ? await _db.Filmes.AsNoTracking().Select(f => f.ArquivoPath).ToListAsync()
+            : lista.Select(f => f.ArquivoPath);
+        var contagem = MediaNomeParser.ContarNumeradosPorPasta(todosOsCaminhos);
+
+        return lista.Select(f => ComClassificacao(f, contagem)).ToList();
     }
 
     /// <summary>Filtra (tipo/visto/busca) e agrupa (filme solto / pasta filme+extras / série)
@@ -158,14 +169,12 @@ public class FilmeService
         return new TelaCatalogoResponse(continuarAssistindo, filmesSoltos, pastasOrdenadas, seriesOrdenadas, todos.Count == 0);
     }
 
-    public async Task<FilmeResponse?> ObterAsync(int id)
-    {
-        var f = await _db.Filmes.AsNoTracking()
-            .Where(f => f.Id == id)
-            .Select(ToResponse)
-            .FirstOrDefaultAsync();
-        return f is null ? null : ComClassificacao(f);
-    }
+    /// <summary>Via <see cref="ListarAsync"/> (não uma query própria) de propósito — classificar
+    /// só este filme sem saber quantos irmãos numerados a pasta tem daria um resultado diferente
+    /// do que a lista mostra pra pasta tipo antologia sem marcador de temporada (ver
+    /// <see cref="MediaNomeParser.ContarNumeradosPorPasta"/>).</summary>
+    public async Task<FilmeResponse?> ObterAsync(int id) =>
+        (await ListarAsync()).FirstOrDefault(f => f.Id == id);
 
     public Task<bool> ExisteAsync(int id) => _db.Filmes.AnyAsync(f => f.Id == id);
 
