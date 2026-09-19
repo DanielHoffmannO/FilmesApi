@@ -221,7 +221,7 @@ async function render() {
     html += `<div class="secao"><div class="secao-title">🎬 Filmes <span class="count">(${totalFilmes})</span></div><div class="lista">`;
     html += t.filmesSoltos.map(f => rowHtml(f)).join('');
     html += t.pastasFilme.map(p =>
-      grupo('f:' + p.pasta, `📁 ${esc(p.pasta)} <span class="count">(${p.itens.length} arquivos)</span>`,
+      grupo('f:' + p.chave, `📁 ${esc(p.nome)} <span class="count">(${p.itens.length} arquivos)</span>`,
         p.itens.map(f => rowHtml(f)).join(''))
     ).join('');
     html += `</div></div>`;

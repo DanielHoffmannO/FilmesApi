@@ -80,6 +80,16 @@ public static partial class MediaNomeParser
     [GeneratedRegex(@"[._]+", RegexOptions.CultureInvariant)]
     private static partial Regex RePontos();
 
+    // Propaganda de site dentro de colchete/parênteses ("[ACESSE COMANDOTORRENTS.COM]",
+    // "(baixe em www.site.com)") — só remove quando tem palavra-gatilho ou domínio dentro,
+    // nunca um colchete às cegas (um filme pode legitimamente ter "[Extended]" no nome).
+    [GeneratedRegex(@"[\[(][^\[\]()]*(?:acesse|baix(?:e|ar)|download|www\.|\.(?:com|net|org|tv|to|se|xyz|info)\b)[^\[\]()]*[\])]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ReAnuncioSite();
+
+    // Assinatura de grupo de release bem no fim do nome ("-RICKSZ", "-STARCKFILMES").
+    [GeneratedRegex(@"-[A-Z0-9]{3,}$", RegexOptions.CultureInvariant)]
+    private static partial Regex ReAssinaturaRelease();
+
     private static string NomeArquivo(string? path) =>
         string.IsNullOrEmpty(path) ? "" : Regex.Replace(path, @"^.*/", "");
 
@@ -221,6 +231,27 @@ public static partial class MediaNomeParser
 
         var chave = Regex.Replace(sb.ToString(), @"\s+", " ").Trim();
         return ApelidosSerie.GetValueOrDefault(chave, chave);
+    }
+
+    /// <summary>Nome de exibição de uma pasta "filme + extras" (trailer/sample junto) — a
+    /// pasta pode estar em qualquer profundidade ("extra/Nome Feio"), só o último segmento
+    /// importa pra exibir. Tira ponto/underscore, propaganda de site entre colchetes,
+    /// qualidade/codec (<see cref="ReRuido"/>) e assinatura de release no fim. Só pra
+    /// exibir — o agrupamento continua pelo caminho relativo completo (<c>Pasta</c> bruto),
+    /// que já é único por pasta real.</summary>
+    public static string NomePastaExibicao(string pasta)
+    {
+        var i = pasta.LastIndexOf('/');
+        var basename = i >= 0 ? pasta[(i + 1)..] : pasta;
+
+        var nome = RePontos().Replace(basename, " ");
+        nome = ReAnuncioSite().Replace(nome, " ");
+        nome = ReRuido().Replace(nome, " ");
+        nome = ReAssinaturaRelease().Replace(nome, "");
+        nome = Regex.Replace(nome, @"[\[\]()]+", " ");
+        nome = Regex.Replace(nome, @"\s+", " ").Trim(' ', '-', '–', '—');
+
+        return nome.Length > 0 ? nome : basename;
     }
 
     /// <summary>Classificação completa — o que o <c>FilmeResponse</c> entrega pras telas.</summary>
