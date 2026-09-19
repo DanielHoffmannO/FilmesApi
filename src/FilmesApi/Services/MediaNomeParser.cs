@@ -116,6 +116,14 @@ public static partial class MediaNomeParser
     [GeneratedRegex(@"\b(?:trilogia|tetralogia|quadrilogia|pentalogia|hexalogia|colecao|coleção|coletanea|coletânea|antologia|saga|box)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex RePastaColecao();
 
+    // Domínio do uploader NO COMEÇO do nome da pasta, tipo "COMANDO.TO - Contos do Loop
+    // 1ª Temporada...": ao contrário do ReAnuncioSite/ReDominioSolto (ruído no meio/fim que só
+    // precisa sumir), aqui o de-antes-do-" - " É o ruído e o nome de verdade vem DEPOIS —
+    // cortar do jeito normal (que assume ruído depois de um prefixo limpo) devolvia "COMANDO
+    // TO" como se fosse a série, perdendo "Contos do Loop" de vez.
+    [GeneratedRegex(@"^\s*[a-z0-9-]+\.(?:com|net|org|to|se|xyz|info|tv)\s*-\s*", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ReSiteNoComeco();
+
     // Número solto no início do nome, aceitando só espaço como separador ("01 O Paraíso
     // Verde.avi", sem hífen/ponto/dois-pontos nenhum) — mais permissivo que ReEpPrefixo de
     // propósito. Só é consultado quando ContarNumeradosPorPasta já garantiu que a pasta tem
@@ -235,14 +243,22 @@ public static partial class MediaNomeParser
     public static string ChaveSerie(string? arquivoPath)
     {
         var segs = SegmentosPasta(arquivoPath);
-        if (segs.Length > 0)
+        // Sobe da pasta mais interna pra mais externa. Cada nível: se É só um marcador de
+        // temporada/arco (season/livro/parte...), pula pro pai sem nem tentar limpar aqui —
+        // mesma ideia de antes. Senão, tenta limpar; se sobrar nome (não ficou vazio), é a
+        // série. Se limpar tudo (o segmento era só "7ª Temporada - Completa - SITE.COM", tipo
+        // ordinal+temporada ANTES de qualquer palavra, que ReCorteSerie também casa), sobe mais
+        // um nível em vez de cair no fallback de "arquivo solto" — sem isso, "Hora da Aventura
+        // - SITE/7ª Temporada - Completa - SITE/S07E05....mkv" nunca alcançava "Hora da
+        // Aventura": o nível do meio limpava pra "" e o código antigo já tinha desistido ali.
+        for (var idx = segs.Length - 1; idx >= 0; idx--)
         {
-            // "Serie/Season 1/ep.mkv" -> usa "Serie"
-            var baseSeg = segs[^1];
-            if (segs.Length > 1 && (ReSegmentoTemporadaPrefixo().IsMatch(baseSeg) || ReSegmentoTemporadaExata().IsMatch(baseSeg)))
-                baseSeg = segs[^2];
+            var seg = segs[idx];
+            if (idx > 0 && (ReSegmentoTemporadaPrefixo().IsMatch(seg) || ReSegmentoTemporadaExata().IsMatch(seg)))
+                continue;
 
-            var nome = RePontos().Replace(baseSeg, " ");
+            var nome = ReSiteNoComeco().Replace(seg, "");
+            nome = RePontos().Replace(nome, " ");
             nome = ReCorteSerie().Replace(nome, "").Trim(' ', '-', '–', '—');
             if (nome.Length > 0) return nome;
         }
@@ -285,6 +301,9 @@ public static partial class MediaNomeParser
     {
         ["the vampire diaries"] = "diarios de um vampiro",
         ["t v d"] = "diarios de um vampiro",
+        // "Hora da Aventura" (grafia de release, preposição errada) vs "Hora de Aventura"
+        // (título oficial BR de Adventure Time) — mesma série, palavra diferente.
+        ["hora da aventura"] = "hora de aventura",
     };
 
     private static string NormalizarAcentoCase(string s)
