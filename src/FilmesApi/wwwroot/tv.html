@@ -334,7 +334,7 @@ video { width: 100%; height: auto; background: #000; }
         for (i = 0; i < t.pastasFilme.length; i++) {
           var pasta = t.pastasFilme[i], peps = '';
           for (j = 0; j < pasta.itens.length; j++) peps += itemHtml(pasta.itens[j]);
-          html += grpHtml('f:' + pasta.pasta, esc(pasta.pasta) + ' (' + pasta.itens.length + ' arquivos)', peps);
+          html += grpHtml('f:' + pasta.chave, esc(pasta.nome) + ' (' + pasta.itens.length + ' arquivos)', peps);
         }
       }
 
