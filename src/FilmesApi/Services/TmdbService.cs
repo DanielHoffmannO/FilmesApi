@@ -57,6 +57,14 @@ public class TmdbService
         resp.EnsureSuccessStatusCode();  // 5xx/429 -> exceção -> filme fica pendente
 
         using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+        return InterpretarResposta(doc, serie, _imgBase);
+    }
+
+    /// <summary>Extrai o 1º resultado da busca (título/sinopse/pôster), ou null quando não há
+    /// resultado utilizável. Pura — sem rede — pra testar contra JSON de exemplo sem precisar
+    /// bater no TMDB de verdade.</summary>
+    internal static TmdbResultado? InterpretarResposta(JsonDocument doc, bool serie, string imgBase)
+    {
         if (!doc.RootElement.TryGetProperty("results", out var results)
             || results.ValueKind != JsonValueKind.Array || results.GetArrayLength() == 0)
             return null;
@@ -76,7 +84,7 @@ public class TmdbService
             Vazio(tituloLimpo),
             Vazio(original),
             Vazio(sinopse),
-            string.IsNullOrEmpty(posterPath) ? null : _imgBase + posterPath);
+            string.IsNullOrEmpty(posterPath) ? null : imgBase + posterPath);
     }
 
     private static string? Vazio(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
