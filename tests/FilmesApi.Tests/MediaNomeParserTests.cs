@@ -171,6 +171,49 @@ public class MediaNomeParserTests
             MediaNomeParser.ChaveAgrupamento(apelido));
     }
 
+    // ─── NomePastaExibicao: nome limpo de pasta filme+extras ────────────
+
+    [Fact]
+    public void NomePastaExibicao_tira_o_prefixo_de_diretorio()
+    {
+        Assert.Equal("Alem da Imaginação", MediaNomeParser.NomePastaExibicao("extra/Alem da Imaginação"));
+    }
+
+    // Regressão real: pasta com pontos, tag de qualidade e assinatura de release solta no fim
+    // aparecia crua na tela ("extra/TRILOGIA.Homem-Aranha.1080p-RICKSZ").
+    [Fact]
+    public void NomePastaExibicao_tira_pontos_qualidade_e_assinatura_de_release()
+    {
+        Assert.Equal("TRILOGIA Homem-Aranha",
+            MediaNomeParser.NomePastaExibicao("extra/TRILOGIA.Homem-Aranha.1080p-RICKSZ"));
+    }
+
+    // Regressão real: propaganda de site dentro de colchete ("[ACESSE COMANDOTORRENTS.COM]")
+    // aparecia junto do nome do filme; as outras tags entre colchetes ([1080p], [WEB-DL],
+    // [NACIONAL]) tem que sumir também sem deixar colchete vazio pra trás.
+    [Fact]
+    public void NomePastaExibicao_tira_propaganda_de_site_e_tags_entre_colchetes()
+    {
+        var nome = MediaNomeParser.NomePastaExibicao(
+            "extra/[ACESSE COMANDOTORRENTS.COM] Democracia em Vertigem 2019 [1080p] [WEB-DL] [NACIONAL]");
+        Assert.Equal("Democracia em Vertigem 2019", nome);
+    }
+
+    [Fact]
+    public void NomePastaExibicao_nao_remove_colchete_legitimo_sem_palavra_gatilho()
+    {
+        // "[Extended]" não tem gatilho de propaganda (acesse/baixe/download/www/domínio) --
+        // não pode ser removido só por estar entre colchetes.
+        var nome = MediaNomeParser.NomePastaExibicao("Filme [Extended]");
+        Assert.Contains("Extended", nome);
+    }
+
+    [Fact]
+    public void NomePastaExibicao_pasta_ja_limpa_fica_igual()
+    {
+        Assert.Equal("Nome Normal", MediaNomeParser.NomePastaExibicao("Nome Normal"));
+    }
+
     // ─── Classificar: o pacote que vai pro FilmeResponse ────────────────
 
     [Fact]

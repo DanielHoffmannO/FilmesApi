@@ -139,8 +139,8 @@ public class FilmeService
             });
 
         var pastasOrdenadas = pastasFilme
-            .OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
-            .Select(kv => new PastaAgrupada(kv.Key, kv.Value))
+            .Select(kv => new PastaAgrupada(kv.Key, MediaNomeParser.NomePastaExibicao(kv.Key), kv.Value))
+            .OrderBy(p => p.Nome, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         // Nome de exibição = o mais frequente no grupo; empate resolvido alfabeticamente,

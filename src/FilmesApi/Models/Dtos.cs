@@ -13,8 +13,11 @@ public record FilmeResponse(
 
 public record ScanResultado(int Importados, int Removidos, int TitulosLimpos = 0);
 
-/// <summary>Pasta com 2+ arquivos sem episódio (filme + extras: trailer, sample…).</summary>
-public record PastaAgrupada(string Pasta, List<FilmeResponse> Itens);
+/// <summary>Pasta com 2+ arquivos sem episódio (filme + extras: trailer, sample…). <c>Chave</c>
+/// é o caminho relativo bruto (único por pasta real, id de UI pra expandir/colapsar).
+/// <c>Nome</c> é <see cref="Services.MediaNomeParser.NomePastaExibicao"/> — só o nome da
+/// pasta, sem prefixo de diretório nem ruído de release, pra exibir.</summary>
+public record PastaAgrupada(string Chave, string Nome, List<FilmeResponse> Itens);
 
 /// <summary>Uma série com seus episódios já ordenados (temporada, episódio, título).
 /// <c>Chave</c> é <see cref="Services.MediaNomeParser.ChaveAgrupamento"/> — estável entre
