@@ -244,10 +244,16 @@ public static partial class MediaNomeParser
         var i = pasta.LastIndexOf('/');
         var basename = i >= 0 ? pasta[(i + 1)..] : pasta;
 
+        // ReAssinaturaRelease só entra se a pasta já tem outro indício de nome de release
+        // (ponto/underscore separando tokens, ou tag de qualidade/codec) -- sem isso, um nome
+        // limpo tipo "X-MEN" ou "K-PAX" (comuns de verdade) teria o final maiúsculo cortado
+        // igual a uma assinatura de grupo de release, virando "X"/"K" na tela.
+        var pareceRelease = basename.Contains('.') || basename.Contains('_') || ReRuido().IsMatch(basename);
+
         var nome = RePontos().Replace(basename, " ");
         nome = ReAnuncioSite().Replace(nome, " ");
         nome = ReRuido().Replace(nome, " ");
-        nome = ReAssinaturaRelease().Replace(nome, "");
+        if (pareceRelease) nome = ReAssinaturaRelease().Replace(nome, "");
         nome = Regex.Replace(nome, @"[\[\]()]+", " ");
         nome = Regex.Replace(nome, @"\s+", " ").Trim(' ', '-', '–', '—');
 

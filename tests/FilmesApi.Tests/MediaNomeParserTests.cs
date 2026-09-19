@@ -208,6 +208,19 @@ public class MediaNomeParserTests
         Assert.Contains("Extended", nome);
     }
 
+    // Regressão: ReAssinaturaRelease ("-RICKSZ") sozinha cortava qualquer final maiúsculo de
+    // 3+ letras/dígitos, inclusive títulos de filme de verdade que terminam assim -- "X-MEN"
+    // virava "X", "K-PAX" virava "K". Só corta quando a pasta já tem outro indício de nome de
+    // release (ponto/underscore, ou tag de qualidade/codec como "1080p"/"WEB-DL").
+    [Theory]
+    [InlineData("X-MEN")]
+    [InlineData("K-PAX")]
+    [InlineData("Mad-MAX")]
+    public void NomePastaExibicao_nao_corta_titulo_de_filme_so_por_terminar_em_maiuscula(string titulo)
+    {
+        Assert.Equal(titulo, MediaNomeParser.NomePastaExibicao(titulo));
+    }
+
     [Fact]
     public void NomePastaExibicao_pasta_ja_limpa_fica_igual()
     {
