@@ -143,6 +143,34 @@ public class MediaNomeParserTests
         Assert.Single(chaves);
     }
 
+    // Regressão real: "T.V.D.S07.WWW.TORRENTDOSFILMES.COM/The.Vampire.Diaries.S07E01....mkv" —
+    // ReCorteSerie só cortava em "SxxExx" completo (episódio embutido) ou "Temporada N"/"Season
+    // N" por extenso; "S07" sozinho (comum em pasta de release) não disparava nada, e a pasta
+    // inteira (com "WWW.TORRENTDOSFILMES.COM" e tudo) virava o nome da série.
+    [Fact]
+    public void ChaveSerie_corta_temporada_solta_tipo_S07_sem_episodio_embutido()
+    {
+        var chave = MediaNomeParser.ChaveSerie(
+            "T.V.D.S07.WWW.TORRENTDOSFILMES.COM/The.Vampire.Diaries.S07E01.WEB-DL.720p.Dual.TORRENTDOSFILMES.COM.mkv");
+        Assert.Equal("T V D", chave);
+    }
+
+    // Regressão real: a mesma série ("Diários de Um Vampiro") tinha temporadas em 3 nomes
+    // fundamentalmente diferentes (não só acento/maiúscula) — "Diários de Um Vampiro" (PT),
+    // "The Vampire Diaries" (EN) e "T V D" (abreviação de release) — cada um virando uma
+    // "série" separada na tela. ChaveAgrupamento sozinha (acento/case) não resolve isso.
+    [Theory]
+    [InlineData("The Vampire Diaries")]
+    [InlineData("the vampire diaries")]
+    [InlineData("T V D")]
+    [InlineData("t v d")]
+    public void ChaveAgrupamento_resolve_apelidos_conhecidos_pra_chave_canonica(string apelido)
+    {
+        Assert.Equal(
+            MediaNomeParser.ChaveAgrupamento("Diários de Um Vampiro"),
+            MediaNomeParser.ChaveAgrupamento(apelido));
+    }
+
     // ─── Classificar: o pacote que vai pro FilmeResponse ────────────────
 
     [Fact]
