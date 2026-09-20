@@ -28,7 +28,10 @@ public record ClassificacaoMidia(
 public static partial class MediaNomeParser
 {
     // \d -> [0-9] de propósito: casa só dígito ASCII (o \d do .NET casaria dígito Unicode).
-    [GeneratedRegex(@"\bS([0-9]{1,2})[\s._-]*E([0-9]{1,3})\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    // "(?:E[0-9]{1,3})*" no fim: episódio combinado tipo "S07E14E15" (2 episódios grudados
+    // num arquivo só) — usa o PRIMEIRO número (14) como representante, só pra não sobrar
+    // como "filme" solto por não bater SxxExx nenhum.
+    [GeneratedRegex(@"\bS([0-9]{1,2})[\s._-]*E([0-9]{1,3})(?:E[0-9]{1,3})*\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ReSxxExx();
 
     [GeneratedRegex(@"(?:^|[^0-9xX])([0-9]{1,2})x([0-9]{1,3})(?:[^0-9pP]|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
@@ -37,11 +40,21 @@ public static partial class MediaNomeParser
     [GeneratedRegex(@"\b(?:epis[oó]dios?|episodes?|cap[ií]tulos?)\.?\s*([0-9]{1,3})\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ReEpNum();
 
+    // "Temp 01 - Epi 03 - Título.mkv" / "Temp 05p1 - Epi 08 - Título.mkv" (a parte "p1"/"p2"
+    // de release dividida em 2 é ignorada — mesma temporada, sem token de temporada/episódio
+    // por extenso nem abreviação "S/E", mas inequívoco (mesmo padrão em todo o catálogo:
+    // Hora de Aventura T1-5, Apenas um Show T1). Prioridade alta: roda antes até de olhar a
+    // pasta, é auto-suficiente com temporada E episódio no próprio nome do arquivo.
+    [GeneratedRegex(@"\bTemp\.?\s*([0-9]{1,2})(?:p[0-9])?\s*[-–—.]\s*Epi\.?\s*([0-9]{1,3})\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ReTempEpi();
+
     // Número solto no começo do nome do arquivo: "8 - I See You", "08. Título", "E08 - x",
     // "[12] Título" (colchete já é delimitador — não precisa de separador depois). Fora do
     // colchete, exige separador logo após o número, pra não pegar "1917" nem "2001 A Space
-    // Odyssey". Só é usado quando a PASTA tem marcador de temporada.
-    [GeneratedRegex(@"^\s*(?:\[\s*([0-9]{1,3})\s*\]|(?:e|ep|epis[oó]dio|cap[ií]tulo)?\s*([0-9]{1,3})\s*[-–—.):]\s)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    // Odyssey". "(?:E[0-9]{1,3})*" antes do separador: episódio combinado sem "S" na frente
+    // ("13E14E15E16 - Venha Comigo" — 4 episódios grudados, usa 13 como representante). Só é
+    // usado quando a PASTA tem marcador de temporada.
+    [GeneratedRegex(@"^\s*(?:\[\s*([0-9]{1,3})\s*\]|(?:e|ep|epis[oó]dio|cap[ií]tulo)?\s*([0-9]{1,3})(?:E[0-9]{1,3})*\s*[-–—.):]\s)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ReEpPrefixo();
 
     // Temporada indicada só na pasta: "3 Temporada", "3ª Temporada", "Temporada 3",
@@ -77,7 +90,7 @@ public static partial class MediaNomeParser
     // "TorrentDosFilmes.SE.mp4") — não é o filme, é propaganda solta que o uploader incluiu
     // junto (o real costuma vir como .url/.png, mas às vezes vem com extensão de vídeo de
     // verdade e passa pelo scan como se fosse um filme a mais na pasta).
-    [GeneratedRegex(@"^[a-z0-9-]+\.(?:com|net|org|to|se|xyz|info)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[a-z0-9-]+\.(?:com|net|org|to|se|la|xyz|info)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ReNomeEhSoDominio();
 
     // Tokens de qualidade/codec/origem que não fazem parte do nome da obra (pra busca no TMDB).
@@ -90,7 +103,7 @@ public static partial class MediaNomeParser
     // Propaganda de site dentro de colchete/parênteses ("[ACESSE COMANDOTORRENTS.COM]",
     // "(baixe em www.site.com)") — só remove quando tem palavra-gatilho ou domínio dentro,
     // nunca um colchete às cegas (um filme pode legitimamente ter "[Extended]" no nome).
-    [GeneratedRegex(@"[\[(][^\[\]()]*(?:acesse|baix(?:e|ar)|download|www\.|\.(?:com|net|org|tv|to|se|xyz|info)\b)[^\[\]()]*[\])]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"[\[(][^\[\]()]*(?:acesse|baix(?:e|ar)|download|www\.|\.(?:com|net|org|tv|to|se|la|xyz|info)\b)[^\[\]()]*[\])]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ReAnuncioSite();
 
     // Assinatura de grupo de release bem no fim do nome ("-RICKSZ", "-STARCKFILMES").
@@ -99,7 +112,7 @@ public static partial class MediaNomeParser
 
     // "WWW.SITE.COM" solto (sem colchete/parênteses ao redor) grudado no nome — mesma ideia
     // do ReAnuncioSite, mas pro caso mais comum de vir sem colchete nenhum.
-    [GeneratedRegex(@"\bwww\.[a-z0-9-]+\.(?:com|net|org|to|se|xyz|info)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"\bwww\.[a-z0-9-]+\.(?:com|net|org|to|se|la|xyz|info)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ReDominioSolto();
 
     // Remove um marcador de sequência solto no FIM do título -- "Homem Aranha 2" -> "Homem
@@ -121,7 +134,7 @@ public static partial class MediaNomeParser
     // precisa sumir), aqui o de-antes-do-" - " É o ruído e o nome de verdade vem DEPOIS —
     // cortar do jeito normal (que assume ruído depois de um prefixo limpo) devolvia "COMANDO
     // TO" como se fosse a série, perdendo "Contos do Loop" de vez.
-    [GeneratedRegex(@"^\s*[a-z0-9-]+\.(?:com|net|org|to|se|xyz|info|tv)\s*-\s*", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^\s*[a-z0-9-]+\.(?:com|net|org|to|se|la|xyz|info|tv)\s*-\s*", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ReSiteNoComeco();
 
     // Número solto no início do nome, aceitando só espaço como separador ("01 O Paraíso
@@ -211,6 +224,9 @@ public static partial class MediaNomeParser
         var nome = SemExtensao(NomeArquivo(arquivoPath));
 
         var m = ReSxxExx().Match(nome);
+        if (m.Success) return (ParseInt(m.Groups[1].Value), ParseInt(m.Groups[2].Value));
+
+        m = ReTempEpi().Match(nome);
         if (m.Success) return (ParseInt(m.Groups[1].Value), ParseInt(m.Groups[2].Value));
 
         m = ReNxNN().Match(nome);
@@ -421,6 +437,10 @@ public static partial class MediaNomeParser
     {
         var n = SemExtensao(NomeArquivo(arquivoPath));
         if (string.IsNullOrWhiteSpace(n)) n = tituloFallback ?? "";
+        // Domínio do uploader grudado no COMEÇO do nome do arquivo ("COMANDO.LA-Ainda.Estou...")
+        // — mesmo problema do ReSiteNoComeco em ChaveSerie, mas aqui é o título do filme.
+        // Antes de RePontos: o "." antes do TLD é o sinal que a regex procura.
+        n = ReSiteNoComeco().Replace(n, "");
         n = RePontos().Replace(n, " ");
 
         // "8 - I See You" -> "I See You": num de episódio no começo é ruído aqui

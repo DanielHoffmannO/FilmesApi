@@ -263,19 +263,50 @@ public class MontarTelaTests
     public void Contagem_de_pasta_pro_limiar_de_agrupar_usa_a_lista_inteira()
     {
         // porPasta é calculado sobre TODOS os arquivos, não só os que passaram na busca --
-        // senão uma busca que esconde 1 de 2 arquivos reais faria a pasta "achatar" sozinha
-        // (limiar de agrupar cairia de 2 pra 1) mesmo com os 2 arquivos reais ainda existindo.
+        // senão uma busca que esconde 1 dos 3 arquivos reais faria a pasta "achatar" sozinha
+        // (limiar de agrupar cairia) mesmo com os 3 arquivos reais ainda existindo.
         var todos = new List<FilmeResponse>
         {
-            F(1, "Filme Principal", pasta: "Filme (2020)"),
-            F(2, "Filme Trailer", pasta: "Filme (2020)", ehExtra: true),
+            F(1, "Filme Parte Um", pasta: "Filme (2020)"),
+            F(2, "Filme Parte Dois", pasta: "Filme (2020)"),
+            F(3, "Filme Trailer", pasta: "Filme (2020)", ehExtra: true),
         };
-        // busca só bate o trailer -- o principal (não-extra) fica de fora do filtrado
-        var tela = FilmeService.MontarTela(todos, [], "all", "all", "trailer");
+        // busca bate as 2 partes reais, não bate o trailer
+        var tela = FilmeService.MontarTela(todos, [], "all", "all", "parte");
 
-        // porPasta (da lista inteira) = 2 > 1 -> ainda tenta agrupar como pasta, não filme solto
         var grupo = Assert.Single(tela.PastasFilme);
-        Assert.Single(grupo.Itens);
-        Assert.Equal(2, grupo.Itens[0].Id);
+        Assert.Equal(2, grupo.Itens.Count);
+    }
+
+    // Regressão real: pasta "COMANDO.TO - Contos do Loop..." tinha 8 arquivos -- 7 viraram
+    // episódio de série (saem do caminho de agrupar filme totalmente) e sobrou 1 só, um vídeo
+    // de propaganda do uploader (EhExtra=true). Sem essa checagem, esse arquivo sozinho
+    // formava uma "pasta de filme" com puro lixo dentro, sem filme real nenhum pra mostrar.
+    [Fact]
+    public void Pasta_onde_sobrou_so_extra_e_descartada_inteira()
+    {
+        var todos = new List<FilmeResponse>
+        {
+            F(1, "Ep1", pasta: "Serie Pasta", ehEpisodio: true, serie: "Serie", serieChave: "serie"),
+            F(2, "1XBET.COM promo", pasta: "Serie Pasta", ehExtra: true),
+        };
+        var tela = FilmeService.MontarTela(todos, [], "all", "all", null);
+
+        Assert.Empty(tela.PastasFilme);
+        Assert.Empty(tela.FilmesSoltos);
+        Assert.Single(tela.Series);
+    }
+
+    // Regressão: um trailer/sample/propaganda sozinho (sem pasta, ou pasta que nunca bateu o
+    // limiar de 2+) não tem filme nenhum pra "pertencer" -- não devia aparecer na lista como
+    // se fosse um filme de verdade.
+    [Fact]
+    public void Extra_solto_sem_pasta_nao_aparece_como_filme()
+    {
+        var todos = new List<FilmeResponse> { F(1, "Sample", ehExtra: true) };
+        var tela = FilmeService.MontarTela(todos, [], "all", "all", null);
+
+        Assert.Empty(tela.FilmesSoltos);
+        Assert.Empty(tela.PastasFilme);
     }
 }

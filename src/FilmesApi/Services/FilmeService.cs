@@ -124,18 +124,21 @@ public class FilmeService
                 if (!pastasFilme.TryGetValue(f.Pasta, out var lista)) { lista = []; pastasFilme[f.Pasta] = lista; }
                 lista.Add(f);
             }
-            else filmesSoltos.Add(f);
+            // Extra sozinho (sem pasta, ou pasta que não bateu o limiar de 2+) não tem filme
+            // nenhum pra "pertencer" — não faz sentido mostrar um trailer/sample como se fosse
+            // um filme à parte.
+            else if (!f.EhExtra) filmesSoltos.Add(f);
         }
 
-        // pasta com 1 filme "de verdade" + só extras (trailer/sample) -> mostra o filme direto
+        // pasta com 1 filme "de verdade" + resto extra (trailer/sample) -> mostra o filme
+        // direto. Pasta com 0 filme de verdade (ex.: todo o conteúdo real da pasta virou
+        // episódio de série — sobrou só um promo/propaganda do uploader) -> descarta a pasta
+        // inteira, não tem nada de real pra mostrar.
         foreach (var pasta in pastasFilme.Keys.ToList())
         {
             var principais = pastasFilme[pasta].Where(f => !f.EhExtra).ToList();
-            if (principais.Count == 1)
-            {
-                filmesSoltos.Add(principais[0]);
-                pastasFilme.Remove(pasta);
-            }
+            if (principais.Count == 1) filmesSoltos.Add(principais[0]);
+            if (principais.Count <= 1) pastasFilme.Remove(pasta);
         }
 
         // Franquia por título: junta filmes/pastas da MESMA franquia que moram em pastas sem
