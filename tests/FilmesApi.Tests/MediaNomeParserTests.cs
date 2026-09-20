@@ -29,6 +29,13 @@ public class MediaNomeParserTests
     [InlineData("Show/Season 4/[12] Titulo.mkv", 4, 12)]
     // SxxExx ganha da temporada da pasta
     [InlineData("Breaking Bad 2011 4ª Temporada Completa [WWW.BLUDV.COM]/Breaking.Bad.2011.S04E09.720p.BluRay.x264.DUAL.mkv", 4, 9)]
+    // "Temp N - Epi M" (Hora de Aventura, Apenas um Show) -- sem "S/E" nem palavra por extenso
+    [InlineData("Hora de Aventura 1ª Temporada/Temp 01 - Epi 03 - Prisioneiras do Amor.mkv", 1, 3)]
+    // "p1"/"p2" de release dividida em 2 partes -- mesma temporada, ignora o sufixo
+    [InlineData("Hora de Aventura 5ª Temporada/Temp 05p1 - Epi 08 - Masmorra do Mistério.mkv", 5, 8)]
+    // episódio combinado (2+ episódios grudados no mesmo arquivo) -- usa o primeiro como representante
+    [InlineData("Serie/S07E14E15 - Titulo Combinado.mkv", 7, 14)]
+    [InlineData("Serie 10 Temporada - Site/13E14E15E16 - Venha Comigo.mkv", 10, 13)]
     public void OrdemEpisodio_reconhece(string path, int temp, int ep)
     {
         Assert.Equal((temp, ep), MediaNomeParser.OrdemEpisodio(path));
@@ -486,6 +493,10 @@ public class MediaNomeParserTests
     // episódio "N - Título": o número vira ruído (já está em Temporada/Episódio)
     [InlineData("Breaking Bad 3 Temporada - The Pirate Filmes/8 - I See You.mp4", "I See You", null)]
     [InlineData("Show/Season 2/07. O Retorno.mkv", "O Retorno", null)]
+    // Regressão real: domínio do uploader grudado no COMEÇO do nome do arquivo (sem espaço
+    // nenhum ao redor do hífen) — "COMANDO.LA-Ainda.Estou.Aqui.2024...mkv" virava "Comando
+    // LA Ainda Estou Aqui" como se o site fizesse parte do título do filme.
+    [InlineData("Ainda Estou Aqui (2024)/COMANDO.LA-Ainda.Estou.Aqui.2024.1080p.FULL.HD.WEB-DL.NACIONAL.5.1.mkv", "Ainda Estou Aqui", 2024)]
     public void TituloParaBusca(string path, string titulo, int? ano)
     {
         var r = MediaNomeParser.TituloParaBusca(path);
