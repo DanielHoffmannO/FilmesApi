@@ -137,13 +137,22 @@ public static partial class MediaNomeParser
     [GeneratedRegex(@"^\s*[a-z0-9-]+\.(?:com|net|org|to|se|la|xyz|info|tv)\s*-\s*", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ReSiteNoComeco();
 
-    // Número solto no início do nome, aceitando só espaço como separador ("01 O Paraíso
-    // Verde.avi", sem hífen/ponto/dois-pontos nenhum) — mais permissivo que ReEpPrefixo de
+    // Acrônimo + temporada + episódio tudo GRUDADO, sem separador nenhum ("DDUVT08EP13" =
+    // "Diários De Um Vampiro" T08 EP13, nome que o site encurtou pras iniciais). Sem \b antes
+    // do T de propósito: o T vem colado direto no acrônimo, sem fronteira \w/\W ali pro \b
+    // enxergar. O acrônimo em si não entra na regex — só marca onde ChaveSerie corta o prefixo
+    // (ver uso em ChaveSerie) — e "dduv" tem apelido pra a chave canônica em ApelidosSerie.
+    [GeneratedRegex(@"T([0-9]{1,2})EP([0-9]{1,3})\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ReTEpColado();
+
+    // Número solto no início do nome, aceitando espaço OU hífen colado como separador ("01 O
+    // Paraíso Verde.avi", mas também "01- Pingu ajuda com a incubação.avi" — hífen GRUDADO no
+    // número, sem espaço antes, caso real da série Pingu) — mais permissivo que ReEpPrefixo de
     // propósito. Só é consultado quando ContarNumeradosPorPasta já garantiu que a pasta tem
     // MUITOS arquivos assim (ver MinArquivosAntologia); fora desse contexto controlado, um
     // filme comum cujo título começa com número ("12 Homens e uma Sentença") daria falso
     // positivo fácil demais.
-    [GeneratedRegex(@"^\s*([0-9]{1,3})\s+\S", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^\s*([0-9]{1,3})(?:\s*-\s*|\s+)\S", RegexOptions.CultureInvariant)]
     private static partial Regex ReEpNumeroAntologia();
 
     private static string NomeArquivo(string? path) =>
@@ -229,6 +238,9 @@ public static partial class MediaNomeParser
         m = ReTempEpi().Match(nome);
         if (m.Success) return (ParseInt(m.Groups[1].Value), ParseInt(m.Groups[2].Value));
 
+        m = ReTEpColado().Match(nome);
+        if (m.Success) return (ParseInt(m.Groups[1].Value), ParseInt(m.Groups[2].Value));
+
         m = ReNxNN().Match(nome);
         if (m.Success) return (ParseInt(m.Groups[1].Value), ParseInt(m.Groups[2].Value));
 
@@ -284,6 +296,7 @@ public static partial class MediaNomeParser
         var i = IndiceOuMenos1(ReSxxExx(), n);
         if (i < 0) { var j = IndiceOuMenos1(ReNxNN(), n); i = j <= 0 ? j : j + 1; }
         if (i < 0) i = IndiceOuMenos1(ReEpNum(), n);
+        if (i < 0) i = IndiceOuMenos1(ReTEpColado(), n);
         var prefixo = i > 0 ? n[..i] : n;
         prefixo = RePontos().Replace(prefixo, " ").TrimEnd(' ', '-').Trim();
         return prefixo.Length > 0 ? prefixo : n;
@@ -317,6 +330,8 @@ public static partial class MediaNomeParser
     {
         ["the vampire diaries"] = "diarios de um vampiro",
         ["t v d"] = "diarios de um vampiro",
+        // "DDUVT08EP13" -> prefixo "DDUV" (ver ReTEpColado) -- iniciais de "Diários De Um Vampiro".
+        ["dduv"] = "diarios de um vampiro",
         // "Hora da Aventura" (grafia de release, preposição errada) vs "Hora de Aventura"
         // (título oficial BR de Adventure Time) — mesma série, palavra diferente.
         ["hora da aventura"] = "hora de aventura",
