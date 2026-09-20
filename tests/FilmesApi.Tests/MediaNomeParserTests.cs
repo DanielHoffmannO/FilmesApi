@@ -36,6 +36,9 @@ public class MediaNomeParserTests
     // episódio combinado (2+ episódios grudados no mesmo arquivo) -- usa o primeiro como representante
     [InlineData("Serie/S07E14E15 - Titulo Combinado.mkv", 7, 14)]
     [InlineData("Serie 10 Temporada - Site/13E14E15E16 - Venha Comigo.mkv", 10, 13)]
+    // acrônimo + temporada + episódio grudado, sem separador nenhum ("DDUV" = Diários De Um
+    // Vampiro, T08 = temporada 8, EP13 = episódio 13)
+    [InlineData("DDUVT08EP13.mp4", 8, 13)]
     public void OrdemEpisodio_reconhece(string path, int temp, int ep)
     {
         Assert.Equal((temp, ep), MediaNomeParser.OrdemEpisodio(path));
@@ -96,6 +99,19 @@ public class MediaNomeParserTests
         Assert.Equal((0, 1), r);
     }
 
+    // Regressão real: Pingu (24 episódios) — hífen GRUDADO no número ("05- Pingu esta com
+    // ciumes - VIATORRENTS.COM .avi", sem espaço nenhum antes do hífen) não batia o fallback de
+    // antologia (que só aceitava espaço puro como separador) e a pasta inteira virava uma
+    // "coleção de filmes" de 24 itens em vez de série.
+    [Fact]
+    public void OrdemEpisodio_reconhece_antologia_com_hifen_colado_no_numero()
+    {
+        var r = MediaNomeParser.OrdemEpisodio(
+            "VIATORRENTS.COM - Pingu/05- Pingu esta com ciumes - VIATORRENTS.COM .avi",
+            arquivosNumeradosNaPasta: 24);
+        Assert.Equal((0, 5), r);
+    }
+
     [Fact]
     public void OrdemEpisodio_pasta_com_temporada_explicita_nunca_usa_o_fallback_de_antologia()
     {
@@ -114,12 +130,14 @@ public class MediaNomeParserTests
             "Extra/Alem da Imaginação/01 Título.avi",
             "Extra/Alem da Imaginação/02 Título.avi",
             "Colecao Rocky/1 - Rocky (1976).mp4",
+            "VIATORRENTS.COM - Pingu/01- Pingu ajuda com a incubacao - VIATORRENTS.COM .avi",  // hífen colado
             "Filmes/Interestelar (2014).mkv",  // sem número no início -- não conta
             null,
         ]);
 
         Assert.Equal(2, contagem["Extra/Alem da Imaginação"]);
         Assert.Equal(1, contagem["Colecao Rocky"]);
+        Assert.Equal(1, contagem["VIATORRENTS.COM - Pingu"]);
         Assert.False(contagem.ContainsKey("Filmes"));
     }
 
@@ -335,11 +353,21 @@ public class MediaNomeParserTests
     [InlineData("the vampire diaries")]
     [InlineData("T V D")]
     [InlineData("t v d")]
+    [InlineData("DDUV")]
     public void ChaveAgrupamento_resolve_apelidos_conhecidos_pra_chave_canonica(string apelido)
     {
         Assert.Equal(
             MediaNomeParser.ChaveAgrupamento("Diários de Um Vampiro"),
             MediaNomeParser.ChaveAgrupamento(apelido));
+    }
+
+    // Regressão real: "DDUVT08EP13.mp4" solto na raiz de /media, sem pasta nenhuma — o prefixo
+    // antes do marcador "T08EP13" (ver ReTEpColado) é "DDUV", que ChaveAgrupamento resolve pro
+    // apelido de "Diários de Um Vampiro" acima.
+    [Fact]
+    public void ChaveSerie_corta_no_marcador_de_temporada_episodio_colado()
+    {
+        Assert.Equal("DDUV", MediaNomeParser.ChaveSerie("DDUVT08EP13.mp4"));
     }
 
     // ─── NomePastaExibicao: nome limpo de pasta filme+extras ────────────
