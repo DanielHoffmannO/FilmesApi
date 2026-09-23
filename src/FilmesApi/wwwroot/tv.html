@@ -118,10 +118,6 @@ video { width: 100%; height: auto; background: #000; }
   background: rgba(0,0,0,.5);
   z-index: 3;
 }
-/* Vídeo ambiente (lareira) sobreposto ao #video principal quando pausado por muito tempo —
-   #player.on video acima já centraliza sem distorcer, só falta visibilidade/z-index. */
-#lareira { display: none; z-index: 10; background: #000; }
-#lareira.on { display: block; }
 </style>
 </head>
 <body>
@@ -143,7 +139,6 @@ video { width: 100%; height: auto; background: #000; }
 
 <div id="player">
   <video id="video" controls autoplay></video>
-  <video id="lareira" loop muted></video>
   <div id="pmsg"></div>
   <div id="phint">&#8592; &#8594; 15s &middot; OK pausa &middot; Vermelho = legenda &middot; Voltar = lista</div>
 </div>
@@ -183,8 +178,6 @@ video { width: 100%; height: auto; background: #000; }
   var proximoPendente = null;       // proximo episodio oferecido apos o 'ended'
   var proximoTimer = null;
   var proximoOfertaId = 0;          // token: só a resposta da última ofereceProximo conta
-  var lareiraAtiva = false;         // true = mostrando o vídeo ambiente por cima do pausado
-  var lareiraTimer = null;
 
   // ─── Configuração (valores antes soltos pelo código, alguns repetidos em mais de um
   // lugar com o mesmo literal significando coisas diferentes — ex.: dois "1500" e dois "12") ──
@@ -208,14 +201,11 @@ video { width: 100%; height: auto; background: #000; }
   var DICA_CONTROLES_MS = 7000;      // quanto tempo a dica dos controles fica visível sobre o vídeo
   var LEGENDA_MSG_MS = 3000;         // quanto tempo o aviso "Legenda: on/off" fica na tela
   var PLAY_PAUSE_RACE_MS = 80;       // espera pra corrigir corrida com o play/pause nativo do <video>
-  var LAREIRA_IDLE_MS = 10 * 60 * 1000;  // pausado sem nada por esse tempo -> entra no modo lareira
-  var LAREIRA_SRC = '/ambiente/lareira.mp4';
 
   // Elementos consultados em 2+ lugares (funções diferentes) — pegos uma vez só. phint só
   // aparece 1x no código e fica com getElementById direto ali mesmo.
   var els = {
     video: document.getElementById('video'),
-    lareira: document.getElementById('lareira'),
     pmsg: document.getElementById('pmsg'),
     grid: document.getElementById('grid'),
     player: document.getElementById('player'),
@@ -688,8 +678,6 @@ video { width: 100%; height: auto; background: #000; }
 
   function tocar(id, ehRetry) {
     cancelarProximo();
-    pararTimerLareira();
-    sairDoModoLareira();
     pararPoll();
     pararWatchdog();
     destruirHls();
@@ -743,39 +731,6 @@ video { width: 100%; height: auto; background: #000; }
     try { v.currentTime = posicaoRetomar; } catch (e) {}
   }
 
-  // ---- modo lareira: vídeo ambiente sobreposto quando fica pausado sem uso por muito tempo ----
-  // O <video id="video"> por baixo NUNCA é tocado (não pausa, não recarrega src, não perde
-  // currentTime) — só troca a visibilidade do <video id="lareira"> por cima. Isso elimina
-  // qualquer risco de mexer no HLS/retomada/watchdog já existentes: a série pausada continua
-  // exatamente como estava enquanto a lareira aparece/some.
-  function armarTimerLareira() {
-    pararTimerLareira();
-    lareiraTimer = setTimeout(entrarModoLareira, LAREIRA_IDLE_MS);
-  }
-  function pararTimerLareira() {
-    if (lareiraTimer) { clearTimeout(lareiraTimer); lareiraTimer = null; }
-  }
-  function entrarModoLareira() {
-    lareiraTimer = null;
-    if (lareiraAtiva || filmeAtual === null || !els.video.paused) return;
-    lareiraAtiva = true;
-    var lv = els.lareira;
-    if (lv.src.indexOf(LAREIRA_SRC) === -1) lv.src = LAREIRA_SRC;
-    try { lv.play(); } catch (e) {}
-    lv.className = 'on';
-  }
-  function sairDoModoLareira() {
-    if (!lareiraAtiva) return;
-    lareiraAtiva = false;
-    els.lareira.className = '';
-    try { els.lareira.pause(); } catch (e) {}
-    // Se continua pausado (a tecla/comando só acordou a tela, não despausou), reinicia a
-    // contagem -- senão a lareira apareceria só 1x por pausa e nunca mais voltaria depois de
-    // alguém dar uma espiada no controle. Se acabou de retomar o play, o onplay (abaixo) já
-    // cancela isso de novo — sem "vazar" um timer rodando à toa enquanto realmente tocando.
-    if (filmeAtual !== null && els.video.paused) armarTimerLareira();
-  }
-
   function configurarProgresso() {
     var v = els.video;
     v.onloadeddata = aplicarRetomada;
@@ -788,8 +743,7 @@ video { width: 100%; height: auto; background: #000; }
       ultimoSalvo = t;
       salvarProgresso();
     };
-    v.onpause = function () { salvarProgresso(); if (filmeAtual !== null) armarTimerLareira(); };
-    v.onplay = function () { pararTimerLareira(); sairDoModoLareira(); };
+    v.onpause = function () { salvarProgresso(); };
     v.onended = function () {
       if (filmeAtual == null) return;
       reproducaoConcluida = true;
@@ -847,19 +801,6 @@ video { width: 100%; height: auto; background: #000; }
     }
     if (filmeAtual === null) return;
 
-    // Qualquer comando remoto que mude algo no que já está tocando (o parar/selecionar já são
-    // tratados acima, via fecharPlayer/tocar) revela a série pausada -- o resto desta função
-    // aplica o efeito do comando normalmente em seguida (ex.: "play" pelo celular já acorda E
-    // retoma a reprodução; um seek/volume só acorda primeiro).
-    if (lareiraAtiva && (
-      estado.playing !== anterior.playing ||
-      estado.volume !== anterior.volume ||
-      estado.seekVersion !== anterior.seekVersion ||
-      estado.seekAbsVersion !== anterior.seekAbsVersion ||
-      estado.legendaVersion !== anterior.legendaVersion ||
-      estado.aceitarProximoVersion !== anterior.aceitarProximoVersion
-    )) sairDoModoLareira();
-
     var v = els.video;
     if (estado.playing && v.paused) { try { v.play(); } catch (e) {} }
     if (!estado.playing && !v.paused) { try { v.pause(); } catch (e) {} }
@@ -908,8 +849,6 @@ video { width: 100%; height: auto; background: #000; }
 
   function fecharPlayer() {
     cancelarProximo();
-    pararTimerLareira();
-    sairDoModoLareira();
     pararPoll();
     pararWatchdog();
     destruirHls();
@@ -933,11 +872,6 @@ video { width: 100%; height: auto; background: #000; }
     e = e || window.event;
     var k = e.keyCode;
     var playerAtivo = els.player.className === 'on';
-
-    // Qualquer tecla enquanto o modo lareira está ativo só revela a série pausada de volta —
-    // não faz mais nada nesse primeiro toque (evita, por ex., um "OK" pra acordar a tela
-    // também mexer no play/pause sem querer).
-    if (lareiraAtiva) { sairDoModoLareira(); if (e.preventDefault) e.preventDefault(); return false; }
 
     // Voltar (varia por fabricante: 8, 27, 461, 10009, 166)
     if (k === 8 || k === 27 || k === 461 || k === 10009 || k === 166) {
