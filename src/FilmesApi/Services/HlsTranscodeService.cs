@@ -132,7 +132,7 @@ public class HlsTranscodeService
         var info = await _probe.InspecionarAsync(path, ct);
         if (info is null) return CompatibilidadeDireta.Incompativel;
         var primeiroAudio = info.Audios.Count > 0 ? info.Audios[0].Codec : null;
-        return ClassificarCompatibilidade(Path.GetExtension(path), info.VideoCodec, info.Video10Bit, primeiroAudio);
+        return ClassificarCompatibilidade(Path.GetExtension(path), info.VideoCodec, info.Video10Bit, primeiroAudio, info.Audios.Count);
     }
 
     /// <summary>Vídeo tocável sem reencodar (stream direto OU remux <c>-c:v copy</c>): codec
@@ -148,10 +148,17 @@ public class HlsTranscodeService
     /// direto — mesma ideia do <see cref="MontarArgsFfmpegHls"/>. Ver <see cref="AnalisarCompatibilidadeAsync"/>
     /// pro caminho real, que lê o arquivo com ffprobe antes de chamar isso.</summary>
     internal static CompatibilidadeDireta ClassificarCompatibilidade(
-        string extensao, string? videoCodec, bool video10Bit, string? primeiroAudioCodec)
+        string extensao, string? videoCodec, bool video10Bit, string? primeiroAudioCodec, int quantidadeFaixasAudio = 1)
     {
         var videoOk = VideoTocavelSemReencode(videoCodec, video10Bit);
-        var audioOk = primeiroAudioCodec is null || AudioCodecsCompativeis.Contains(primeiroAudioCodec);
+        // 2+ faixas de áudio (dual-áudio) nunca é "Compativel" mesmo com codec bom — /stream
+        // serve o arquivo cru sem `-map` nenhum, e o navegador não isola só a faixa default
+        // de forma confiável (chegou a tocar as duas faixas juntas, inglês+português, até o
+        // usuário trocar manualmente pelo seletor nativo do <video>). /remux já resolve isso
+        // de verdade: EscolherStreamAudio elege 1 faixa (idioma pt > default > primeira) e
+        // remuxa só ela — então força pelo mesmo caminho que áudio incompatível usaria.
+        var audioOk = quantidadeFaixasAudio <= 1
+            && (primeiroAudioCodec is null || AudioCodecsCompativeis.Contains(primeiroAudioCodec));
 
         // "Compativel" (toca cru, sem processar nada) só vale pra containers que o <video>
         // entende sem drama — extensão restrita de propósito, MKV mesmo com codecs bons fica

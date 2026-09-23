@@ -82,4 +82,38 @@ public class CompatibilidadeDiretaTests
         Assert.False(HlsTranscodeService.VideoTocavelSemReencode("h264", video10Bit: true));
         Assert.True(HlsTranscodeService.VideoTocavelSemReencode("h264", video10Bit: false));
     }
+
+    // Regressão real: usuário relatou áudio em inglês E português tocando JUNTO na tela normal
+    // (index.html), só resolvendo ao trocar de faixa manualmente pelo seletor nativo do
+    // <video>. Causa: um .mp4 com 2 faixas de áudio (ambas com codec "bom", ex. AAC) passava
+    // como Compativel -- /stream serve o arquivo cru sem nenhum -map, então as DUAS faixas iam
+    // juntas pro navegador. O fix de dual-áudio anterior (EscolherStreamAudio + -map explícito)
+    // só cobria os caminhos que passam pelo ffmpeg (HLS reencode e /remux) -- nunca o /stream
+    // direto, que por definição não processa nada.
+    [Fact]
+    public void Duas_faixas_de_audio_nunca_e_compativel_mesmo_com_codec_bom()
+    {
+        var r = HlsTranscodeService.ClassificarCompatibilidade(
+            ".mp4", "h264", video10Bit: false, "aac", quantidadeFaixasAudio: 2);
+        Assert.Equal(CompatibilidadeDireta.SoAudioIncompativel, r);
+    }
+
+    [Fact]
+    public void Duas_faixas_de_audio_com_video_incompativel_continua_incompativel()
+    {
+        // Mesma regra de sempre pra vídeo ruim: /remux só copia vídeo, não serve pra esse caso.
+        var r = HlsTranscodeService.ClassificarCompatibilidade(
+            ".mp4", "hevc", video10Bit: false, "aac", quantidadeFaixasAudio: 2);
+        Assert.Equal(CompatibilidadeDireta.Incompativel, r);
+    }
+
+    [Fact]
+    public void Uma_faixa_de_audio_continua_compativel_como_antes()
+    {
+        // Comportamento de sempre preservado -- só a chamada explícita com 1 (ou omitida,
+        // default) segue tocando direto.
+        var r = HlsTranscodeService.ClassificarCompatibilidade(
+            ".mp4", "h264", video10Bit: false, "aac", quantidadeFaixasAudio: 1);
+        Assert.Equal(CompatibilidadeDireta.Compativel, r);
+    }
 }
