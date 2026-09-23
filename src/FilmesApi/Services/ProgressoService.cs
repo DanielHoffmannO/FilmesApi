@@ -109,7 +109,19 @@ public class ProgressoService
     public async Task<List<ContinuarAssistindoResponse>> ContinuarAssistindoAsync(int limite = 20)
     {
         // Toda linha em Progressos já tem PosicaoSegundos >= MinSegundosParaSalvar (SalvarAsync garante).
+        //
+        // !Filme.Assistido: Progresso e Assistido=true não deveriam coexistir pro mesmo filme
+        // (ConcluirAsync sempre apaga o Progresso ao marcar assistido, na mesma operação) --
+        // mas um progresso tardio de uma sessão abandonada pode recriar a linha depois. Caso
+        // real: assiste um episódio no celular, pausa sem fechar o player, termina o MESMO
+        // episódio na TV (marca assistido, apaga o progresso) -- se o celular (aba ainda aberta
+        // em segundo plano) mandar mais um salvarProgresso() depois disso (típico no
+        // 'pagehide', ao finalmente fechar a aba), isso reinsere um Progresso com a posição
+        // VELHA do celular, e o episódio (já visto de verdade) reaparecia aqui como se não
+        // tivesse terminado. Filtrar aqui é seguro: em operação normal nunca exclui nada que
+        // não fosse já esperado sumir.
         return await _db.Progressos.AsNoTracking()
+            .Where(p => !p.Filme!.Assistido)
             .OrderByDescending(p => p.AtualizadoEm)
             .Take(limite)
             .Select(p => new ContinuarAssistindoResponse(
