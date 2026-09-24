@@ -109,6 +109,32 @@ public class MediaProbeServiceTests
     }
 
     [Fact]
+    public void Sample_aspect_ratio_e_lido_do_video()
+    {
+        // Caso real: "Diários de Um Vampiro" T8 (LAPUMiAFiLMES.COM) com SAR 40:33 herdado de
+        // uma fonte DVD NTSC, nunca resetado ao reencodar pra 1280x720 -- ver SarPrecisaCorrecao.
+        var info = MediaProbeService.Parsear("""
+            { "streams": [
+                { "index": 0, "codec_type": "video", "codec_name": "h264", "width": 1280, "height": 720,
+                  "pix_fmt": "yuv420p", "sample_aspect_ratio": "40:33" }
+              ] }
+            """);
+        Assert.Equal("40:33", info.SampleAspectRatio);
+    }
+
+    [Fact]
+    public void Sample_aspect_ratio_ausente_e_null()
+    {
+        var info = MediaProbeService.Parsear("""
+            { "streams": [
+                { "index": 0, "codec_type": "video", "codec_name": "h264", "width": 1920, "height": 1080,
+                  "pix_fmt": "yuv420p" }
+              ] }
+            """);
+        Assert.Null(info.SampleAspectRatio);
+    }
+
+    [Fact]
     public void Legenda_bitmap_e_listada_com_codec_correto()
     {
         var info = MediaProbeService.Parsear("""

@@ -116,4 +116,63 @@ public class CompatibilidadeDiretaTests
             ".mp4", "h264", video10Bit: false, "aac", quantidadeFaixasAudio: 1);
         Assert.Equal(CompatibilidadeDireta.Compativel, r);
     }
+
+    // Regressão real: "Diários de Um Vampiro" T8 (release LAPUMiAFiLMES.COM) tem vídeo/áudio
+    // bons (h264 8-bit + mp3, 1 faixa) mas SAR 40:33 gravado no arquivo (sobra de uma fonte DVD
+    // NTSC nunca resetada ao reencodar pra 1280x720) -- passava como Compativel e tocava via
+    // /stream cru, sem preencher a tela (o navegador confia nesse metadado errado). Forçar pelo
+    // /remux dá a chance de corrigir via -aspect (ver MontarArgsFfmpegRemux).
+    [Fact]
+    public void Sar_diferente_de_1x1_nunca_e_compativel_mesmo_com_codec_bom()
+    {
+        var r = HlsTranscodeService.ClassificarCompatibilidade(
+            ".mp4", "h264", video10Bit: false, "mp3", sampleAspectRatio: "40:33");
+        Assert.Equal(CompatibilidadeDireta.SoAudioIncompativel, r);
+    }
+
+    [Fact]
+    public void Sar_1x1_continua_compativel()
+    {
+        var r = HlsTranscodeService.ClassificarCompatibilidade(
+            ".mp4", "h264", video10Bit: false, "aac", sampleAspectRatio: "1:1");
+        Assert.Equal(CompatibilidadeDireta.Compativel, r);
+    }
+
+    [Fact]
+    public void Sar_0x1_ausente_no_bitstream_continua_compativel()
+    {
+        // "0:1" é o que o ffprobe reporta quando o bitstream não informa SAR nenhum -- é o
+        // caso comum (maioria dos arquivos), não pode ser tratado como suspeito.
+        var r = HlsTranscodeService.ClassificarCompatibilidade(
+            ".mp4", "h264", video10Bit: false, "aac", sampleAspectRatio: "0:1");
+        Assert.Equal(CompatibilidadeDireta.Compativel, r);
+    }
+
+    [Fact]
+    public void Sar_nulo_continua_compativel()
+    {
+        var r = HlsTranscodeService.ClassificarCompatibilidade(
+            ".mp4", "h264", video10Bit: false, "aac", sampleAspectRatio: null);
+        Assert.Equal(CompatibilidadeDireta.Compativel, r);
+    }
+
+    [Fact]
+    public void Sar_ruim_com_video_incompativel_continua_incompativel()
+    {
+        // Mesma regra de sempre: /remux só copia vídeo, vídeo ruim não tem conserto por lá.
+        var r = HlsTranscodeService.ClassificarCompatibilidade(
+            ".mp4", "hevc", video10Bit: false, "aac", sampleAspectRatio: "40:33");
+        Assert.Equal(CompatibilidadeDireta.Incompativel, r);
+    }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("1:1", false)]
+    [InlineData("0:1", false)]
+    [InlineData("40:33", true)]
+    [InlineData("4:3", true)]
+    public void SarPrecisaCorrecao_reconhece(string? sar, bool esperado)
+    {
+        Assert.Equal(esperado, HlsTranscodeService.SarPrecisaCorrecao(sar));
+    }
 }
