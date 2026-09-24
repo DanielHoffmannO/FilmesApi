@@ -64,7 +64,7 @@ dotnet run --project src/FilmesApi
 # usa ./media e ./data no diretório atual; precisa de ffmpeg/ffprobe no PATH
 ```
 
-Requer o **.NET 9 SDK** e `ffmpeg`/`ffprobe` instalados.
+Requer o **.NET 10 SDK** e `ffmpeg`/`ffprobe` instalados.
 
 ```bash
 dotnet test        # MediaNomeParser (nome de arquivo -> série/episódio), downmix 5.1 do HLS
@@ -367,9 +367,10 @@ tests/FilmesApi.Tests/          MediaNomeParser, downmix 5.1→estéreo do HLS,
                                  decisão de compatibilidade (compatível/remux-áudio/incompatível)
 ```
 
-**Stack:** .NET 9 / ASP.NET Core · EF Core 9 + SQLite · Swashbuckle (Swagger) ·
+**Stack:** .NET 10 / ASP.NET Core · EF Core 10 + SQLite · Swashbuckle (Swagger) ·
 [hls.js](https://github.com/video-dev/hls.js) (embutido, sem CDN) · Docker multi-stage
-(build em Alpine, runtime em Debian bookworm-slim + jellyfin-ffmpeg).
+(build em Alpine, runtime em Ubuntu Noble + jellyfin-ffmpeg — .NET 10 não publica mais
+imagem Debian).
 
 **Banco:** sem EF Migrations — `EnsureCreated()` no primeiro boot, e blocos `ExecuteSqlRaw`
 idempotentes (`CREATE TABLE IF NOT EXISTS`, `ADD COLUMN` guardado por `pragma_table_info`)
