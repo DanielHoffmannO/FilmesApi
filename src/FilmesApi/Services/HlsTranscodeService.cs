@@ -8,8 +8,9 @@ public enum RemuxStatus { Preparando, Disponivel, Erro }
 
 /// <summary>Classificação de compatibilidade "tocar sem HLS", numa leitura de probe só —
 /// <c>Compativel</c> (toca cru, sem processar nada), <c>SoAudioIncompativel</c> (vídeo ok,
-/// só o áudio precisa de /remux) ou <c>Incompativel</c> (nem isso: /original é o único
-/// recurso, pode falhar dependendo do player).</summary>
+/// mas precisa de /remux — áudio incompatível, 2+ faixas, OU proporção de pixel quebrada, ver
+/// <see cref="HlsTranscodeService.SarPrecisaCorrecao"/>) ou <c>Incompativel</c> (nem isso:
+/// /original é o único recurso, pode falhar dependendo do player).</summary>
 public enum CompatibilidadeDireta { Compativel, SoAudioIncompativel, Incompativel }
 
 /// <summary>
@@ -132,8 +133,20 @@ public class HlsTranscodeService
         var info = await _probe.InspecionarAsync(path, ct);
         if (info is null) return CompatibilidadeDireta.Incompativel;
         var primeiroAudio = info.Audios.Count > 0 ? info.Audios[0].Codec : null;
-        return ClassificarCompatibilidade(Path.GetExtension(path), info.VideoCodec, info.Video10Bit, primeiroAudio, info.Audios.Count);
+        return ClassificarCompatibilidade(Path.GetExtension(path), info.VideoCodec, info.Video10Bit, primeiroAudio,
+            info.Audios.Count, info.SampleAspectRatio);
     }
+
+    /// <summary>SAR (proporção de pixel) diferente de "1:1"/"0:1"/ausente é metadado quebrado —
+    /// sobra de um encode anterior nunca resetado (caso real: "Diários de Um Vampiro" T8,
+    /// release LAPUMiAFiLMES.COM, SAR 40:33 herdado de uma fonte DVD NTSC num arquivo já
+    /// reencodado pra 1280x720 "widescreen quadrado"). O navegador confia nesse metadado pra
+    /// desenhar o vídeo — o resultado observado foi o vídeo não preencher a tela mesmo com a
+    /// resolução em pixel certa. "0:1" é o valor que o ffprobe reporta quando o bitstream não
+    /// informa SAR nenhum (a maioria dos arquivos) — tratado como normal, não como "ausente
+    /// então suspeito".</summary>
+    internal static bool SarPrecisaCorrecao(string? sampleAspectRatio) =>
+        sampleAspectRatio is not (null or "1:1" or "0:1");
 
     /// <summary>Vídeo tocável sem reencodar (stream direto OU remux <c>-c:v copy</c>): codec
     /// numa lista curta E não 10-bit — 10-bit (<c>High 10</c>/<c>Main 10</c>) o navegador não
@@ -148,7 +161,8 @@ public class HlsTranscodeService
     /// direto — mesma ideia do <see cref="MontarArgsFfmpegHls"/>. Ver <see cref="AnalisarCompatibilidadeAsync"/>
     /// pro caminho real, que lê o arquivo com ffprobe antes de chamar isso.</summary>
     internal static CompatibilidadeDireta ClassificarCompatibilidade(
-        string extensao, string? videoCodec, bool video10Bit, string? primeiroAudioCodec, int quantidadeFaixasAudio = 1)
+        string extensao, string? videoCodec, bool video10Bit, string? primeiroAudioCodec,
+        int quantidadeFaixasAudio = 1, string? sampleAspectRatio = null)
     {
         var videoOk = VideoTocavelSemReencode(videoCodec, video10Bit);
         // 2+ faixas de áudio (dual-áudio) nunca é "Compativel" mesmo com codec bom — /stream
@@ -159,14 +173,17 @@ public class HlsTranscodeService
         // remuxa só ela — então força pelo mesmo caminho que áudio incompatível usaria.
         var audioOk = quantidadeFaixasAudio <= 1
             && (primeiroAudioCodec is null || AudioCodecsCompativeis.Contains(primeiroAudioCodec));
+        // SAR quebrado (ver SarPrecisaCorrecao) força o mesmo caminho de /remux mesmo com
+        // vídeo/áudio ok — é lá que o -aspect corrige o metadado sem reencodar vídeo.
+        var sarOk = !SarPrecisaCorrecao(sampleAspectRatio);
 
         // "Compativel" (toca cru, sem processar nada) só vale pra containers que o <video>
         // entende sem drama — extensão restrita de propósito, MKV mesmo com codecs bons fica
         // de fora (comportamento de sempre, ver histórico do antigo EhCompativelAsync).
         var containerOk = extensao.ToLowerInvariant() is ".mp4" or ".webm" or ".mov" or ".m4v";
 
-        if (containerOk && videoOk && audioOk) return CompatibilidadeDireta.Compativel;
-        if (videoOk && !audioOk) return CompatibilidadeDireta.SoAudioIncompativel;
+        if (containerOk && videoOk && audioOk && sarOk) return CompatibilidadeDireta.Compativel;
+        if (videoOk && (!audioOk || !sarOk)) return CompatibilidadeDireta.SoAudioIncompativel;
         return CompatibilidadeDireta.Incompativel;
     }
 
@@ -230,14 +247,7 @@ public class HlsTranscodeService
                 ?? throw new InvalidOperationException("probe falhou");
             var audioIdx = EscolherStreamAudio(info.Audios);
 
-            List<string> args = ["-y", "-i", origem, "-map", "0:v:0"];
-            if (audioIdx is int idx) args.AddRange(["-map", $"0:{idx}"]);
-            args.Add("-c:v"); args.Add("copy");
-            if (audioIdx is not null) args.AddRange(["-c:a", "aac", "-b:a", "192k", "-ac", "2"]);
-            // -f mp4 explícito: o nome real é "{id}.mp4.tmp" (renomeado pro final só depois
-            // de completo), e o ffmpeg escolhe o muxer pela ÚLTIMA extensão — ".tmp" sozinho
-            // não é reconhecido, então sem isso ele recusa nem abrir o arquivo de saída.
-            args.AddRange(["-f", "mp4", "-movflags", "+faststart", tmp]);
+            var args = MontarArgsFfmpegRemux(origem, tmp, audioIdx, info.Largura, info.Altura);
 
             var psi = new ProcessStartInfo(_ffmpegPath);
             foreach (var a in args) psi.ArgumentList.Add(a);
@@ -538,14 +548,14 @@ public class HlsTranscodeService
             // sw-decode+hw-encode → libx264. Cada nível apaga e recria o dir antes de tentar.
             var decodeHw = usarRkmpp && _rkmppDecodeHw && downscalePara is not null;
 
-            var (exitCode, stderr, orfao, travouSemProgresso) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw);
+            var (exitCode, stderr, orfao, travouSemProgresso) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw, info.Largura, info.Altura);
 
             if (!orfao && decodeHw && exitCode != 0)
             {
                 _logger.LogWarning("rkmpp com hwaccel de decode falhou pro filme {Id} (exit {Code}): {Stderr}. Tentando rkmpp só no encode.",
                     filmeId, exitCode, stderr);
                 LimparDir(dir);
-                (exitCode, stderr, orfao, travouSemProgresso) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw: false);
+                (exitCode, stderr, orfao, travouSemProgresso) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw: false, info.Largura, info.Altura);
             }
 
             if (ContaComoFalhaDeEncoder(orfao, travouSemProgresso) && usarRkmpp)
@@ -556,7 +566,7 @@ public class HlsTranscodeService
                     _logger.LogWarning("Encode via rkmpp falhou pro filme {Id} (exit {Code}): {Stderr}. Tentando de novo com libx264.",
                         filmeId, exitCode, stderr);
                     LimparDir(dir);
-                    (exitCode, stderr, orfao, travouSemProgresso) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp: false, audioStreamIndex, downscalePara, decodeHw: false);
+                    (exitCode, stderr, orfao, travouSemProgresso) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp: false, audioStreamIndex, downscalePara, decodeHw: false, info.Largura, info.Altura);
                 }
             }
 
@@ -618,11 +628,38 @@ public class HlsTranscodeService
         }
     }
 
+    /// <summary>Monta a linha de argumentos do ffmpeg pro job de <c>/remux</c> (vídeo copiado
+    /// <c>-c:v copy</c>, áudio reencodado pra AAC estéreo). Pura e <c>internal</c> de
+    /// propósito, mesma ideia do <see cref="MontarArgsFfmpegHls"/>. <paramref name="largura"/>/
+    /// <paramref name="altura"/> viram <c>-aspect largura:altura</c> quando os dois são &gt; 0
+    /// — corrige metadado de proporção de pixel quebrado (SAR, ver
+    /// <see cref="SarPrecisaCorrecao"/>) sem reencodar vídeo: <c>-aspect</c> só sobrescreve o
+    /// DAR gravado no container, o stream-copy não toca no pixel. Aplicado sempre que
+    /// conhecidos (não só quando o SAR está ruim) — é inofensivo num arquivo já correto e evita
+    /// ter que replicar aqui a mesma decisão de "está ruim?" do <see cref="ClassificarCompatibilidade"/>.</summary>
+    internal static List<string> MontarArgsFfmpegRemux(
+        string origem, string destino, int? audioStreamIndex, int largura = 0, int altura = 0)
+    {
+        List<string> args = ["-y", "-i", origem, "-map", "0:v:0"];
+        if (audioStreamIndex is int idx) args.AddRange(["-map", $"0:{idx}"]);
+        args.Add("-c:v"); args.Add("copy");
+        if (audioStreamIndex is not null) args.AddRange(["-c:a", "aac", "-b:a", "192k", "-ac", "2"]);
+        if (largura > 0 && altura > 0) args.AddRange(["-aspect", $"{largura}:{altura}"]);
+        // -f mp4 explícito: o nome real é "{id}.mp4.tmp" (renomeado pro final só depois
+        // de completo), e o ffmpeg escolhe o muxer pela ÚLTIMA extensão — ".tmp" sozinho
+        // não é reconhecido, então sem isso ele recusa nem abrir o arquivo de saída.
+        args.AddRange(["-f", "mp4", "-movflags", "+faststart", destino]);
+        return args;
+    }
+
     /// <summary>Monta a linha de argumentos do ffmpeg pro job HLS. Pura e <c>internal</c>
     /// de propósito: dá pra testar a decisão de encode (ex.: o <c>-ac 2</c> obrigatório)
-    /// sem subir processo — ver <c>FilmesApi.Tests</c>.</summary>
+    /// sem subir processo — ver <c>FilmesApi.Tests</c>. <paramref name="largura"/>/
+    /// <paramref name="altura"/>: mesma correção de <c>-aspect</c> do
+    /// <see cref="MontarArgsFfmpegRemux"/>, ver comentário lá.</summary>
     internal static List<string> MontarArgsFfmpegHls(
-        string origem, bool videoCompativel, bool usarRkmpp, int? audioStreamIndex, int? downscalePara, bool decodeHw)
+        string origem, bool videoCompativel, bool usarRkmpp, int? audioStreamIndex, int? downscalePara, bool decodeHw,
+        int largura = 0, int altura = 0)
     {
         List<string> args = ["-y"];
 
@@ -683,6 +720,7 @@ public class HlsTranscodeService
         // segments existem, mas o vídeo não toca e não há erro em log nenhum. ffprobe e players
         // desktop toleram, então é quase impossível diagnosticar sem saber disso de antemão.
         if (audioStreamIndex is not null) args.AddRange(["-c:a", "aac", "-b:a", "192k", "-ac", "2"]);
+        if (largura > 0 && altura > 0) args.AddRange(["-aspect", $"{largura}:{altura}"]);
         args.AddRange([
             "-f", "hls",
             "-hls_time", SegmentoSegundos.ToString(),
@@ -698,9 +736,10 @@ public class HlsTranscodeService
     }
 
     private async Task<(int ExitCode, string Stderr, bool Orfao, bool TravouSemProgresso)> RunFfmpegHlsAsync(
-        int filmeId, string origem, string dir, bool videoCompativel, bool usarRkmpp, int? audioStreamIndex, int? downscalePara, bool decodeHw)
+        int filmeId, string origem, string dir, bool videoCompativel, bool usarRkmpp, int? audioStreamIndex, int? downscalePara, bool decodeHw,
+        int largura, int altura)
     {
-        var args = MontarArgsFfmpegHls(origem, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw);
+        var args = MontarArgsFfmpegHls(origem, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw, largura, altura);
 
         var psi = new ProcessStartInfo(_ffmpegPath) { WorkingDirectory = dir };
         foreach (var arg in args) psi.ArgumentList.Add(arg);

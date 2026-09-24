@@ -53,6 +53,51 @@ public class HlsAudioDownmixTests
         Assert.DoesNotContain("-ac", args);
     }
 
+    // Regressão real: "Diários de Um Vampiro" T8 tinha SAR (proporção de pixel) quebrado
+    // gravado no arquivo -- o vídeo não preenchia a tela porque o navegador confia nesse
+    // metadado. -aspect corrige o DAR do container sem reencodar vídeo nenhum (funciona igual
+    // em -c:v copy e em reencode de verdade).
+    [Fact]
+    public void Largura_altura_conhecidas_adicionam_aspect()
+    {
+        var args = HlsTranscodeService.MontarArgsFfmpegHls(
+            "/media/x.mkv", videoCompativel: true, usarRkmpp: false,
+            audioStreamIndex: 0, downscalePara: null, decodeHw: false, largura: 1280, altura: 720);
+
+        Assert.Equal("1280:720", ParDepoisDe(args, "-aspect"));
+    }
+
+    [Fact]
+    public void Sem_largura_altura_nao_passa_aspect()
+    {
+        // Default (0, 0) preserva o comportamento de sempre -- chamadora que não sabe a
+        // resolução não devia forçar um -aspect sem sentido tipo "0:0".
+        var args = HlsTranscodeService.MontarArgsFfmpegHls(
+            "/media/x.mkv", videoCompativel: true, usarRkmpp: false,
+            audioStreamIndex: 0, downscalePara: null, decodeHw: false);
+
+        Assert.DoesNotContain("-aspect", args);
+    }
+
+    [Fact]
+    public void Remux_com_largura_altura_adiciona_aspect_sem_reencodar_video()
+    {
+        var args = HlsTranscodeService.MontarArgsFfmpegRemux(
+            "/media/x.mkv", "/data/remux/1.mp4.tmp", audioStreamIndex: 1, largura: 1280, altura: 720);
+
+        Assert.Equal("copy", ParDepoisDe(args, "-c:v"));
+        Assert.Equal("1280:720", ParDepoisDe(args, "-aspect"));
+    }
+
+    [Fact]
+    public void Remux_sem_largura_altura_nao_passa_aspect()
+    {
+        var args = HlsTranscodeService.MontarArgsFfmpegRemux(
+            "/media/x.mkv", "/data/remux/1.mp4.tmp", audioStreamIndex: 1);
+
+        Assert.DoesNotContain("-aspect", args);
+    }
+
     // ─── ponta a ponta: gera 5.1 de verdade, transcoda, mede a saída ──────
 
     [Fact]

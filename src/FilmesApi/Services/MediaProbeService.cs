@@ -14,10 +14,16 @@ public record FaixaLegenda(int IdxRelativo, string Codec, string? Idioma, string
 /// <summary><c>Video10Bit</c>: H.264/HEVC "High 10"/"Main 10" (pix_fmt tipo <c>yuv420p10le</c>
 /// ou <c>bits_per_raw_sample</c> ≥ 9) — o navegador não decodifica, mesmo com codec_name
 /// "compatível". Sem isso o arquivo tocava direto com tela preta e nenhum erro em lugar
-/// nenhum (ver <see cref="HlsTranscodeService.ClassificarCompatibilidade"/>).</summary>
+/// nenhum (ver <see cref="HlsTranscodeService.ClassificarCompatibilidade"/>).
+/// <c>SampleAspectRatio</c>: proporção de pixel bruta do ffprobe ("1:1" normal, "0:1" = não
+/// informado no bitstream — trate como normal). Um valor diferente disso é metadado de
+/// proporção quebrado, sobra de um encode anterior nunca resetado — caso real: "Diários de Um
+/// Vampiro" T8 (release LAPUMiAFiLMES.COM), 1280x720 com SAR 40:33 herdado de uma fonte DVD
+/// NTSC, fazendo o navegador desenhar o vídeo fora de "tela cheia" mesmo com largura/altura em
+/// pixel corretas. Ver <see cref="HlsTranscodeService.SarPrecisaCorrecao"/>.</summary>
 public record MediaInfo(
-    string? VideoCodec, int Largura, int Altura, bool Video10Bit, double? DuracaoSegundos,
-    IReadOnlyList<FaixaAudio> Audios, IReadOnlyList<FaixaLegenda> Legendas);
+    string? VideoCodec, int Largura, int Altura, bool Video10Bit, string? SampleAspectRatio,
+    double? DuracaoSegundos, IReadOnlyList<FaixaAudio> Audios, IReadOnlyList<FaixaLegenda> Legendas);
 
 /// <summary>
 /// Uma única leitura de ffprobe (<c>-show_streams -show_format</c>) por arquivo, cacheada por
@@ -115,6 +121,7 @@ public class MediaProbeService
         string? videoCodec = null;
         int largura = 0, altura = 0;
         var video10Bit = false;
+        string? sampleAspectRatio = null;
         var audios = new List<FaixaAudio>();
         var legendas = new List<FaixaLegenda>();
         var idxLegenda = 0;
@@ -133,6 +140,7 @@ public class MediaProbeService
                         largura = Int(s, "width");
                         altura = Int(s, "height");
                         video10Bit = EhDezBits(s);
+                        sampleAspectRatio = Str(s, "sample_aspect_ratio");
                         break;
                     case "audio":
                         audios.Add(new FaixaAudio(Int(s, "index"), Str(s, "codec_name"),
@@ -150,7 +158,7 @@ public class MediaProbeService
             && double.TryParse(d.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var seg) && seg > 0)
             duracao = seg;
 
-        return new MediaInfo(videoCodec, largura, altura, video10Bit, duracao, audios, legendas);
+        return new MediaInfo(videoCodec, largura, altura, video10Bit, sampleAspectRatio, duracao, audios, legendas);
     }
 
     private static string? Str(JsonElement e, string prop) =>
