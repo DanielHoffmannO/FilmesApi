@@ -98,6 +98,52 @@ public class HlsAudioDownmixTests
         Assert.DoesNotContain("-aspect", args);
     }
 
+    // ─── AudioJaCompativel: copia áudio já bom em vez de reencodar à toa ────────────────
+    // Regressão real: "Ataque dos Titãs" já vinha com áudio AAC estéreo (formato que o
+    // navegador aceita direto), mas o HLS reencodava pra AAC estéreo de novo -- decode+encode
+    // de áudio à toa, visto consumindo 140%+ de CPU só nisso.
+
+    [Theory]
+    [InlineData("aac", 2, true)]
+    [InlineData("aac", 1, true)]
+    [InlineData("mp3", 2, true)]
+    [InlineData("opus", 2, true)]
+    [InlineData("aac", 6, false)]    // 5.1 em AAC -- o bug do channel_layout ainda se aplica
+    [InlineData("eac3", 2, false)]   // codec incompatível, mesmo já estéreo
+    [InlineData("aac", null, false)] // canais desconhecido -- não arrisca, reencoda
+    public void AudioJaCompativel_reconhece(string? codec, int? canais, bool esperado)
+    {
+        var audio = new FaixaAudio(0, codec, "por", Default: true, canais);
+        Assert.Equal(esperado, HlsTranscodeService.AudioJaCompativel(audio));
+    }
+
+    [Fact]
+    public void AudioJaCompativel_nulo_e_false()
+    {
+        Assert.False(HlsTranscodeService.AudioJaCompativel(null));
+    }
+
+    [Fact]
+    public void Hls_com_audio_ja_compativel_copia_em_vez_de_reencodar()
+    {
+        var args = HlsTranscodeService.MontarArgsFfmpegHls(
+            "/media/x.mkv", videoCompativel: true, usarRkmpp: false,
+            audioStreamIndex: 1, downscalePara: null, decodeHw: false, audioJaCompativel: true);
+
+        Assert.Equal("copy", ParDepoisDe(args, "-c:a"));
+        Assert.DoesNotContain("-ac", args);
+    }
+
+    [Fact]
+    public void Remux_com_audio_ja_compativel_copia_em_vez_de_reencodar()
+    {
+        var args = HlsTranscodeService.MontarArgsFfmpegRemux(
+            "/media/x.mkv", "/data/remux/1.mp4.tmp", audioStreamIndex: 1, audioJaCompativel: true);
+
+        Assert.Equal("copy", ParDepoisDe(args, "-c:v"));
+        Assert.Equal("copy", ParDepoisDe(args, "-c:a"));
+    }
+
     // ─── ponta a ponta: gera 5.1 de verdade, transcoda, mede a saída ──────
 
     [Fact]

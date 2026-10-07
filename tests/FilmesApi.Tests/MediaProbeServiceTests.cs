@@ -109,6 +109,33 @@ public class MediaProbeServiceTests
     }
 
     [Fact]
+    public void Canais_da_faixa_de_audio_e_lido()
+    {
+        var info = MediaProbeService.Parsear("""
+            { "streams": [
+                { "index": 1, "codec_type": "audio", "codec_name": "aac", "channels": 2 },
+                { "index": 2, "codec_type": "audio", "codec_name": "eac3", "channels": 6 }
+              ] }
+            """);
+        Assert.Equal(2, info.Audios[0].Canais);
+        Assert.Equal(6, info.Audios[1].Canais);
+    }
+
+    [Fact]
+    public void Canais_ausente_e_null()
+    {
+        // ffprobe sempre informa channels pra faixa de áudio de verdade -- 0/ausente só
+        // acontece em dado malformado, e tratar como "desconhecido" é a opção segura
+        // (ver AudioJaCompativel: canais desconhecido nunca pula o reencode de proteção).
+        var info = MediaProbeService.Parsear("""
+            { "streams": [
+                { "index": 1, "codec_type": "audio", "codec_name": "aac" }
+              ] }
+            """);
+        Assert.Null(info.Audios[0].Canais);
+    }
+
+    [Fact]
     public void Sample_aspect_ratio_e_lido_do_video()
     {
         // Caso real: "Diários de Um Vampiro" T8 (LAPUMiAFiLMES.COM) com SAR 40:33 herdado de
