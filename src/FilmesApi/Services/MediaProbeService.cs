@@ -5,7 +5,10 @@ using System.Text.Json;
 
 namespace FilmesApi.Services;
 
-public record FaixaAudio(int Index, string? Codec, string? Idioma, bool Default);
+/// <summary><c>Canais</c>: null quando o ffprobe não informa (raro) — tratar como
+/// "desconhecido", não como mono/estéreo, pra não arriscar pular o reencode de proteção
+/// contra áudio multicanal (ver <see cref="HlsTranscodeService.AudioJaCompativel"/>).</summary>
+public record FaixaAudio(int Index, string? Codec, string? Idioma, bool Default, int? Canais);
 
 /// <summary><c>IdxRelativo</c> = posição entre as faixas de legenda (0,1,2…), usada em
 /// <c>-map 0:s:N</c> e no endpoint <c>/legenda/{idx}</c>.</summary>
@@ -143,8 +146,9 @@ public class MediaProbeService
                         sampleAspectRatio = Str(s, "sample_aspect_ratio");
                         break;
                     case "audio":
+                        var canais = Int(s, "channels");
                         audios.Add(new FaixaAudio(Int(s, "index"), Str(s, "codec_name"),
-                            Tag(s, "language"), Disp(s, "default")));
+                            Tag(s, "language"), Disp(s, "default"), canais > 0 ? canais : null));
                         break;
                     case "subtitle":
                         legendas.Add(new FaixaLegenda(idxLegenda++, Str(s, "codec_name") ?? "",

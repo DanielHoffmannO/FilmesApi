@@ -246,8 +246,9 @@ public class HlsTranscodeService
             var info = await _probe.InspecionarAsync(origem, CancellationToken.None)
                 ?? throw new InvalidOperationException("probe falhou");
             var audioIdx = EscolherStreamAudio(info.Audios);
+            var audioJaCompativel = AudioJaCompativel(info.Audios.FirstOrDefault(a => a.Index == audioIdx));
 
-            var args = MontarArgsFfmpegRemux(origem, tmp, audioIdx, info.Largura, info.Altura);
+            var args = MontarArgsFfmpegRemux(origem, tmp, audioIdx, info.Largura, info.Altura, audioJaCompativel);
 
             var psi = new ProcessStartInfo(_ffmpegPath);
             foreach (var a in args) psi.ArgumentList.Add(a);
@@ -542,20 +543,21 @@ public class HlsTranscodeService
 
             var usarRkmpp = !videoCompativel && await _rkmpp.DisponivelAsync();
             var audioStreamIndex = EscolherStreamAudio(info.Audios);
+            var audioJaCompativel = AudioJaCompativel(info.Audios.FirstOrDefault(a => a.Index == audioStreamIndex));
 
             // Decode por hardware só faz diferença (e só vale o risco) no 4K com downscale —
             // 1080p decodifica barato em software. Fallback em cascata: hw-decode+hw-encode →
             // sw-decode+hw-encode → libx264. Cada nível apaga e recria o dir antes de tentar.
             var decodeHw = usarRkmpp && _rkmppDecodeHw && downscalePara is not null;
 
-            var (exitCode, stderr, orfao, travouSemProgresso) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw, info.Largura, info.Altura);
+            var (exitCode, stderr, orfao, travouSemProgresso) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw, info.Largura, info.Altura, audioJaCompativel);
 
             if (!orfao && decodeHw && exitCode != 0)
             {
                 _logger.LogWarning("rkmpp com hwaccel de decode falhou pro filme {Id} (exit {Code}): {Stderr}. Tentando rkmpp só no encode.",
                     filmeId, exitCode, stderr);
                 LimparDir(dir);
-                (exitCode, stderr, orfao, travouSemProgresso) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw: false, info.Largura, info.Altura);
+                (exitCode, stderr, orfao, travouSemProgresso) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw: false, info.Largura, info.Altura, audioJaCompativel);
             }
 
             if (ContaComoFalhaDeEncoder(orfao, travouSemProgresso) && usarRkmpp)
@@ -566,7 +568,7 @@ public class HlsTranscodeService
                     _logger.LogWarning("Encode via rkmpp falhou pro filme {Id} (exit {Code}): {Stderr}. Tentando de novo com libx264.",
                         filmeId, exitCode, stderr);
                     LimparDir(dir);
-                    (exitCode, stderr, orfao, travouSemProgresso) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp: false, audioStreamIndex, downscalePara, decodeHw: false, info.Largura, info.Altura);
+                    (exitCode, stderr, orfao, travouSemProgresso) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp: false, audioStreamIndex, downscalePara, decodeHw: false, info.Largura, info.Altura, audioJaCompativel);
                 }
             }
 
@@ -629,8 +631,10 @@ public class HlsTranscodeService
     }
 
     /// <summary>Monta a linha de argumentos do ffmpeg pro job de <c>/remux</c> (vídeo copiado
-    /// <c>-c:v copy</c>, áudio reencodado pra AAC estéreo). Pura e <c>internal</c> de
-    /// propósito, mesma ideia do <see cref="MontarArgsFfmpegHls"/>. <paramref name="largura"/>/
+    /// <c>-c:v copy</c>, áudio reencodado pra AAC estéreo — exceto quando
+    /// <paramref name="audioJaCompativel"/>, ver <see cref="AudioJaCompativel"/>: copia também,
+    /// sem gastar CPU decodificando+reencodando áudio que já estava bom). Pura e <c>internal</c>
+    /// de propósito, mesma ideia do <see cref="MontarArgsFfmpegHls"/>. <paramref name="largura"/>/
     /// <paramref name="altura"/> viram <c>-aspect largura:altura</c> quando os dois são &gt; 0
     /// — corrige metadado de proporção de pixel quebrado (SAR, ver
     /// <see cref="SarPrecisaCorrecao"/>) sem reencodar vídeo: <c>-aspect</c> só sobrescreve o
@@ -638,12 +642,13 @@ public class HlsTranscodeService
     /// conhecidos (não só quando o SAR está ruim) — é inofensivo num arquivo já correto e evita
     /// ter que replicar aqui a mesma decisão de "está ruim?" do <see cref="ClassificarCompatibilidade"/>.</summary>
     internal static List<string> MontarArgsFfmpegRemux(
-        string origem, string destino, int? audioStreamIndex, int largura = 0, int altura = 0)
+        string origem, string destino, int? audioStreamIndex, int largura = 0, int altura = 0, bool audioJaCompativel = false)
     {
         List<string> args = ["-y", "-i", origem, "-map", "0:v:0"];
         if (audioStreamIndex is int idx) args.AddRange(["-map", $"0:{idx}"]);
         args.Add("-c:v"); args.Add("copy");
-        if (audioStreamIndex is not null) args.AddRange(["-c:a", "aac", "-b:a", "192k", "-ac", "2"]);
+        if (audioStreamIndex is not null)
+            args.AddRange(audioJaCompativel ? ["-c:a", "copy"] : ["-c:a", "aac", "-b:a", "192k", "-ac", "2"]);
         if (largura > 0 && altura > 0) args.AddRange(["-aspect", $"{largura}:{altura}"]);
         // -f mp4 explícito: o nome real é "{id}.mp4.tmp" (renomeado pro final só depois
         // de completo), e o ffmpeg escolhe o muxer pela ÚLTIMA extensão — ".tmp" sozinho
@@ -656,10 +661,12 @@ public class HlsTranscodeService
     /// de propósito: dá pra testar a decisão de encode (ex.: o <c>-ac 2</c> obrigatório)
     /// sem subir processo — ver <c>FilmesApi.Tests</c>. <paramref name="largura"/>/
     /// <paramref name="altura"/>: mesma correção de <c>-aspect</c> do
-    /// <see cref="MontarArgsFfmpegRemux"/>, ver comentário lá.</summary>
+    /// <see cref="MontarArgsFfmpegRemux"/>, ver comentário lá. <paramref name="audioJaCompativel"/>:
+    /// ver <see cref="AudioJaCompativel"/> — copia o áudio em vez de reencodar quando a faixa já
+    /// está num formato que o navegador aceita.</summary>
     internal static List<string> MontarArgsFfmpegHls(
         string origem, bool videoCompativel, bool usarRkmpp, int? audioStreamIndex, int? downscalePara, bool decodeHw,
-        int largura = 0, int altura = 0)
+        int largura = 0, int altura = 0, bool audioJaCompativel = false)
     {
         List<string> args = ["-y"];
 
@@ -714,12 +721,17 @@ public class HlsTranscodeService
             args.AddRange(["-sc_threshold", "0", "-force_key_frames", $"expr:gte(t,n_forced*{SegmentoSegundos})"]);
         }
 
-        // -ac 2: downmix pra estéreo SEMPRE. Áudio 5.1/7.1 (EAC3 de WEB-DL é o caso comum)
-        // reencodado pra AAC multicanal sai sem channel_layout que o decoder AAC do Chrome
-        // (MSE/hls.js) reconheça — e ele rejeita EM SILÊNCIO: a API responde 200, playlist e
-        // segments existem, mas o vídeo não toca e não há erro em log nenhum. ffprobe e players
-        // desktop toleram, então é quase impossível diagnosticar sem saber disso de antemão.
-        if (audioStreamIndex is not null) args.AddRange(["-c:a", "aac", "-b:a", "192k", "-ac", "2"]);
+        // -ac 2: downmix pra estéreo. Áudio 5.1/7.1 (EAC3 de WEB-DL é o caso comum) reencodado
+        // pra AAC multicanal sai sem channel_layout que o decoder AAC do Chrome (MSE/hls.js)
+        // reconheça — e ele rejeita EM SILÊNCIO: a API responde 200, playlist e segments
+        // existem, mas o vídeo não toca e não há erro em log nenhum. ffprobe e players desktop
+        // toleram, então é quase impossível diagnosticar sem saber disso de antemão. Esse risco
+        // só existe decodificando+reencodando de novo — se a faixa escolhida JÁ está num codec
+        // bom com 2 canais ou menos (audioJaCompativel), copiar é tão seguro quanto o vídeo e
+        // poupa CPU de decode+encode de áudio à toa (visto: ffmpeg a 140%+ de CPU só pra
+        // reencodar um AAC estéreo pro mesmo AAC estéreo).
+        if (audioStreamIndex is not null)
+            args.AddRange(audioJaCompativel ? ["-c:a", "copy"] : ["-c:a", "aac", "-b:a", "192k", "-ac", "2"]);
         if (largura > 0 && altura > 0) args.AddRange(["-aspect", $"{largura}:{altura}"]);
         args.AddRange([
             "-f", "hls",
@@ -737,9 +749,9 @@ public class HlsTranscodeService
 
     private async Task<(int ExitCode, string Stderr, bool Orfao, bool TravouSemProgresso)> RunFfmpegHlsAsync(
         int filmeId, string origem, string dir, bool videoCompativel, bool usarRkmpp, int? audioStreamIndex, int? downscalePara, bool decodeHw,
-        int largura, int altura)
+        int largura, int altura, bool audioJaCompativel)
     {
-        var args = MontarArgsFfmpegHls(origem, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw, largura, altura);
+        var args = MontarArgsFfmpegHls(origem, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw, largura, altura, audioJaCompativel);
 
         var psi = new ProcessStartInfo(_ffmpegPath) { WorkingDirectory = dir };
         foreach (var arg in args) psi.ArgumentList.Add(arg);
@@ -799,6 +811,16 @@ public class HlsTranscodeService
             ?? audios.Where(a => a.Default).Select(a => (int?)a.Index).FirstOrDefault()
             ?? audios[0].Index;
     }
+
+    /// <summary>A faixa escolhida por <see cref="EscolherStreamAudio"/> já está num formato que
+    /// o navegador toca sem drama (codec da lista + mono/estéreo) — nesse caso dá pra copiar em
+    /// vez de reencodar. O reencode pra AAC estéreo existe só pra dois problemas: codec
+    /// incompatível (EAC3/DTS) e o bug do AAC multicanal sem channel_layout que o Chrome
+    /// reconheça (ver comentário grande sobre <c>-ac 2</c> em <see cref="MontarArgsFfmpegHls"/>)
+    /// — nenhum dos dois existe quando a faixa já chega com codec bom e 2 canais ou menos. Canal
+    /// desconhecido (ffprobe não informou) conta como "não sei, não arrisca" — fica no reencode.</summary>
+    internal static bool AudioJaCompativel(FaixaAudio? audio) =>
+        audio?.Codec is string codec && AudioCodecsCompativeis.Contains(codec) && audio.Canais is int c && c <= 2;
 
     private readonly object _cacheStatsLock = new();
 
