@@ -23,6 +23,8 @@ services:
     # arquivo não é compatível com a VPU) já consumiu 500%+ de CPU sozinha, o que
     # engasgava os outros serviços do servidor. Sempre sobram 2 núcleos livres.
     cpus: "4.0"
+    # Buffer de transcodificação (remux/HLS) pode picar bastante em vídeo grande.
+    mem_limit: 1536m
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 30s
