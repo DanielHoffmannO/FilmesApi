@@ -87,6 +87,16 @@ public class ProgressoService
         return p is null ? null : new ProgressoResponse(p.FilmeId, p.PosicaoSegundos, p.DuracaoSegundos, p.AtualizadoEm);
     }
 
+    /// <summary>Tira o filme de "continuar assistindo" (botão "x" no index.html) sem marcar
+    /// como assistido — só apaga o ponto de retomada. Idempotente: já não ter progresso
+    /// nenhum também conta como sucesso (é o estado que o botão quer de qualquer jeito).</summary>
+    public async Task<bool> RemoverProgressoAsync(int filmeId)
+    {
+        if (!await _db.Filmes.AnyAsync(f => f.Id == filmeId)) return false;
+        await _db.Progressos.Where(p => p.FilmeId == filmeId).ExecuteDeleteAsync();
+        return true;
+    }
+
 
     /// <summary>Reprodução chegou ao fim: marca o filme como assistido e limpa a retomada.
     /// Usado pelo evento 'ended' do player — inclusive no HLS, onde a regra de "perto do fim"

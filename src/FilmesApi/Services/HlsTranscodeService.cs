@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using FilmesApi.Models;
 
 namespace FilmesApi.Services;
 
@@ -53,6 +54,17 @@ public class HlsTranscodeService
     private readonly CancellationToken _pararToken;
 
     private readonly ConcurrentDictionary<int, Task> _jobs = new();
+    /// <summary>Cancela o job de HLS/remux em andamento de um filme especificamente (ex.: troca
+    /// de dublagem) sem derrubar os outros — <c>_pararToken</c> sozinho só cobre shutdown do
+    /// host. Dicionários separados por tipo de job (igual a <c>_jobs</c>/<c>_remuxJobs</c>):
+    /// um CancellationTokenSource compartilhado entre os dois tipos arriscaria Dispose() de
+    /// um lado enquanto o outro ainda está com Task.Delay(ct) pendente.</summary>
+    private readonly ConcurrentDictionary<int, CancellationTokenSource> _jobCancelHls = new();
+    private readonly ConcurrentDictionary<int, CancellationTokenSource> _jobCancelRemux = new();
+    /// <summary>Preferência manual de faixa de áudio por filme (controle remoto escolheu uma
+    /// "dublagem" diferente da automática) — ver <see cref="DefinirPreferenciaAudio"/> e
+    /// <see cref="EscolherStreamAudio"/>. Em memória só: some num restart, volta pra automática.</summary>
+    private readonly ConcurrentDictionary<int, int> _preferenciaAudio = new();
     /// <summary>filmeId -> quando o transcode falhou. Não é permanente: depois de
     /// <c>HlsFalhaCooldownMinutes</c> a entrada expira e o filme volta a ser tentável
     /// (falha de ffmpeg costuma ser transitória — arquivo meio corrompido, placa quente).</summary>
@@ -209,7 +221,11 @@ public class HlsTranscodeService
             }
             if (File.Exists(CaminhoRemux(filmeId))) return (RemuxStatus.Disponivel, 100);
             if (!_remuxJobs.ContainsKey(filmeId))
-                _remuxJobs[filmeId] = Task.Run(() => ExecutarRemuxAsync(filmeId, origem));
+            {
+                var cts = CancellationTokenSource.CreateLinkedTokenSource(_pararToken);
+                _jobCancelRemux[filmeId] = cts;
+                _remuxJobs[filmeId] = Task.Run(() => ExecutarRemuxAsync(filmeId, origem, cts.Token));
+            }
             return (RemuxStatus.Preparando, EstimarProgressoRemux(filmeId, origem));
         }
     }
@@ -228,7 +244,7 @@ public class HlsTranscodeService
         catch (IOException) { return null; }
     }
 
-    private async Task ExecutarRemuxAsync(int filmeId, string origem)
+    private async Task ExecutarRemuxAsync(int filmeId, string origem, CancellationToken ct)
     {
         var final = CaminhoRemux(filmeId);
         var tmp = final + ".tmp";
@@ -238,14 +254,15 @@ public class HlsTranscodeService
             // Mesmo gate de temperatura/concorrência do HLS: mesmo o remux sendo leve
             // (video só copia, só o áudio processa), ele ainda compete pela mesma CPU/placa —
             // sem isso um remux e um reencode HLS rodando juntos já esquentaram a placa hoje.
-            await _thermal.AguardarResfriamentoAsync(_pararToken);
-            await _slotEncoder.WaitAsync(_pararToken);
+            await _thermal.AguardarResfriamentoAsync(ct);
+            await _slotEncoder.WaitAsync(ct);
             slotObtido = true;
-            await _thermal.AguardarResfriamentoAsync(_pararToken);
+            await _thermal.AguardarResfriamentoAsync(ct);
 
             var info = await _probe.InspecionarAsync(origem, CancellationToken.None)
                 ?? throw new InvalidOperationException("probe falhou");
-            var audioIdx = EscolherStreamAudio(info.Audios);
+            var preferencia = _preferenciaAudio.TryGetValue(filmeId, out var pref) ? pref : (int?)null;
+            var audioIdx = EscolherStreamAudio(info.Audios, preferencia);
             var audioJaCompativel = AudioJaCompativel(info.Audios.FirstOrDefault(a => a.Index == audioIdx));
 
             var args = MontarArgsFfmpegRemux(origem, tmp, audioIdx, info.Largura, info.Altura, audioJaCompativel);
@@ -253,12 +270,19 @@ public class HlsTranscodeService
             var psi = new ProcessStartInfo(_ffmpegPath);
             foreach (var a in args) psi.ArgumentList.Add(a);
 
-            var (exit, stderr) = await ProcessRunner.ExecutarComTimeoutAsync(psi, _jobTimeout, null, _pararToken);
+            var (exit, stderr) = await ProcessRunner.ExecutarComTimeoutAsync(psi, _jobTimeout, null, ct);
             if (exit != 0) throw new InvalidOperationException($"ffmpeg exit {exit}: {stderr}");
 
             File.Move(tmp, final, overwrite: true);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException)
+        {
+            // Shutdown do host OU troca manual de dublagem (DefinirPreferenciaAudio) — não
+            // marca _remuxFalhas: fica retentável na próxima vez que alguém pedir /remux-status.
+            _logger.LogInformation("Remux do filme {Id} interrompido.", filmeId);
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+        catch (Exception ex)
         {
             _logger.LogError(ex, "Falha ao remuxar filme {Id}.", filmeId);
             _remuxFalhas[filmeId] = DateTime.UtcNow;
@@ -267,10 +291,11 @@ public class HlsTranscodeService
         finally
         {
             _remuxJobs.TryRemove(filmeId, out _);
+            if (_jobCancelRemux.TryRemove(filmeId, out var cts)) cts.Dispose();
             if (slotObtido) _slotEncoder.Release();
         }
 
-        if (!_pararToken.IsCancellationRequested) LimparRemuxCacheExcedente();
+        if (!ct.IsCancellationRequested) LimparRemuxCacheExcedente();
     }
 
     /// <summary>Toca o mtime do .mp4 remuxado — sinal de LRU pra eviction, mesmo padrão do
@@ -343,6 +368,47 @@ public class HlsTranscodeService
         }
         catch (IOException) { /* best-effort: não bloqueia a exclusão do filme */ }
         catch (UnauthorizedAccessException) { /* best-effort: não bloqueia a exclusão do filme */ }
+    }
+
+    /// <summary>Faixas de áudio do arquivo ("dublagens" disponíveis), com qual delas o
+    /// remux/HLS usaria agora — pro controle.html listar e já destacar a atual. Ver
+    /// <see cref="EscolherStreamAudio"/>.</summary>
+    public async Task<IReadOnlyList<AudioInfo>> ListarAudiosAsync(int filmeId, string arquivoAbsoluto, CancellationToken ct)
+    {
+        var info = await _probe.InspecionarAsync(arquivoAbsoluto, ct);
+        if (info is null || info.Audios.Count == 0) return [];
+
+        var preferencia = _preferenciaAudio.TryGetValue(filmeId, out var pref) ? pref : (int?)null;
+        var escolhida = EscolherStreamAudio(info.Audios, preferencia);
+        return info.Audios
+            .Select(a => new AudioInfo(a.Index, a.Codec, a.Idioma, a.Default, a.Index == escolhida))
+            .ToList();
+    }
+
+    /// <summary>Troca a faixa de áudio preferida manualmente pra este filme (controle remoto —
+    /// "dublagem" em <c>controle.html</c>), sobrepondo a escolha automática por idioma de
+    /// <see cref="EscolherStreamAudio"/>. Cancela um job de HLS/remux em andamento pra este
+    /// filme (se houver) e apaga o cache já pronto (HLS e /remux), pra forçar regerar com a
+    /// faixa nova na próxima vez que /hls/playlist.m3u8 ou /remux-status for pedido — o áudio
+    /// vai dentro dos segments/arquivo, não dá pra trocar sem reprocessar.</summary>
+    public void DefinirPreferenciaAudio(int filmeId, int audioStreamIndex)
+    {
+        _preferenciaAudio[filmeId] = audioStreamIndex;
+
+        if (_jobCancelHls.TryGetValue(filmeId, out var ctsHls))
+            try { ctsHls.Cancel(); } catch (ObjectDisposedException) { }
+        if (_jobCancelRemux.TryGetValue(filmeId, out var ctsRemux))
+            try { ctsRemux.Cancel(); } catch (ObjectDisposedException) { }
+
+        LimparCache(filmeId);
+        try
+        {
+            var caminhoRemux = CaminhoRemux(filmeId);
+            if (File.Exists(caminhoRemux)) File.Delete(caminhoRemux);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+        _remuxFalhas.TryRemove(filmeId, out _);
     }
 
     /// <summary>Marca "assistido agora" tocando o mtime do playlist — sinal de LRU pra
@@ -486,7 +552,9 @@ public class HlsTranscodeService
             // não é confiável, então começa do zero.
             if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
             Directory.CreateDirectory(dir);
-            _jobs[filmeId] = Task.Run(() => TranscodificarHlsAsync(filmeId, arquivoOriginal), CancellationToken.None);
+            var cts = CancellationTokenSource.CreateLinkedTokenSource(_pararToken);
+            _jobCancelHls[filmeId] = cts;
+            _jobs[filmeId] = Task.Run(() => TranscodificarHlsAsync(filmeId, arquivoOriginal, cts.Token), CancellationToken.None);
             _ultimoAcesso[filmeId] = DateTime.UtcNow;  // já conta como interesse — o job acabou de nascer
             return (StreamStatus.Preparando, null);
         }
@@ -504,7 +572,7 @@ public class HlsTranscodeService
         }
     }
 
-    private async Task TranscodificarHlsAsync(int filmeId, string origem)
+    private async Task TranscodificarHlsAsync(int filmeId, string origem, CancellationToken ct)
     {
         var dir = DiretorioCache(filmeId);
 
@@ -515,13 +583,13 @@ public class HlsTranscodeService
         var slotObtido = false;
         try
         {
-            await _thermal.AguardarResfriamentoAsync(_pararToken);
-            await _slotEncoder.WaitAsync(_pararToken);
+            await _thermal.AguardarResfriamentoAsync(ct);
+            await _slotEncoder.WaitAsync(ct);
             slotObtido = true;
 
             // Rechecagem: o slot pode ter demorado a liberar e a placa esquentado de novo
             // (o job anterior encerrou quente). Barato quando já está fria.
-            await _thermal.AguardarResfriamentoAsync(_pararToken);
+            await _thermal.AguardarResfriamentoAsync(ct);
 
             // Uma leitura de ffprobe só (cacheada): codec, resolução e faixa de áudio.
             var info = await _probe.InspecionarAsync(origem, CancellationToken.None)
@@ -542,7 +610,8 @@ public class HlsTranscodeService
             }
 
             var usarRkmpp = !videoCompativel && await _rkmpp.DisponivelAsync();
-            var audioStreamIndex = EscolherStreamAudio(info.Audios);
+            var preferencia = _preferenciaAudio.TryGetValue(filmeId, out var pref) ? pref : (int?)null;
+            var audioStreamIndex = EscolherStreamAudio(info.Audios, preferencia);
             var audioJaCompativel = AudioJaCompativel(info.Audios.FirstOrDefault(a => a.Index == audioStreamIndex));
 
             // Decode por hardware só faz diferença (e só vale o risco) no 4K com downscale —
@@ -550,14 +619,14 @@ public class HlsTranscodeService
             // sw-decode+hw-encode → libx264. Cada nível apaga e recria o dir antes de tentar.
             var decodeHw = usarRkmpp && _rkmppDecodeHw && downscalePara is not null;
 
-            var (exitCode, stderr, orfao, travouSemProgresso) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw, info.Largura, info.Altura, audioJaCompativel);
+            var (exitCode, stderr, orfao, travouSemProgresso) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw, info.Largura, info.Altura, audioJaCompativel, ct);
 
             if (!orfao && decodeHw && exitCode != 0)
             {
                 _logger.LogWarning("rkmpp com hwaccel de decode falhou pro filme {Id} (exit {Code}): {Stderr}. Tentando rkmpp só no encode.",
                     filmeId, exitCode, stderr);
                 LimparDir(dir);
-                (exitCode, stderr, orfao, travouSemProgresso) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw: false, info.Largura, info.Altura, audioJaCompativel);
+                (exitCode, stderr, orfao, travouSemProgresso) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw: false, info.Largura, info.Altura, audioJaCompativel, ct);
             }
 
             if (ContaComoFalhaDeEncoder(orfao, travouSemProgresso) && usarRkmpp)
@@ -568,7 +637,7 @@ public class HlsTranscodeService
                     _logger.LogWarning("Encode via rkmpp falhou pro filme {Id} (exit {Code}): {Stderr}. Tentando de novo com libx264.",
                         filmeId, exitCode, stderr);
                     LimparDir(dir);
-                    (exitCode, stderr, orfao, travouSemProgresso) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp: false, audioStreamIndex, downscalePara, decodeHw: false, info.Largura, info.Altura, audioJaCompativel);
+                    (exitCode, stderr, orfao, travouSemProgresso) = await RunFfmpegHlsAsync(filmeId, origem, dir, videoCompativel, usarRkmpp: false, audioStreamIndex, downscalePara, decodeHw: false, info.Largura, info.Altura, audioJaCompativel, ct);
                 }
             }
 
@@ -593,9 +662,10 @@ public class HlsTranscodeService
         }
         catch (OperationCanceledException)
         {
-            // Shutdown do host (ou placa quente demais por tempo demais). Não marca _falhas:
-            // fica retentável no próximo boot / próxima abertura.
-            _logger.LogInformation("Transcode do filme {Id} interrompido (host encerrando).", filmeId);
+            // Shutdown do host, placa quente demais por tempo demais, OU troca manual de
+            // dublagem (DefinirPreferenciaAudio cancela o job em andamento). Não marca
+            // _falhas: fica retentável no próximo boot / próxima abertura / próxima tentativa.
+            _logger.LogInformation("Transcode do filme {Id} interrompido.", filmeId);
             try { lock (_decisaoLock) { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); } }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
@@ -612,10 +682,11 @@ public class HlsTranscodeService
         finally
         {
             lock (_decisaoLock) { _jobs.TryRemove(filmeId, out _); }
+            if (_jobCancelHls.TryRemove(filmeId, out var cts)) cts.Dispose();
             if (slotObtido) _slotEncoder.Release();
         }
 
-        if (!_pararToken.IsCancellationRequested) LimparCacheExcedente();
+        if (!ct.IsCancellationRequested) LimparCacheExcedente();
     }
 
     /// <summary>Zera o dir de cache antes de uma nova tentativa de encode. Sob o mesmo lock
@@ -749,7 +820,7 @@ public class HlsTranscodeService
 
     private async Task<(int ExitCode, string Stderr, bool Orfao, bool TravouSemProgresso)> RunFfmpegHlsAsync(
         int filmeId, string origem, string dir, bool videoCompativel, bool usarRkmpp, int? audioStreamIndex, int? downscalePara, bool decodeHw,
-        int largura, int altura, bool audioJaCompativel)
+        int largura, int altura, bool audioJaCompativel, CancellationToken ct)
     {
         var args = MontarArgsFfmpegHls(origem, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw, largura, altura, audioJaCompativel);
 
@@ -787,7 +858,7 @@ public class HlsTranscodeService
             return true;
         }
 
-        var (exitCode, stderr) = await ProcessRunner.ExecutarComTimeoutAsync(psi, _jobTimeout, Travou, _pararToken);
+        var (exitCode, stderr) = await ProcessRunner.ExecutarComTimeoutAsync(psi, _jobTimeout, Travou, ct);
         return (exitCode, stderr, orfao, travouSemProgresso);
     }
 
@@ -800,12 +871,17 @@ public class HlsTranscodeService
     /// o hardware — degradação progressiva que só um restart do container conserta.</summary>
     internal static bool ContaComoFalhaDeEncoder(bool orfao, bool travouSemProgresso) => !orfao && !travouSemProgresso;
 
-    /// <summary>Índice global (pra <c>-map</c>) da faixa de áudio que vai pro HLS: primeiro
-    /// uma em português — rip "dual áudio" costuma marcar a faixa errada como default —, senão
-    /// a default, senão a primeira. null se não há áudio. Função pura sobre o probe.</summary>
-    private static int? EscolherStreamAudio(IReadOnlyList<FaixaAudio> audios)
+    /// <summary>Índice global (pra <c>-map</c>) da faixa de áudio que vai pro HLS/remux. Se
+    /// <paramref name="preferenciaManual"/> aponta pra uma faixa que existe de verdade nesse
+    /// arquivo, usa ela (controle remoto escolheu uma "dublagem" — ver
+    /// <see cref="DefinirPreferenciaAudio"/>); senão prioridade automática: primeiro uma em
+    /// português — rip "dual áudio" costuma marcar a faixa errada como default —, senão a
+    /// default, senão a primeira. null se não há áudio. Função pura sobre o probe (testável
+    /// sem ffprobe de verdade, ver <c>FilmesApi.Tests</c>).</summary>
+    internal static int? EscolherStreamAudio(IReadOnlyList<FaixaAudio> audios, int? preferenciaManual = null)
     {
         if (audios.Count == 0) return null;
+        if (preferenciaManual is int pref && audios.Any(a => a.Index == pref)) return pref;
         return audios.Where(a => a.Idioma is not null && IdiomasAudioPreferidos.Contains(a.Idioma))
                 .Select(a => (int?)a.Index).FirstOrDefault()
             ?? audios.Where(a => a.Default).Select(a => (int?)a.Index).FirstOrDefault()

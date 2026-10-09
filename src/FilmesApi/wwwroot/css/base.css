@@ -28,6 +28,8 @@ h1 { font-size: 20px; font-weight: 600 }
 .row.assistido .rtit { color: #8a8a8a }
 .row .rprog { position: absolute; left: 12px; right: 12px; bottom: 1px; height: 2px; background: #2a2a2a; border-radius: 1px; overflow: hidden }
 .row .rprog>div { height: 100%; background: var(--accent) }
+.row .remover { background: none; border: none; color: var(--muted); font-size: 14px; cursor: pointer; padding: 2px 6px; line-height: 1 }
+.row .remover:hover { color: var(--accent) }
 .grupo.collapsed .grupo-body { display: none }
 .grupo-hd { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 6px; cursor: pointer; user-select: none; font-size: 14px; font-weight: 600; color: #ddd }
 .grupo-hd .caret { display: inline-block; width: 12px; color: var(--muted); font-size: 11px }

@@ -323,8 +323,14 @@ function continuarRowHtml(c) {
       ${posterHtml(c)}
       <span class="rtit">${nome}</span>
       <span class="resume">▶ ${info}</span>
+      <button class="remover" title="Tirar de continuar assistindo" onclick="event.stopPropagation(); removerDeContinuar(${c.id})">✕</button>
       ${barraProgresso(c)}
     </div>`;
+}
+
+async function removerDeContinuar(id) {
+  await fetch(`${API}/${id}/progresso`, { method: 'DELETE' });
+  render();  // re-busca já refletindo a remoção — sem cache local pra remendar
 }
 
 async function toggleAssistido(id) {

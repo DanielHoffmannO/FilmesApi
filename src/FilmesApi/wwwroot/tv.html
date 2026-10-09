@@ -231,9 +231,14 @@ video { width: 100%; height: auto; background: #000; }
     x.send();
   }
 
-  function send(method, url, body) {
+  // cb (opcional) roda quando a resposta chega — usado quando algo depois precisa ter
+  // certeza que o servidor já processou (ex.: trocar dublagem antes de recarregar o vídeo).
+  function send(method, url, body, cb) {
     var x = new XMLHttpRequest();
     x.open(method, url, true);
+    if (typeof cb === 'function') {
+      x.onreadystatechange = function () { if (x.readyState === 4) cb(); };
+    }
     if (body != null) {
       x.setRequestHeader('Content-Type', 'application/json');
       x.send(JSON.stringify(body));
@@ -676,7 +681,11 @@ video { width: 100%; height: auto; background: #000; }
     if (p) tocar(p.id);
   }
 
-  function tocar(id, ehRetry) {
+  // posInicial (opcional): pula o fetch de /progresso e usa essa posicao direto — usado ao
+  // recarregar o MESMO filme depois de trocar dublagem (aplicarAudioRemoto), onde a posicao
+  // certa e onde o video estava (v.currentTime), nao a ultima salva no banco. Tambem pula o
+  // aviso de "selecionar" ao PlayerStateService (mesmo filme, nao e uma selecao nova).
+  function tocar(id, ehRetry, posInicial) {
     cancelarProximo();
     pararPoll();
     pararWatchdog();
@@ -686,7 +695,7 @@ video { width: 100%; height: auto; background: #000; }
     // Avisa o controle.html o que esta tocando agora, nao importa se foi selecionado
     // aqui no D-pad ou remotamente — fonte unica de verdade no servidor. Fire-and-forget,
     // nao atrasa nem interfere na reproducao local.
-    if (!ehRetry) send('POST', PLAYER + '/selecionar/' + id);
+    if (!ehRetry && posInicial == null) send('POST', PLAYER + '/selecionar/' + id);
     els.list.className = 'hide';
     els.player.className = 'on';
     document.body.className = 'playing';
@@ -711,6 +720,14 @@ video { width: 100%; height: auto; background: #000; }
     var temNativeHls = !!(v.canPlayType && v.canPlayType('application/vnd.apple.mpegurl'));
     var temHls = temMseHls || temNativeHls;
     if (!ehRetry) logDiag('tocar filme ' + id + ': mse=' + temMseHls + ' native=' + temNativeHls);
+
+    if (posInicial != null) {
+      // Posicao ja definida por quem chamou (ex.: troca de dublagem) — nao busca /progresso,
+      // que traria a ultima posicao SALVA, nao a posicao real de onde o video estava.
+      posicaoRetomar = posInicial;
+      if (temHls) pollStatusEtocar(id); else tocarSemHls(id);
+      return;
+    }
 
     // pega o ponto de retomada ANTES de setar o src (senao o loadedmetadata perde a corrida)
     get(API + '/' + id + '/progresso', function (err, d) {
@@ -812,6 +829,7 @@ video { width: 100%; height: auto; background: #000; }
       try { v.currentTime = Math.max(0, estado.seekAbsPos); } catch (e) {}
     }
     if (estado.legendaVersion !== anterior.legendaVersion) aplicarLegendaRemota(estado.legendaIdx);
+    if (estado.audioVersion !== anterior.audioVersion) aplicarAudioRemoto(estado.audioIdx);
     // Celular confirmou a oferta de proximo episodio que esta TV mesma colocou no ar —
     // mesmo caminho que o OK local do D-pad usaria (irProximo -> tocar -> Selecionar).
     if (estado.aceitarProximoVersion !== anterior.aceitarProximoVersion && proximoPendente) irProximo();
@@ -828,6 +846,21 @@ video { width: 100%; height: auto; background: #000; }
       var m = src && src.match(/\/legenda\/(\d+)$/);
       tt[i].mode = (m && Number(m[1]) === idx) ? 'showing' : 'disabled';
     }
+  }
+
+  // Ao contrario da legenda (so troca o <track> ativo, sem tocar no servidor), a dublagem
+  // vai dentro dos segments HLS/remux — trocar precisa regerar o video inteiro. Guarda a
+  // posicao atual, avisa o servidor da faixa nova (so recarrega DEPOIS da resposta, senao o
+  // /hls/playlist.m3u8 podia ser pedido antes do servidor aplicar a troca e vir com a faixa
+  // velha) e recarrega o MESMO filme nessa posicao — um "Preparando..." breve e inevitavel
+  // (o audio esta embutido nos segments, nao da pra trocar sem reprocessar).
+  function aplicarAudioRemoto(idx) {
+    if (filmeAtual == null) return;
+    var id = filmeAtual;
+    var pos = els.video.currentTime || 0;
+    send('POST', API + '/' + id + '/audio', { idx: idx }, function () {
+      if (filmeAtual === id) tocar(id, false, pos);
+    });
   }
 
   // cb (opcional) roda quando o PUT termina — usado pelo fecharPlayer pra so

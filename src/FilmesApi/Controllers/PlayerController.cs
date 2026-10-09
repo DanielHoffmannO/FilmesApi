@@ -70,6 +70,14 @@ public class PlayerController : ControllerBase
         return Ok(_state.Snapshot());
     }
 
+    /// <summary>Celular escolheu a faixa de áudio ("dublagem") da TV.</summary>
+    [HttpPost("audio")]
+    public IActionResult SetAudio([FromBody] AudioTrackRequest req)
+    {
+        _state.SetAudio(req.Idx);
+        return Ok(_state.Snapshot());
+    }
+
     [HttpPost("parar")]
     public IActionResult Parar()
     {

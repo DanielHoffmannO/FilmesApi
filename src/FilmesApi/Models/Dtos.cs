@@ -54,6 +54,15 @@ public record TelaCatalogoResponse(
 public record LegendaInfo(
     int Idx, string Codec, string? Idioma, string? Titulo, bool Forced, bool Default, bool Convertivel);
 
+/// <summary>Uma faixa de áudio embutida ("dublagem"). <c>Idx</c> é o índice GLOBAL do
+/// ffprobe (o mesmo usado em <c>-map 0:Idx</c> pelo HLS/remux) — ao contrário de
+/// <see cref="LegendaInfo"/>, não é relativo, porque é o valor que volta via
+/// <c>POST /{id}/audio</c> pra escolher a faixa. <c>Atual</c> = a que o remux/HLS usaria
+/// agora (preferência manual se houver, senão a escolha automática por idioma).</summary>
+public record AudioInfo(int Idx, string? Codec, string? Idioma, bool Default, bool Atual);
+
+public record AudioRequest(int Idx);
+
 public record ProgressoRequest(double Posicao, double? Duracao);
 public record ProgressoResponse(int FilmeId, double PosicaoSegundos, double? DuracaoSegundos, DateTime AtualizadoEm);
 public record ContinuarAssistindoResponse(

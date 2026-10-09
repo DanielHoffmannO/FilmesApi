@@ -43,4 +43,10 @@ public class ProgressoController : ControllerBase
     [HttpPost("{id:int}/concluir")]
     public async Task<IActionResult> Concluir(int id)
         => await _progresso.ConcluirAsync(id) ? NoContent() : NotFound();
+
+    /// <summary>Tira o filme de "continuar assistindo" sem marcar como assistido — botão "x"
+    /// no index.html.</summary>
+    [HttpDelete("{id:int}/progresso")]
+    public async Task<IActionResult> RemoverProgresso(int id)
+        => await _progresso.RemoverProgressoAsync(id) ? NoContent() : NotFound();
 }
