@@ -66,4 +66,45 @@ public class ContinuarAssistindoTests
         var item = Assert.Single(lista);
         Assert.Equal(1, item.Id);
     }
+
+    // Botão "x" em "continuar assistindo" (index.html): some da lista, mas diferente de
+    // ConcluirAsync, NÃO marca como assistido -- só descarta o ponto de retomada.
+    [Fact]
+    public async Task RemoverProgresso_tira_da_lista_sem_marcar_assistido()
+    {
+        using var db = NovoDb();
+        db.Filmes.Add(new Filme { Id = 1, Titulo = "Episodio X", Assistido = false });
+        db.Progressos.Add(new ProgressoReproducao
+        {
+            FilmeId = 1,
+            PosicaoSegundos = 300,
+            DuracaoSegundos = 2400,
+            AtualizadoEm = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync();
+
+        var sucesso = await new ProgressoService(db).RemoverProgressoAsync(1);
+
+        Assert.True(sucesso);
+        Assert.Empty(await new ProgressoService(db).ContinuarAssistindoAsync());
+        Assert.False((await db.Filmes.FindAsync(1))!.Assistido);
+    }
+
+    [Fact]
+    public async Task RemoverProgresso_filme_inexistente_devolve_false()
+    {
+        using var db = NovoDb();
+
+        Assert.False(await new ProgressoService(db).RemoverProgressoAsync(999));
+    }
+
+    [Fact]
+    public async Task RemoverProgresso_sem_progresso_nenhum_e_idempotente()
+    {
+        using var db = NovoDb();
+        db.Filmes.Add(new Filme { Id = 1, Titulo = "Episodio X", Assistido = false });
+        await db.SaveChangesAsync();
+
+        Assert.True(await new ProgressoService(db).RemoverProgressoAsync(1));
+    }
 }

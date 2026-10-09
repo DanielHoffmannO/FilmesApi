@@ -36,6 +36,8 @@ main{padding:16px 24px;max-width:640px;margin:0 auto}
 .remote button{background:#222;color:#eee;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;cursor:pointer}
 .remote button:active{background:#333}
 .remote button.on{border-color:var(--accent);color:var(--accent)}
+.remote button:disabled{opacity:.35;cursor:default}
+.remote button:disabled:active{background:#222}
 .remote input[type=range]{width:100px}
 .remote-proximo{display:none;align-items:center;gap:10px;background:var(--bg-3);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:12px;color:#ccc}
 .remote-proximo.on{display:flex}
@@ -76,6 +78,7 @@ main{padding:16px 24px;max-width:640px;margin:0 auto}
     <button onclick="remoteSeek(SEEK_STEP_S)">10s »</button>
     <button onclick="remoteProximoEp()" id="remoteProximoEpBtn" style="display:none">⏭ Próximo ep</button>
     <button onclick="remoteCC()" id="remoteCCBtn" style="display:none">CC</button>
+    <button onclick="remoteAudio()" id="remoteAudioBtn" style="display:none">🗣️</button>
     <input type="range" id="remoteVolume" min="0" max="1" step="0.05" oninput="remoteVolume(this.value)">
     <button onclick="remoteParar()">⏹ Parar</button>
   </div>
@@ -98,6 +101,7 @@ const foldersAbertos = new Set();  // séries expandidas — fecham por padrão,
 const els = {
   remote: document.getElementById('remote'),
   remoteCCBtn: document.getElementById('remoteCCBtn'),
+  remoteAudioBtn: document.getElementById('remoteAudioBtn'),
   remoteProximoEpBtn: document.getElementById('remoteProximoEpBtn'),
 };
 
@@ -235,14 +239,35 @@ async function remoteProximoEp() {
   if (prox) enviarParaTv(prox.id);
 }
 
-// CC: cicla entre desligado → faixa 0 → faixa 1 → … → desligado, mandando pra TV.
+// Mostra o botão pra qualquer episódio, mas só habilita se REALMENTE existe um próximo --
+// sem isso, no último episódio da série o botão ficava visível e clicável sem fazer nada
+// (silencioso, parecia quebrado em vez de "já é o último").
+async function atualizarBotaoProximoEp(filmeId) {
+  const btn = els.remoteProximoEpBtn;
+  if (!filmeAtualRemoto || !filmeAtualRemoto.ehEpisodio) { btn.style.display = 'none'; return; }
+  btn.style.display = '';
+  btn.disabled = true;
+  const prox = await fetch(`${API}/${filmeId}/proximo`)
+    .then(r => r.status === 200 ? r.json() : null).catch(() => null);
+  if (filmeId === ultimoEstadoRemoto?.filmeId) btn.disabled = !prox;
+}
+
+// CC: cicla entre desligado → faixa 0 → faixa 1 → … → desligado, mandando pra TV. O botão
+// mostra o idioma atual (ex. "CC: POR"), igual ao botão de dublagem — não é só um toggle
+// cego, dá pra saber qual faixa está ativa sem perguntar pra TV.
 // Só recarrega quando pollRemote detecta troca de filme (trocouFilme) — mesmo sinal que já
 // existe pra filmeAtualRemoto, em vez de um 2º controle de "id de quem já busquei" à parte.
 let remoteLegendas = [];
 async function remoteCarregarLegendas(id) {
   try { remoteLegendas = (await fetch(`${API}/${id}/legendas`).then(r => r.json())).filter(x => x.convertivel); }
   catch { remoteLegendas = []; }
+  atualizarBotaoCC();
+}
+function atualizarBotaoCC() {
   els.remoteCCBtn.style.display = remoteLegendas.length ? '' : 'none';
+  const atual = ultimoEstadoRemoto ? ultimoEstadoRemoto.legendaIdx : -1;
+  const faixa = remoteLegendas.find(x => x.idx === atual);
+  els.remoteCCBtn.textContent = faixa ? `CC: ${(faixa.idioma || '?').toUpperCase()}` : 'CC: off';
 }
 async function remoteCC() {
   if (!remoteLegendas.length) return;
@@ -253,6 +278,40 @@ async function remoteCC() {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ idx: prox })
   });
+  // Reflete local sem esperar o próximo poll (mesmo padrão da dublagem).
+  if (ultimoEstadoRemoto) ultimoEstadoRemoto = { ...ultimoEstadoRemoto, legendaIdx: prox };
+  atualizarBotaoCC();
+  pollRemote();
+}
+
+// Dublagem: ao contrário da legenda (puramente client-side), trocar de faixa de áudio
+// manda a TV regerar o HLS/remux inteiro com a faixa nova — não é instantâneo, a TV mostra
+// "Preparando..." de novo por alguns segundos. Só aparece com 2+ faixas (trocar com 1 só
+// não faz sentido). `idx` aqui é o índice GLOBAL do ffprobe (bate com -map), diferente do
+// `idx` relativo da legenda.
+let remoteAudios = [];
+async function remoteCarregarAudios(id) {
+  try { remoteAudios = await fetch(`${API}/${id}/audios`).then(r => r.json()); }
+  catch { remoteAudios = []; }
+  atualizarBotaoAudio();
+}
+function atualizarBotaoAudio() {
+  els.remoteAudioBtn.style.display = remoteAudios.length > 1 ? '' : 'none';
+  const atual = remoteAudios.find(x => x.atual);
+  els.remoteAudioBtn.textContent = '🗣️ ' + (atual && atual.idioma ? atual.idioma.toUpperCase() : '?');
+}
+async function remoteAudio() {
+  if (remoteAudios.length < 2) return;
+  const idxAtual = remoteAudios.findIndex(x => x.atual);
+  const prox = remoteAudios[(idxAtual + 1) % remoteAudios.length];
+  await fetch(`${PLAYER_API}/audio`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ idx: prox.idx })
+  });
+  // Reflete local sem esperar o próximo /audios (só vale até trocar de filme de novo, quando
+  // remoteCarregarAudios busca a lista de verdade pro filme novo).
+  remoteAudios = remoteAudios.map(x => ({ ...x, atual: x.idx === prox.idx }));
+  atualizarBotaoAudio();
   pollRemote();
 }
 
@@ -270,6 +329,7 @@ async function pollRemote() {
       bar.classList.remove('active');
       filmeAtualRemoto = null;
       els.remoteCCBtn.style.display = 'none';
+      els.remoteAudioBtn.style.display = 'none';
       els.remoteProximoEpBtn.style.display = 'none';
       // Só re-renderiza se realmente parou de tocar algo (transição real) -- no primeiro poll
       // da página (estadoAnterior undefined) "nada tocando" já é exatamente o que o render()
@@ -279,8 +339,9 @@ async function pollRemote() {
       bar.classList.add('active');
       if (trocouFilme) {
         remoteCarregarLegendas(estado.filmeId);
+        remoteCarregarAudios(estado.filmeId);
         filmeAtualRemoto = await fetch(`${API}/${estado.filmeId}`).then(r => r.ok ? r.json() : null).catch(() => null);
-        els.remoteProximoEpBtn.style.display = (filmeAtualRemoto && filmeAtualRemoto.ehEpisodio) ? '' : 'none';
+        atualizarBotaoProximoEp(estado.filmeId);
       }
       const f = filmeAtualRemoto;
       document.getElementById('remoteTitulo').textContent = f ? `📺 ${f.rotulo || f.titulo}` : '📺 Reproduzindo…';

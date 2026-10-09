@@ -21,6 +21,13 @@ public class PlayerStateService
     private double _seekAbsPos;
     private int _legendaIdx = -1;   // -1 = legenda desligada
     private int _legendaVersion;
+    // Dublagem: ao contrário da legenda (puramente client-side, troca o <track> ativo), trocar
+    // de faixa de áudio precisa regerar o HLS/remux no servidor (ver HlsTranscodeService —
+    // o áudio vai dentro dos segments, não dá pra isolar como faixa solta). _audioIdx aqui é
+    // só o "aviso" pro TV reagir; quem decide e persiste a preferência de verdade por filme é
+    // o HlsTranscodeService.
+    private int _audioIdx = -1;
+    private int _audioVersion;
     // Oferta de "próximo episódio" que a TV mostra sozinha ao terminar um episódio (com
     // contagem regressiva de auto-play) — sem isso, quem só tem o celular na mão não sabe
     // que a oferta apareceu nem consegue confirmar/adiantar sem ir até a TV.
@@ -46,6 +53,8 @@ public class PlayerStateService
                 seekAbsPos = _seekAbsPos,
                 legendaIdx = _legendaIdx,
                 legendaVersion = _legendaVersion,
+                audioIdx = _audioIdx,
+                audioVersion = _audioVersion,
                 proximoFilmeId = _proximoFilmeId,
                 proximoRotulo = _proximoRotulo,
                 aceitarProximoVersion = _aceitarProximoVersion,
@@ -83,6 +92,13 @@ public class PlayerStateService
     public void SetLegenda(int idx)
     {
         lock (_lock) { _legendaVersion++; _legendaIdx = idx; }
+    }
+
+    /// <summary>Celular escolheu uma faixa de áudio ("dublagem"). A TV aplica no próximo poll
+    /// regerando o HLS/remux com essa faixa (ver <see cref="HlsTranscodeService.DefinirPreferenciaAudio"/>).</summary>
+    public void SetAudio(int idx)
+    {
+        lock (_lock) { _audioVersion++; _audioIdx = idx; }
     }
 
     /// <summary>A TV informa onde está — o celular usa isso pra desenhar a barra de progresso.</summary>

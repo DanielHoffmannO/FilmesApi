@@ -1,10 +1,12 @@
 using System.Text.RegularExpressions;
+using FilmesApi.Models;
 using FilmesApi.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FilmesApi.Controllers;
 
-/// <summary>Entrega do vídeo: decisão stream-direto vs HLS, playlist/segments, legendas e keepalive.</summary>
+/// <summary>Entrega do vídeo: decisão stream-direto vs HLS, playlist/segments, legendas,
+/// keepalive e o diagnóstico de runtime (/api/status) pro dono do servidor.</summary>
 [ApiController]
 [Route("api/filmes")]
 public partial class ReproducaoController : ControllerBase
@@ -12,13 +14,35 @@ public partial class ReproducaoController : ControllerBase
     private readonly FilmeService _service;
     private readonly HlsTranscodeService _transcode;
     private readonly SubtitleService _legendas;
+    private readonly RkmppCapabilityService _rkmpp;
+    private readonly ThermalService _thermal;
 
-    public ReproducaoController(FilmeService service, HlsTranscodeService transcode, SubtitleService legendas)
+    public ReproducaoController(
+        FilmeService service, HlsTranscodeService transcode, SubtitleService legendas,
+        RkmppCapabilityService rkmpp, ThermalService thermal)
     {
         _service = service;
         _transcode = transcode;
         _legendas = legendas;
+        _rkmpp = rkmpp;
+        _thermal = thermal;
     }
+
+    /// <summary>Diagnóstico de runtime pro dono do servidor: temperatura da placa, fila de
+    /// transcode, uso do cache, estado da VPU. Consumido por <c>wwwroot/status.html</c>.</summary>
+    [HttpGet("/api/status")]
+    public IActionResult Status() => Ok(new
+    {
+        agora = DateTime.UtcNow,
+        transcode = _transcode.ObterSnapshot(),
+        rkmpp = _rkmpp.Snapshot(),
+        termico = new
+        {
+            habilitado = _thermal.Habilitado,
+            temperaturaC = _thermal.TemperaturaC(),
+            throttlingAgora = _thermal.EstaThrottling,
+        },
+    });
 
     /// <summary>Keepalive do player: "ainda tem alguém assistindo este filme". Sem isso, o
     /// transcode em andamento é abortado depois de <c>HlsOrphanTimeoutSeconds</c> sem sinal.</summary>
@@ -164,6 +188,27 @@ public partial class ReproducaoController : ControllerBase
 
         Response.Headers.CacheControl = "public, max-age=86400";
         return PhysicalFile(vtt, "text/vtt; charset=utf-8");
+    }
+
+    /// <summary>Faixas de áudio embutidas ("dublagens") pra trocar remotamente — mesmo padrão
+    /// de /legendas. <c>atual</c> marca a que o remux/HLS usaria agora.</summary>
+    [HttpGet("{id:int}/audios")]
+    public async Task<IActionResult> Audios(int id, CancellationToken ct)
+    {
+        var (path, erro) = await ResolverCaminhoAsync(id);
+        if (erro is not null) return erro;
+        return Ok(await _transcode.ListarAudiosAsync(id, path!, ct));
+    }
+
+    /// <summary>Troca a "dublagem" (faixa de áudio) preferida deste filme — invalida o cache
+    /// de HLS/remux já pronto, forçando regerar com a faixa nova na próxima vez que for
+    /// pedido. Chamado pela TV ao aplicar um comando do controle remoto (ver
+    /// <see cref="Services.HlsTranscodeService.DefinirPreferenciaAudio"/>).</summary>
+    [HttpPost("{id:int}/audio")]
+    public IActionResult DefinirAudio(int id, [FromBody] AudioRequest req)
+    {
+        _transcode.DefinirPreferenciaAudio(id, req.Idx);
+        return NoContent();
     }
 
     private async Task<(string? Path, IActionResult? Erro)> ResolverCaminhoAsync(int id)
