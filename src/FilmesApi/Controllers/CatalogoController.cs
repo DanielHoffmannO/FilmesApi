@@ -9,18 +9,8 @@ namespace FilmesApi.Controllers;
 public class CatalogoController : ControllerBase
 {
     private readonly FilmeService _service;
-    private readonly ProgressoService _progresso;
 
-    public CatalogoController(FilmeService service, ProgressoService progresso)
-    {
-        _service = service;
-        _progresso = progresso;
-    }
-
-    /// <summary>Lista o catálogo. <c>assistido</c> filtra por já-assistido / não-assistido.</summary>
-    [HttpGet]
-    public async Task<IActionResult> Listar([FromQuery] bool? assistido)
-        => Ok(await _service.ListarAsync(assistido));
+    public CatalogoController(FilmeService service) => _service = service;
 
     /// <summary>Catálogo já filtrado (tipo: all/filme/serie; visto: all/assistido/nao-assistido;
     /// busca: texto livre) e agrupado (filmes soltos / pasta filme+extras / série com
@@ -29,23 +19,7 @@ public class CatalogoController : ControllerBase
     [HttpGet("tela")]
     public async Task<IActionResult> Tela(
         [FromQuery] string tipo = "all", [FromQuery] string visto = "all", [FromQuery] string? busca = null)
-    {
-        var todos = await _service.ListarAsync();
-
-        var continuarCandidatos = new List<Models.FilmeResponse>();
-        if (tipo == "all" && visto == "all")
-        {
-            var continuarBase = await _progresso.ContinuarAssistindoAsync();
-            var porId = todos.ToDictionary(f => f.Id);
-            continuarCandidatos = continuarBase
-                .Select(c => porId.GetValueOrDefault(c.Id))
-                .Where(f => f is not null)
-                .Select(f => f!)
-                .ToList();
-        }
-
-        return Ok(FilmeService.MontarTela(todos, continuarCandidatos, tipo, visto, busca));
-    }
+        => Ok(await _service.ObterTelaAsync(tipo, visto, busca));
 
     /// <summary>Um filme (ou episódio) pelo id.</summary>
     [HttpGet("{id:int}")]
