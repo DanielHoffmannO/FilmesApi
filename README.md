@@ -326,8 +326,7 @@ filmes ainda sem metadados (roda ~30s depois do boot e reprocessa a cada scan).
 
 | Método | Rota | Descrição |
 |---|---|---|
-| `GET` | `/api/filmes?assistido=` | Lista crua (filtro opcional). Traz pôster, sinopse e ponto de retomada de cada item. |
-| `GET` | `/api/filmes/tela?tipo=&visto=&busca=` | Catálogo já filtrado/agrupado (filme solto, pasta filme+extras, série, franquia) — é isto, e não `/api/filmes`, que `index.html`/`tv.html`/`controle.html` consomem pra montar a tela. |
+| `GET` | `/api/filmes/tela?tipo=&visto=&busca=` | Catálogo já filtrado/agrupado (filme solto, pasta filme+extras, série, franquia) — é isto que `index.html`/`tv.html`/`controle.html` consomem pra montar a tela. |
 | `GET` | `/api/filmes/{id}` | Detalhes de um filme. |
 | `PUT` | `/api/filmes/{id}/assistido` | Alterna "assistido". |
 | `POST` | `/api/filmes/scan` | Importa vídeos novos da pasta e remove órfãos. `{importados, removidos}`. |

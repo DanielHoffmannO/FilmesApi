@@ -9,6 +9,7 @@ public class FilmeService
     private readonly AppDbContext _db;
     private readonly HlsTranscodeService _transcode;
     private readonly SubtitleService _legendas;
+    private readonly ProgressoService _progresso;
     private readonly ILogger<FilmeService> _logger;
     private readonly string _mediaPath;
     private static readonly string[] VideoExtensions = [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm"];
@@ -16,11 +17,13 @@ public class FilmeService
     // Dois POST /scan concorrentes leriam "não existe" pro mesmo arquivo e ambos inseririam.
     private static readonly SemaphoreSlim _scanLock = new(1, 1);
 
-    public FilmeService(AppDbContext db, HlsTranscodeService transcode, SubtitleService legendas, IConfiguration config, ILogger<FilmeService> logger)
+    public FilmeService(AppDbContext db, HlsTranscodeService transcode, SubtitleService legendas,
+        ProgressoService progresso, IConfiguration config, ILogger<FilmeService> logger)
     {
         _db = db;
         _transcode = transcode;
         _legendas = legendas;
+        _progresso = progresso;
         _logger = logger;
         _mediaPath = config.GetValue<string>("MediaPath") ?? "/media";
     }
@@ -55,22 +58,38 @@ public class FilmeService
         };
     }
 
-    public async Task<List<FilmeResponse>> ListarAsync(bool? assistido = null)
+    public async Task<List<FilmeResponse>> ListarAsync()
     {
-        var query = _db.Filmes.AsNoTracking().AsQueryable();
-        if (assistido.HasValue) query = query.Where(f => f.Assistido == assistido.Value);
+        var lista = await _db.Filmes.AsNoTracking()
+            .OrderByDescending(f => f.DataAdicionado).Select(ToResponse).ToListAsync();
 
-        var lista = await query.OrderByDescending(f => f.DataAdicionado).Select(ToResponse).ToListAsync();
-
-        // Sobre o catálogo INTEIRO, não só a lista (possivelmente filtrada por "assistido"
-        // acima) — a decisão "essa pasta é antologia" não pode depender de quantos episódios
-        // já foram marcados como vistos.
-        var todosOsCaminhos = assistido.HasValue
-            ? await _db.Filmes.AsNoTracking().Select(f => f.ArquivoPath).ToListAsync()
-            : lista.Select(f => f.ArquivoPath);
-        var contagem = MediaNomeParser.ContarNumeradosPorPasta(todosOsCaminhos);
-
+        var contagem = MediaNomeParser.ContarNumeradosPorPasta(lista.Select(f => f.ArquivoPath));
         return lista.Select(f => ComClassificacao(f, contagem)).ToList();
+    }
+
+    /// <summary>Monta a tela pronta pra desenhar — orquestra o que <see cref="MontarTela"/>
+    /// (pura) precisa: busca o catálogo inteiro, e só calcula "continuar assistindo" quando
+    /// tipo/visto estão neutros (a seção só aparece nesse caso, ver <see cref="MontarTela"/>).
+    /// <see cref="ProgressoService.ContinuarAssistindoAsync"/> devolve um resumo
+    /// (id/título/posição); aqui cruza por id com o catálogo completo pra ter o
+    /// <see cref="FilmeResponse"/> cheio (pôster, classificação etc.) que a tela precisa.</summary>
+    public async Task<TelaCatalogoResponse> ObterTelaAsync(string tipo, string visto, string? busca)
+    {
+        var todos = await ListarAsync();
+
+        var continuarCandidatos = new List<FilmeResponse>();
+        if (tipo == "all" && visto == "all")
+        {
+            var continuarBase = await _progresso.ContinuarAssistindoAsync();
+            var porId = todos.ToDictionary(f => f.Id);
+            continuarCandidatos = continuarBase
+                .Select(c => porId.GetValueOrDefault(c.Id))
+                .Where(f => f is not null)
+                .Select(f => f!)
+                .ToList();
+        }
+
+        return MontarTela(todos, continuarCandidatos, tipo, visto, busca);
     }
 
     /// <summary>Filtra (tipo/visto/busca) e agrupa (filme solto / pasta filme+extras / série)
@@ -245,10 +264,11 @@ public class FilmeService
     /// não há: id não existe, não é episódio, é o último, ou é um "extra".</summary>
     public async Task<FilmeResponse?> ProximoEpisodioAsync(int id)
     {
-        var atual = await ObterAsync(id);
+        var todos = await ListarAsync();
+        var atual = todos.FirstOrDefault(f => f.Id == id);
         if (atual is null || !atual.EhEpisodio || atual.EhExtra) return null;
 
-        var episodios = (await ListarAsync())
+        var episodios = todos
             .Where(f => f.EhEpisodio && !f.EhExtra && f.SerieChave == atual.SerieChave)
             .OrderBy(f => f.Temporada ?? 0)
             .ThenBy(f => f.Episodio ?? 0)
