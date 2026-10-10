@@ -153,8 +153,7 @@ public class HlsAudioDownmixTests
         var ffprobe = AcharFfmpeg("ffprobe");
         if (ffmpeg is null || ffprobe is null) { _log.WriteLine("ffmpeg/ffprobe ausente — teste pulado"); return; }
 
-        var dir = Path.Combine(Path.GetTempPath(), "filmesapi-test-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
+        var dir = TestesComuns.CriarPastaTemp();
         try
         {
             // fonte: 1s de vídeo h264 + áudio 5.1 em EAC3 (o caso do WEB-DL)
