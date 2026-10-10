@@ -13,7 +13,7 @@ public class EnumerarArquivosDeVideoTests
     [Fact]
     public async Task Symlink_apontando_pra_si_mesmo_nao_trava_a_varredura()
     {
-        var raiz = CriarPastaTemp();
+        var raiz = TestesComuns.CriarPastaTemp();
         try
         {
             File.WriteAllBytes(Path.Combine(raiz, "filme.mp4"), []);
@@ -30,7 +30,7 @@ public class EnumerarArquivosDeVideoTests
     [Fact]
     public async Task Symlink_apontando_pro_pai_nao_duplica_nem_trava()
     {
-        var raiz = CriarPastaTemp();
+        var raiz = TestesComuns.CriarPastaTemp();
         try
         {
             var sub = Directory.CreateDirectory(Path.Combine(raiz, "sub")).FullName;
@@ -52,7 +52,7 @@ public class EnumerarArquivosDeVideoTests
     [Fact]
     public void Sem_symlink_continua_achando_tudo_normalmente()
     {
-        var raiz = CriarPastaTemp();
+        var raiz = TestesComuns.CriarPastaTemp();
         try
         {
             var sub = Directory.CreateDirectory(Path.Combine(raiz, "Serie", "Temporada 1")).FullName;
@@ -67,12 +67,5 @@ public class EnumerarArquivosDeVideoTests
             Assert.Contains(achados, a => a.EndsWith("S01E01.mkv"));
         }
         finally { Directory.Delete(raiz, recursive: true); }
-    }
-
-    private static string CriarPastaTemp()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "filmesapi-test-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        return dir;
     }
 }

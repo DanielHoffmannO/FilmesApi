@@ -661,6 +661,12 @@ video { width: 100%; height: auto; background: #000; }
     get(API + '/' + id + '/proximo', function (err, prox) {
       if (err || !prox || filmeAtual !== id || meuToken !== proximoOfertaId) return;
       proximoPendente = prox;
+      // Dispara o transcode do proximo episodio AGORA, antes de alguem pedir de verdade — o
+      // HLS entrega o primeiro segmento sem esperar o episodio inteiro, entao so precisa
+      // comecar cedo pra nao ter o "Preparando..." quando o usuario realmente abrir. Seguro
+      // nesse momento (fim do atual): o job do episodio que acabou ja deve estar pronto, entao
+      // nao compete por CPU/VPU com o que esta tocando de verdade.
+      preAquecerProximo(prox.id);
       // Avisa o celular que tem oferta de proximo episodio na tela — sem isso, quem so
       // tem o controle.html na mao nao sabe que apareceu nem consegue confirmar.
       send('POST', PLAYER + '/proximo-oferece', { filmeId: prox.id, rotulo: prox.rotulo });
@@ -673,6 +679,23 @@ video { width: 100%; height: auto; background: #000; }
       tick();
       proximoTimer = setInterval(tick, 1000);
     });
+  }
+
+  // So dispara/reusa o job de transcode do proximo episodio (igual tocar()/tocarSemHls()
+  // decidiriam) -- nunca toca nada, so "cutuca" o servidor a comecar. Resposta ignorada de
+  // proposito. Mesma logica de HLS-vs-sem-HLS de tocar(), pra nao aquecer o cache HLS numa TV
+  // que vai usar /remux de verdade (ou vice-versa) -- desperdicio de CPU sem ajudar em nada.
+  function preAquecerProximo(id) {
+    var v = els.video;
+    var temHls = !!(window.Hls && window.Hls.isSupported && window.Hls.isSupported()) ||
+                 !!(v.canPlayType && v.canPlayType('application/vnd.apple.mpegurl'));
+    if (temHls) {
+      get(API + '/' + id + '/hls/playlist.m3u8', function () {});
+    } else {
+      get(API + '/' + id + '/pode-direto', function (err, pd) {
+        if (!err && pd && pd.remuxavel) get(API + '/' + id + '/remux-status', function () {});
+      });
+    }
   }
 
   function irProximo() {

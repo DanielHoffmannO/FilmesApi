@@ -568,6 +568,7 @@ async function ofereceProximo(id) {
   if (filmeAtual !== id || !prox || meuToken !== proximoOfertaId) return;
 
   proximoInfo = prox;
+  preAquecerProximo(prox.id);
   document.getElementById('proximoTit').textContent = prox.rotulo + (prox.serie ? ' — ' + prox.serie : '');
   els.proximoBox.classList.add('on');
 
@@ -584,6 +585,15 @@ function irProximo() {
   const prox = proximoInfo;
   cancelarProximo();
   if (prox) play(prox.id);
+}
+
+// Dispara/reusa o transcode do próximo episódio assim que a oferta aparece (fim do atual) —
+// o HLS entrega o primeiro segmento sem esperar o episódio inteiro, então só precisa começar
+// cedo pra não ter o "Preparando..." quando o usuário realmente abrir. Se o arquivo for
+// compatível direto, o endpoint só responde 409 na hora, sem custo. Resposta ignorada de
+// propósito — é só pra cutucar o servidor a começar, ninguém vai consumir isso agora.
+function preAquecerProximo(id) {
+  fetch(`${API}/${id}/hls/playlist.m3u8`).catch(() => {});
 }
 
 async function closePlayer() {
