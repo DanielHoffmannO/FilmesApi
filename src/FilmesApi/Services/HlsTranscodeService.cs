@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using FilmesApi.Models;
 
 namespace FilmesApi.Services;
@@ -121,6 +122,19 @@ public class HlsTranscodeService
     public string DiretorioCache(int filmeId) => Path.Combine(_cachePath, filmeId.ToString());
     public string CaminhoPlaylist(int filmeId) => Path.Combine(DiretorioCache(filmeId), "playlist.m3u8");
 
+    private static readonly Regex SegmentoValido = new(@"^seg_\d{5}\.ts$", RegexOptions.Compiled);
+
+    /// <summary>Caminho de um segment HLS já gerado, ou null se o nome não é um segment
+    /// legítimo (<c>seg_00001.ts</c> — barra path traversal) ou o arquivo não existe.
+    /// Cada request de segment conta como "ainda tem gente assistindo".</summary>
+    public string? ObterCaminhoSegmento(int filmeId, string arquivo)
+    {
+        if (!SegmentoValido.IsMatch(arquivo)) return null;
+        RegistrarInteresse(filmeId);
+        var caminho = Path.Combine(DiretorioCache(filmeId), arquivo);
+        return File.Exists(caminho) ? caminho : null;
+    }
+
     /// <summary>"Ainda tem gente interessada neste filme" — chamado pelo poll de status, por
     /// cada request de segmento e pelo keepalive do player. Zera o relógio de órfão.
     /// Só registra se existe job vivo ou cache pra este id: assim POST /assistindo com id
@@ -200,6 +214,16 @@ public class HlsTranscodeService
     }
 
     public string CaminhoRemux(int filmeId) => Path.Combine(_remuxCachePath, $"{filmeId}.mp4");
+
+    /// <summary>Caminho do .mp4 remuxado se já está completo em disco (e marca o acesso pro
+    /// LRU), senão null.</summary>
+    public string? ObterRemuxPronto(int filmeId)
+    {
+        var caminho = CaminhoRemux(filmeId);
+        if (!File.Exists(caminho)) return null;
+        RegistrarAcessoRemux(filmeId);
+        return caminho;
+    }
 
     /// <summary>Estado do remux (cache em disco, um .mp4 por filme): dispara o job na primeira
     /// chamada, reusa nas seguintes. Ao contrário do /remux antigo (pipe ao vivo, sem
@@ -302,7 +326,7 @@ public class HlsTranscodeService
     /// <see cref="RegistrarAcesso"/> do HLS. Chamado a cada GET de /remux (que não passa mais
     /// por <see cref="ObterStatusRemux"/> depois de "disponivel" — só assim o arquivo não
     /// parece "sem uso" pra sempre depois da primeira vez).</summary>
-    public void RegistrarAcessoRemux(int filmeId)
+    private void RegistrarAcessoRemux(int filmeId)
     {
         try
         {

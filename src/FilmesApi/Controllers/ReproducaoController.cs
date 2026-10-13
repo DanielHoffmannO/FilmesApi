@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using FilmesApi.Models;
 using FilmesApi.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -9,7 +8,7 @@ namespace FilmesApi.Controllers;
 /// keepalive e o diagnóstico de runtime (/api/status) pro dono do servidor.</summary>
 [ApiController]
 [Route("api/filmes")]
-public partial class ReproducaoController : ControllerBase
+public class ReproducaoController : ControllerBase
 {
     private readonly FilmeService _service;
     private readonly HlsTranscodeService _transcode;
@@ -59,9 +58,9 @@ public partial class ReproducaoController : ControllerBase
     [HttpGet("{id:int}/pode-direto")]
     public async Task<IActionResult> PodeDireto(int id, CancellationToken ct)
     {
-        var (path, erro) = await ResolverCaminhoAsync(id);
-        if (erro is not null) return erro;
-        var compat = await _transcode.AnalisarCompatibilidadeAsync(path!, ct);
+        var path = await _service.ResolverCaminhoAsync(id);
+        if (path is null) return ArquivoNaoEncontrado();
+        var compat = await _transcode.AnalisarCompatibilidadeAsync(path, ct);
         return Ok(new
         {
             compativel = compat == CompatibilidadeDireta.Compativel,
@@ -75,9 +74,10 @@ public partial class ReproducaoController : ControllerBase
     [HttpGet("{id:int}/stream-status")]
     public async Task<IActionResult> ObterStreamStatus(int id, CancellationToken ct)
     {
-        var (status, _, erro) = await ResolverStatusAsync(id, ct);
-        if (erro is not null) return erro;
+        var path = await _service.ResolverCaminhoAsync(id);
+        if (path is null) return ArquivoNaoEncontrado();
 
+        var (status, _) = await _transcode.ObterStatusAsync(id, path, ct);
         return Ok(new { status = status.ToString().ToLowerInvariant() });
     }
 
@@ -85,15 +85,15 @@ public partial class ReproducaoController : ControllerBase
     [HttpGet("{id:int}/stream")]
     public async Task<IActionResult> Stream(int id, CancellationToken ct)
     {
-        var (path, erro) = await ResolverCaminhoAsync(id);
-        if (erro is not null) return erro;
+        var path = await _service.ResolverCaminhoAsync(id);
+        if (path is null) return ArquivoNaoEncontrado();
 
         // Usa o check "seco" (sem ObterStatusAsync) de propósito: pedir /stream de um arquivo
         // incompatível não deve disparar um transcode que ninguém vai consumir.
-        if (!await _transcode.PodeStreamDiretoAsync(path!, ct))
+        if (!await _transcode.PodeStreamDiretoAsync(path, ct))
             return Conflict(new { mensagem = "Este vídeo precisa de HLS, use /hls/playlist.m3u8." });
 
-        return ServirComRange(path!);
+        return ServirComRange(path);
     }
 
     /// <summary>Estado do cache de /remux: <c>preparando</c> dispara o job (video copy +
@@ -102,9 +102,9 @@ public partial class ReproducaoController : ControllerBase
     [HttpGet("{id:int}/remux-status")]
     public async Task<IActionResult> RemuxStatus(int id)
     {
-        var (path, erro) = await ResolverCaminhoAsync(id);
-        if (erro is not null) return erro;
-        var (status, progresso) = _transcode.ObterStatusRemux(id, path!);
+        var path = await _service.ResolverCaminhoAsync(id);
+        if (path is null) return ArquivoNaoEncontrado();
+        var (status, progresso) = _transcode.ObterStatusRemux(id, path);
         return Ok(new { status = status.ToString().ToLowerInvariant(), progresso });
     }
 
@@ -116,19 +116,20 @@ public partial class ReproducaoController : ControllerBase
     [HttpGet("{id:int}/remux")]
     public IActionResult Remux(int id)
     {
-        var caminho = _transcode.CaminhoRemux(id);
-        if (!System.IO.File.Exists(caminho))
-            return Conflict(new { mensagem = "Remux ainda não está pronto, consulte /remux-status." });
-        _transcode.RegistrarAcessoRemux(id);
-        return ServirComRange(caminho);
+        var caminho = _transcode.ObterRemuxPronto(id);
+        return caminho is null
+            ? Conflict(new { mensagem = "Remux ainda não está pronto, consulte /remux-status." })
+            : ServirComRange(caminho);
     }
 
     /// <summary>Manifest HLS: dispara/reusa o job de transcodificação e serve a playlist assim que ela existir.</summary>
     [HttpGet("{id:int}/hls/playlist.m3u8")]
     public async Task<IActionResult> HlsPlaylist(int id, CancellationToken ct)
     {
-        var (status, caminho, erro) = await ResolverStatusAsync(id, ct);
-        if (erro is not null) return erro;
+        var path = await _service.ResolverCaminhoAsync(id);
+        if (path is null) return ArquivoNaoEncontrado();
+
+        var (status, caminho) = await _transcode.ObterStatusAsync(id, path, ct);
 
         if (status is StreamStatus.Erro)
             return StatusCode(StatusCodes.Status500InternalServerError, new { mensagem = "Falha ao converter o vídeo." });
@@ -145,11 +146,8 @@ public partial class ReproducaoController : ControllerBase
     [HttpGet("{id:int}/hls/{arquivo}")]
     public IActionResult HlsSegmento(int id, string arquivo)
     {
-        if (!SegmentoValido().IsMatch(arquivo)) return NotFound();
-
-        _transcode.RegistrarInteresse(id);
-        var caminho = Path.Combine(_transcode.DiretorioCache(id), arquivo);
-        if (!System.IO.File.Exists(caminho)) return NotFound();
+        var caminho = _transcode.ObterCaminhoSegmento(id, arquivo);
+        if (caminho is null) return NotFound();
 
         // Não marcar como "immutable": se um encode via rkmpp falhar no meio, o job apaga e
         // regrava os mesmos nomes de segment via libx264 — um cliente que já buscou a versão
@@ -162,17 +160,16 @@ public partial class ReproducaoController : ControllerBase
     [HttpGet("{id:int}/original")]
     public async Task<IActionResult> Original(int id)
     {
-        var (path, erro) = await ResolverCaminhoAsync(id);
-        return erro ?? ServirComRange(path!);
+        var path = await _service.ResolverCaminhoAsync(id);
+        return path is null ? ArquivoNaoEncontrado() : ServirComRange(path);
     }
 
     /// <summary>Faixas de legenda embutidas no arquivo (as de texto viram .vtt via o endpoint abaixo).</summary>
     [HttpGet("{id:int}/legendas")]
     public async Task<IActionResult> Legendas(int id, CancellationToken ct)
     {
-        var (path, erro) = await ResolverCaminhoAsync(id);
-        if (erro is not null) return erro;
-        return Ok(await _legendas.ListarAsync(path!, ct));
+        var path = await _service.ResolverCaminhoAsync(id);
+        return path is null ? ArquivoNaoEncontrado() : Ok(await _legendas.ListarAsync(path, ct));
     }
 
     /// <summary>Uma faixa de legenda de texto convertida pra WebVTT. 404 se o índice não
@@ -180,10 +177,10 @@ public partial class ReproducaoController : ControllerBase
     [HttpGet("{id:int}/legenda/{idx:int}")]
     public async Task<IActionResult> Legenda(int id, int idx, CancellationToken ct)
     {
-        var (path, erro) = await ResolverCaminhoAsync(id);
-        if (erro is not null) return erro;
+        var path = await _service.ResolverCaminhoAsync(id);
+        if (path is null) return ArquivoNaoEncontrado();
 
-        var vtt = await _legendas.ObterVttAsync(id, path!, idx, ct);
+        var vtt = await _legendas.ObterVttAsync(id, path, idx, ct);
         if (vtt is null) return NotFound();
 
         Response.Headers.CacheControl = "public, max-age=86400";
@@ -195,9 +192,8 @@ public partial class ReproducaoController : ControllerBase
     [HttpGet("{id:int}/audios")]
     public async Task<IActionResult> Audios(int id, CancellationToken ct)
     {
-        var (path, erro) = await ResolverCaminhoAsync(id);
-        if (erro is not null) return erro;
-        return Ok(await _transcode.ListarAudiosAsync(id, path!, ct));
+        var path = await _service.ResolverCaminhoAsync(id);
+        return path is null ? ArquivoNaoEncontrado() : Ok(await _transcode.ListarAudiosAsync(id, path, ct));
     }
 
     /// <summary>Troca a "dublagem" (faixa de áudio) preferida deste filme — invalida o cache
@@ -211,27 +207,7 @@ public partial class ReproducaoController : ControllerBase
         return NoContent();
     }
 
-    private async Task<(string? Path, IActionResult? Erro)> ResolverCaminhoAsync(int id)
-    {
-        var arquivoPath = await _service.ObterArquivoPathAsync(id);
-        if (arquivoPath is null) return (null, NotFound());
-
-        var path = _service.ObterCaminhoAbsoluto(arquivoPath);
-        return path is null
-            ? (null, NotFound(new { mensagem = "arquivo não encontrado no disco" }))
-            : (path, null);
-    }
-
-    // `Erro` só cobre a falha de resolver o arquivo no disco (404). StreamStatus.Erro é um
-    // estado de resposta válido — cada endpoint decide o código (stream-status devolve 200).
-    private async Task<(StreamStatus Status, string? Caminho, IActionResult? Erro)> ResolverStatusAsync(int id, CancellationToken ct)
-    {
-        var (path, erro) = await ResolverCaminhoAsync(id);
-        if (erro is not null) return (default, null, erro);
-
-        var (status, caminho) = await _transcode.ObterStatusAsync(id, path!, ct);
-        return (status, caminho, null);
-    }
+    private IActionResult ArquivoNaoEncontrado() => NotFound(new { mensagem = "arquivo não encontrado" });
 
     private IActionResult ServirComRange(string caminho)
     {
@@ -248,7 +224,4 @@ public partial class ReproducaoController : ControllerBase
             bufferSize: 65536, useAsync: true);
         return File(stream, contentType, enableRangeProcessing: true);
     }
-
-    [GeneratedRegex(@"^seg_\d{5}\.ts$")]
-    private static partial Regex SegmentoValido();
 }

@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace FilmesApi.Controllers;
 
-/// <summary>"Continuar de onde parou": ponto de retomada por filme e a lista de pendentes.</summary>
+/// <summary>"Continuar de onde parou": ponto de retomada por filme e o botão de remover.</summary>
 [ApiController]
 [Route("api/filmes")]
 public class ProgressoController : ControllerBase
@@ -12,11 +12,6 @@ public class ProgressoController : ControllerBase
     private readonly ProgressoService _progresso;
 
     public ProgressoController(ProgressoService progresso) => _progresso = progresso;
-
-    /// <summary>Filmes com reprodução pendente ("continuar assistindo"), mais recentes primeiro.</summary>
-    [HttpGet("continuar")]
-    public async Task<IActionResult> Continuar()
-        => Ok(await _progresso.ContinuarAssistindoAsync());
 
     /// <summary>Ponto de retomada do filme. 204 se não há nada guardado.</summary>
     [HttpGet("{id:int}/progresso")]
@@ -33,10 +28,7 @@ public class ProgressoController : ControllerBase
         if (double.IsNaN(req.Posicao) || double.IsInfinity(req.Posicao) || req.Posicao < 0)
             return BadRequest(new { mensagem = "posicao inválida" });
 
-        // req.Duracao is > 0 já exclui NaN (NaN > 0 é false); +Infinity é que precisa de guarda.
-        var duracao = req.Duracao is > 0 && !double.IsInfinity(req.Duracao.Value) ? req.Duracao : null;
-
-        return await _progresso.SalvarAsync(id, req.Posicao, duracao) ? NoContent() : NotFound();
+        return await _progresso.SalvarAsync(id, req.Posicao, req.Duracao) ? NoContent() : NotFound();
     }
 
     /// <summary>Reprodução chegou ao fim: marca assistido e limpa a retomada.</summary>
