@@ -701,6 +701,44 @@ video { width: 100%; height: auto; background: #000; }
     } catch (e) {}
   }
 
+  // Tela cheia nativa do <video> desenha SO o <video> e o que vive dentro dele: o #psub fica de
+  // fora e some (medido na Samsung J5200: entra em tela cheia com document.fullscreenElement =
+  // o proprio <video>). A legenda nativa (<track>) vive dentro do video e e desenhada tambem em
+  // tela cheia — entao a faixa ativa e espelhada num <track> e ligada SO enquanto o video esta
+  // em tela cheia; fora dela o #psub continua sendo o que aparece (sem legenda em dobro).
+  function trilhaNativa(idx) {
+    var v = els.video, antigas = v.getElementsByTagName('track');
+    while (antigas.length) v.removeChild(antigas[0]);
+    if (idx === -1 || !v.textTracks) return;
+    var t = document.createElement('track');
+    t.setAttribute('kind', 'subtitles');
+    t.setAttribute('label', 'Legenda');
+    t.setAttribute('srclang', 'und');
+    t.setAttribute('src', API + '/' + filmeAtual + '/legenda/' + idx);
+    v.appendChild(t);
+    aplicarModoLegenda();   // 'hidden' ja basta pra o navegador baixar os cues
+  }
+
+  function emTelaCheiaNativa() {
+    return (document.fullscreenElement || document.webkitFullscreenElement) === els.video;
+  }
+
+  function aplicarModoLegenda() {
+    var tt = els.video.textTracks, nativo = emTelaCheiaNativa();
+    if (!tt) return;
+    for (var i = 0; i < tt.length; i++) tt[i].mode = nativo ? 'showing' : 'hidden';
+  }
+
+  // Diagnostico: a TV carregou os cues do <track>? (readyState 2 = carregado, 3 = erro)
+  function diagTrilhasNativas() {
+    try {
+      var v = els.video, tt = v.textTracks, el = v.getElementsByTagName('track')[0];
+      logDiag('tela cheia nativa: trilhas=' + (tt ? tt.length : 'sem textTracks') +
+        (tt && tt.length ? ' modo=' + tt[0].mode + ' cues=' + (tt[0].cues ? tt[0].cues.length : 'null') : '') +
+        (el ? ' readyState=' + el.readyState : ''));
+    } catch (e) {}
+  }
+
   // idx de /legendas; -1 (ou idx desconhecido) desliga.
   function ativarLegenda(idx) {
     var meu = ++legendaToken;
@@ -715,6 +753,7 @@ video { width: 100%; height: auto; background: #000; }
     legendaAtiva = ok ? idx : -1;
     // Comando do celular chegou antes de /legendas responder: guarda e aplica quando a lista vier.
     if (!ok && !legendaProntas && idx !== -1) legendaPendente = idx;
+    trilhaNativa(ok ? idx : -1);
     if (!ok) return;
     var x = new XMLHttpRequest();
     x.open('GET', API + '/' + filmeAtual + '/legenda/' + idx);
@@ -722,6 +761,7 @@ video { width: 100%; height: auto; background: #000; }
     var falhou = function () {
       if (meu !== legendaToken) return;
       legendaAtiva = -1;  // senao o botao vermelho acha que esta ligada e o proximo toque so "desliga"
+      trilhaNativa(-1);
       var p = els.pmsg;
       if (p.innerHTML === '' || p.innerHTML.indexOf('Legenda:') === 0) {
         p.innerHTML = 'Legenda: indisponivel';
@@ -926,21 +966,18 @@ video { width: 100%; height: auto; background: #000; }
       ultimoSalvo = t;
       salvarProgresso();
     };
-    // Tela cheia nativa do <video> mostra SO o <video> — a legenda (#psub) some. Se o botao
-    // nativo ainda existir, passa a tela cheia pro #player inteiro (video + legenda + avisos).
+    // Tela cheia nativa do <video>: troca o #psub pelo <track> nativo (ver trilhaNativa). Antes
+    // isto tentava mandar a tela cheia pro #player (video + #psub), mas requestFullscreen so e
+    // aceito dentro de um gesto do usuario, nao num fullscreenchange — no log da J5200 o
+    // elemento em tela cheia continuou sendo o <video> por 15 s depois da tentativa.
     var telaCheiaDiag = 6;
     var aoMudarTelaCheia = function () {
       var fs = document.fullscreenElement || document.webkitFullscreenElement;
+      aplicarModoLegenda();
       if (telaCheiaDiag > 0) {
         telaCheiaDiag--;
         logDiag('tela cheia mudou: elemento=' + (fs ? (fs.tagName + '#' + fs.id) : 'nenhum'));
-      }
-      var player = document.getElementById('player');
-      if (fs === v) {
-        var pedir = player.requestFullscreen || player.webkitRequestFullscreen;
-        if (pedir) {
-          try { var r = pedir.call(player); if (r && r.catch) r.catch(function () {}); } catch (e) {}
-        }
+        if (fs === v) setTimeout(diagTrilhasNativas, 1500);
       }
     };
     document.addEventListener('fullscreenchange', aoMudarTelaCheia, false);
