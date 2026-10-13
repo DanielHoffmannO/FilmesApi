@@ -34,20 +34,45 @@ internal static partial class LegendaExternaLocalizador
     // fora: "Run for it.srt" não é legenda italiana).
     private static readonly Dictionary<string, string> TokenIdioma = new(StringComparer.Ordinal)
     {
-        ["por"] = "por", ["pob"] = "por", ["pt"] = "por", ["ptbr"] = "por", ["brazilian"] = "por",
-        ["portuguese"] = "por", ["portugues"] = "por",
-        ["eng"] = "eng", ["en"] = "eng", ["english"] = "eng", ["ingles"] = "eng",
-        ["spa"] = "spa", ["spanish"] = "spa", ["espanhol"] = "spa",
-        ["fre"] = "fra", ["fra"] = "fra", ["french"] = "fra", ["frances"] = "fra",
-        ["ger"] = "deu", ["deu"] = "deu", ["german"] = "deu", ["alemao"] = "deu",
-        ["ita"] = "ita", ["italian"] = "ita", ["italiano"] = "ita",
-        ["jpn"] = "jpn", ["japanese"] = "jpn", ["japones"] = "jpn",
+        ["por"] = "por",
+        ["pob"] = "por",
+        ["pt"] = "por",
+        ["ptbr"] = "por",
+        ["brazilian"] = "por",
+        ["portuguese"] = "por",
+        ["portugues"] = "por",
+        ["eng"] = "eng",
+        ["en"] = "eng",
+        ["english"] = "eng",
+        ["ingles"] = "eng",
+        ["spa"] = "spa",
+        ["spanish"] = "spa",
+        ["espanhol"] = "spa",
+        ["fre"] = "fra",
+        ["fra"] = "fra",
+        ["french"] = "fra",
+        ["frances"] = "fra",
+        ["ger"] = "deu",
+        ["deu"] = "deu",
+        ["german"] = "deu",
+        ["alemao"] = "deu",
+        ["ita"] = "ita",
+        ["italian"] = "ita",
+        ["italiano"] = "ita",
+        ["jpn"] = "jpn",
+        ["japanese"] = "jpn",
+        ["japones"] = "jpn",
     };
 
     private static readonly Dictionary<string, string> NomeIdioma = new()
     {
-        ["por"] = "Português", ["eng"] = "Inglês", ["spa"] = "Espanhol", ["fra"] = "Francês",
-        ["deu"] = "Alemão", ["ita"] = "Italiano", ["jpn"] = "Japonês",
+        ["por"] = "Português",
+        ["eng"] = "Inglês",
+        ["spa"] = "Espanhol",
+        ["fra"] = "Francês",
+        ["deu"] = "Alemão",
+        ["ita"] = "Italiano",
+        ["jpn"] = "Japonês",
     };
 
     static LegendaExternaLocalizador()

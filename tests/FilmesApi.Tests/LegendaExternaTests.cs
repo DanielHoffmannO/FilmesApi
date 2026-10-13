@@ -1,8 +1,8 @@
 using System.Diagnostics;
 using System.Text;
 using FilmesApi.Services;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit.Abstractions;
 

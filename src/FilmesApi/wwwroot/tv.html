@@ -640,11 +640,8 @@ video { width: 100%; height: auto; background: #000; }
   var legendaToken = 0;     // invalida download de legenda ainda em voo
 
   function removerLegendas() {
-    legendaToken++;
     legendaFaixas = [];
-    legendaAtiva = -1;
-    legendaCues = [];
-    els.psub.innerHTML = '';
+    ativarLegenda(-1);
   }
 
   function tempoVtt(t) {
@@ -681,6 +678,7 @@ video { width: 100%; height: auto; background: #000; }
     if (els.psub.innerHTML !== html) els.psub.innerHTML = html;
   }
 
+  // idx de /legendas; -1 (ou idx desconhecido) desliga.
   function ativarLegenda(idx) {
     var meu = ++legendaToken;
     legendaCues = [];
@@ -932,15 +930,12 @@ video { width: 100%; height: auto; background: #000; }
     if (estado.seekAbsVersion !== anterior.seekAbsVersion) {
       try { v.currentTime = Math.max(0, estado.seekAbsPos); } catch (e) {}
     }
-    if (estado.legendaVersion !== anterior.legendaVersion) aplicarLegendaRemota(estado.legendaIdx);
+    if (estado.legendaVersion !== anterior.legendaVersion) ativarLegenda(estado.legendaIdx);
     if (estado.audioVersion !== anterior.audioVersion) aplicarAudioRemoto(estado.audioIdx);
     // Celular confirmou a oferta de proximo episodio que esta TV mesma colocou no ar —
     // mesmo caminho que o OK local do D-pad usaria (irProximo -> tocar -> Selecionar).
     if (estado.aceitarProximoVersion !== anterior.aceitarProximoVersion && proximoPendente) irProximo();
   }
-
-  // Troca a faixa de legenda mostrada (idx de /legendas; -1 desliga).
-  function aplicarLegendaRemota(idx) { ativarLegenda(idx); }
 
   // Ao contrario da legenda (so troca o <track> ativo, sem tocar no servidor), a dublagem
   // vai dentro dos segments HLS/remux — trocar precisa regerar o video inteiro. Guarda a
@@ -1021,9 +1016,8 @@ video { width: 100%; height: auto; background: #000; }
       // botao VERMELHO (403 na maioria dos controles): liga/desliga legenda
       if (k === 403) {
         var ligada = legendaAtiva !== -1;
-        if (ligada || !legendaFaixas.length) ativarLegenda(-1);
-        else ativarLegenda(legendaFaixas[0].idx);
         var f = legendaFaixas[0];
+        ativarLegenda(ligada || !f ? -1 : f.idx);
         els.pmsg.innerHTML = 'Legenda: ' + (ligada ? 'off' : (f ? (f.titulo || f.idioma || 'on') : 'nenhuma'));
         setTimeout(function () { var p = els.pmsg; if (p.innerHTML.indexOf('Legenda:') === 0) p.innerHTML = ''; }, LEGENDA_MSG_MS);
         if (e.preventDefault) e.preventDefault();

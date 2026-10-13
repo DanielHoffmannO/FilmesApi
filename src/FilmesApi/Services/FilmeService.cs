@@ -84,8 +84,7 @@ public class FilmeService
             var porId = todos.ToDictionary(f => f.Id);
             continuarCandidatos = continuarBase
                 .Select(c => porId.GetValueOrDefault(c.Id))
-                .Where(f => f is not null)
-                .Select(f => f!)
+                .OfType<FilmeResponse>()
                 .ToList();
         }
 
