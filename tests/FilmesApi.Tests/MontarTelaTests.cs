@@ -4,7 +4,7 @@ using FilmesApi.Services;
 namespace FilmesApi.Tests;
 
 /// <summary>
-/// <see cref="FilmeService.MontarTela"/> é o que centralizou no backend o agrupamento que
+/// <see cref="CatalogoAgrupador.Montar"/> é o que centralizou no backend o agrupamento que
 /// antes vivia (triplicado, e com bugs) em index.html/controle.html/tv.html — filtro, contagem
 /// de pasta, "1 filme real + extras" e ordenação de série tudo aqui, testável sem banco.
 /// </summary>
@@ -22,7 +22,7 @@ public class MontarTelaTests
     public void Filme_sem_pasta_vira_filme_solto()
     {
         var todos = new List<FilmeResponse> { F(1, "Interestelar") };
-        var tela = FilmeService.MontarTela(todos, [], "all", "all", null);
+        var tela = CatalogoAgrupador.Montar(todos, [], "all", "all", null);
 
         Assert.Single(tela.FilmesSoltos);
         Assert.Empty(tela.PastasFilme);
@@ -39,7 +39,7 @@ public class MontarTelaTests
             F(1, "Filme Versao Cinema", pasta: "Filme (2020)"),
             F(2, "Filme Versao Estendida", pasta: "Filme (2020)"),
         };
-        var tela = FilmeService.MontarTela(todos, [], "all", "all", null);
+        var tela = CatalogoAgrupador.Montar(todos, [], "all", "all", null);
 
         Assert.Empty(tela.FilmesSoltos);
         var grupo = Assert.Single(tela.PastasFilme);
@@ -57,7 +57,7 @@ public class MontarTelaTests
             F(2, "Filme sample", pasta: "Filme (2020)", ehExtra: true),
             F(3, "Filme trailer", pasta: "Filme (2020)", ehExtra: true),
         };
-        var tela = FilmeService.MontarTela(todos, [], "all", "all", null);
+        var tela = CatalogoAgrupador.Montar(todos, [], "all", "all", null);
 
         Assert.Empty(tela.PastasFilme);
         var solto = Assert.Single(tela.FilmesSoltos);
@@ -77,7 +77,7 @@ public class MontarTelaTests
             F(2, "Toy Story 2", pasta: "Toy Story 2 (1999)"),
             F(3, "Toy Story 3", pasta: "Toy Story 3 (2010)"),
         };
-        var tela = FilmeService.MontarTela(todos, [], "all", "all", null);
+        var tela = CatalogoAgrupador.Montar(todos, [], "all", "all", null);
 
         Assert.Empty(tela.FilmesSoltos);
         var grupo = Assert.Single(tela.PastasFilme);
@@ -97,7 +97,7 @@ public class MontarTelaTests
             F(2, "Homem Aranha 2", pasta: "TRILOGIA Homem-Aranha"),
             F(3, "Homem Aranha 3", pasta: "TRILOGIA Homem-Aranha"),
         };
-        var tela = FilmeService.MontarTela(todos, [], "all", "all", null);
+        var tela = CatalogoAgrupador.Montar(todos, [], "all", "all", null);
 
         Assert.Empty(tela.FilmesSoltos);
         var grupo = Assert.Single(tela.PastasFilme);
@@ -116,7 +116,7 @@ public class MontarTelaTests
             F(1, "Poder", pasta: "Poder (2010)"),
             F(2, "Poder Absoluto", pasta: "Poder Absoluto (2015)"),
         };
-        var tela = FilmeService.MontarTela(todos, [], "all", "all", null);
+        var tela = CatalogoAgrupador.Montar(todos, [], "all", "all", null);
 
         Assert.Empty(tela.PastasFilme);
         Assert.Equal(2, tela.FilmesSoltos.Count);
@@ -130,7 +130,7 @@ public class MontarTelaTests
             F(1, "1 - Pilot", ehEpisodio: true, serie: "Diarios de Um Vampiro", serieChave: "diarios de um vampiro", temporada: 1, episodio: 1),
             F(2, "2 - Next", ehEpisodio: true, serie: "Diários de um Vampiro", serieChave: "diarios de um vampiro", temporada: 2, episodio: 1),
         };
-        var tela = FilmeService.MontarTela(todos, [], "all", "all", null);
+        var tela = CatalogoAgrupador.Montar(todos, [], "all", "all", null);
 
         var grupo = Assert.Single(tela.Series);
         Assert.Equal("diarios de um vampiro", grupo.Chave);
@@ -159,7 +159,7 @@ public class MontarTelaTests
             todos.Add(F(i, $"{i} - x", ehEpisodio: true,
                 serie: "Diários de Um Vampiro", serieChave: "diarios de um vampiro", temporada: 1, episodio: i));
 
-        var tela = FilmeService.MontarTela(todos, [], "all", "all", null);
+        var tela = CatalogoAgrupador.Montar(todos, [], "all", "all", null);
 
         var grupo = Assert.Single(tela.Series);
         Assert.Equal("Diários de Um Vampiro", grupo.Nome);
@@ -174,7 +174,7 @@ public class MontarTelaTests
             F(1, "Filme"),
             F(2, "Ep", ehEpisodio: true, serie: "Show", serieChave: "show"),
         };
-        var tela = FilmeService.MontarTela(todos, [], "filme", "all", null);
+        var tela = CatalogoAgrupador.Montar(todos, [], "filme", "all", null);
 
         Assert.Single(tela.FilmesSoltos);
         Assert.Empty(tela.Series);
@@ -188,7 +188,7 @@ public class MontarTelaTests
             F(1, "Filme"),
             F(2, "Ep", ehEpisodio: true, serie: "Show", serieChave: "show"),
         };
-        var tela = FilmeService.MontarTela(todos, [], "serie", "all", null);
+        var tela = CatalogoAgrupador.Montar(todos, [], "serie", "all", null);
 
         Assert.Empty(tela.FilmesSoltos);
         Assert.Single(tela.Series);
@@ -201,7 +201,7 @@ public class MontarTelaTests
     public void Filtro_visto(string visto, int esperado)
     {
         var todos = new List<FilmeResponse> { F(1, "A", assistido: true), F(2, "B", assistido: false) };
-        var tela = FilmeService.MontarTela(todos, [], "all", visto, null);
+        var tela = CatalogoAgrupador.Montar(todos, [], "all", visto, null);
 
         Assert.Equal(esperado, tela.FilmesSoltos.Count);
     }
@@ -214,7 +214,7 @@ public class MontarTelaTests
             F(1, "Interestelar"),
             F(2, "Outro Filme"),
         };
-        var tela = FilmeService.MontarTela(todos, [], "all", "all", "INTERESTELAR");
+        var tela = CatalogoAgrupador.Montar(todos, [], "all", "all", "INTERESTELAR");
 
         Assert.Single(tela.FilmesSoltos);
         Assert.Equal(1, tela.FilmesSoltos[0].Id);
@@ -225,13 +225,13 @@ public class MontarTelaTests
     {
         var candidatos = new List<FilmeResponse> { F(1, "Em andamento") };
 
-        var comFiltroNeutro = FilmeService.MontarTela([], candidatos, "all", "all", null);
+        var comFiltroNeutro = CatalogoAgrupador.Montar([], candidatos, "all", "all", null);
         Assert.Single(comFiltroNeutro.ContinuarAssistindo);
 
-        var comFiltroTipo = FilmeService.MontarTela([], candidatos, "filme", "all", null);
+        var comFiltroTipo = CatalogoAgrupador.Montar([], candidatos, "filme", "all", null);
         Assert.Empty(comFiltroTipo.ContinuarAssistindo);
 
-        var comFiltroVisto = FilmeService.MontarTela([], candidatos, "all", "assistido", null);
+        var comFiltroVisto = CatalogoAgrupador.Montar([], candidatos, "all", "assistido", null);
         Assert.Empty(comFiltroVisto.ContinuarAssistindo);
     }
 
@@ -239,7 +239,7 @@ public class MontarTelaTests
     public void ContinuarAssistindo_tambem_respeita_a_busca()
     {
         var candidatos = new List<FilmeResponse> { F(1, "Interestelar"), F(2, "Outro") };
-        var tela = FilmeService.MontarTela([], candidatos, "all", "all", "interestelar");
+        var tela = CatalogoAgrupador.Montar([], candidatos, "all", "all", "interestelar");
 
         Assert.Single(tela.ContinuarAssistindo);
         Assert.Equal(1, tela.ContinuarAssistindo[0].Id);
@@ -253,10 +253,10 @@ public class MontarTelaTests
     {
         var todos = new List<FilmeResponse> { F(1, "Interestelar") };
 
-        Assert.True(FilmeService.MontarTela([], [], "all", "all", null).CatalogoVazio);
+        Assert.True(CatalogoAgrupador.Montar([], [], "all", "all", null).CatalogoVazio);
         // Filtro que não bate nada: catálogo tem filme, só não passou no filtro atual.
-        Assert.False(FilmeService.MontarTela(todos, [], "all", "all", "nao existe").CatalogoVazio);
-        Assert.False(FilmeService.MontarTela(todos, [], "serie", "all", null).CatalogoVazio);
+        Assert.False(CatalogoAgrupador.Montar(todos, [], "all", "all", "nao existe").CatalogoVazio);
+        Assert.False(CatalogoAgrupador.Montar(todos, [], "serie", "all", null).CatalogoVazio);
     }
 
     [Fact]
@@ -272,7 +272,7 @@ public class MontarTelaTests
             F(3, "Filme Trailer", pasta: "Filme (2020)", ehExtra: true),
         };
         // busca bate as 2 partes reais, não bate o trailer
-        var tela = FilmeService.MontarTela(todos, [], "all", "all", "parte");
+        var tela = CatalogoAgrupador.Montar(todos, [], "all", "all", "parte");
 
         var grupo = Assert.Single(tela.PastasFilme);
         Assert.Equal(2, grupo.Itens.Count);
@@ -290,7 +290,7 @@ public class MontarTelaTests
             F(1, "Ep1", pasta: "Serie Pasta", ehEpisodio: true, serie: "Serie", serieChave: "serie"),
             F(2, "1XBET.COM promo", pasta: "Serie Pasta", ehExtra: true),
         };
-        var tela = FilmeService.MontarTela(todos, [], "all", "all", null);
+        var tela = CatalogoAgrupador.Montar(todos, [], "all", "all", null);
 
         Assert.Empty(tela.PastasFilme);
         Assert.Empty(tela.FilmesSoltos);
@@ -304,7 +304,7 @@ public class MontarTelaTests
     public void Extra_solto_sem_pasta_nao_aparece_como_filme()
     {
         var todos = new List<FilmeResponse> { F(1, "Sample", ehExtra: true) };
-        var tela = FilmeService.MontarTela(todos, [], "all", "all", null);
+        var tela = CatalogoAgrupador.Montar(todos, [], "all", "all", null);
 
         Assert.Empty(tela.FilmesSoltos);
         Assert.Empty(tela.PastasFilme);

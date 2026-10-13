@@ -213,6 +213,7 @@ video { width: 100%; height: auto; background: #000; }
   var SEEK_STEP_S = 15;              // avanço/retrocesso das setas esquerda/direita durante o filme
   var AVISO_ORIGINAL_MS = 8000;      // quanto tempo o aviso "arquivo original" fica na tela
   var DICA_CONTROLES_MS = 7000;      // quanto tempo a dica dos controles fica visível sobre o vídeo
+  var LEGENDA_TIMEOUT_MS = 20000;    // 1a conversao de legenda no servidor pode demorar alguns segundos
   var LEGENDA_MSG_MS = 3000;         // quanto tempo o aviso "Legenda: on/off" fica na tela
   var PLAY_PAUSE_RACE_MS = 80;       // espera pra corrigir corrida com o play/pause nativo do <video>
 
@@ -638,9 +639,13 @@ video { width: 100%; height: auto; background: #000; }
   var legendaCues = [];     // [{ini, fim, html}] da faixa ativa, em ordem
   var legendaUltimo = 0;    // indice do ultimo cue achado (atalho — o tempo anda pra frente)
   var legendaToken = 0;     // invalida download de legenda ainda em voo
+  var legendaProntas = false; // /legendas ja respondeu para o filme atual
+  var legendaPendente = -1;   // idx pedido pelo celular antes de /legendas responder
+  var legendaHtml = '';     // ultimo html escrito em #psub (comparar com o innerHTML relido nao serve: o navegador reserializa)
 
   function removerLegendas() {
     legendaFaixas = [];
+    legendaProntas = false;
     ativarLegenda(-1);
   }
 
@@ -651,7 +656,7 @@ video { width: 100%; height: auto; background: #000; }
   }
 
   function parseVtt(txt) {
-    var cues = [], blocos = txt.replace(/\r/g, '').split('\n\n');
+    var cues = [], blocos = txt.replace(/\r/g, '').split(/\n[ \t]*\n/);
     for (var i = 0; i < blocos.length; i++) {
       var linhas = blocos[i].split('\n'), k = 0;
       while (k < linhas.length && linhas[k].indexOf('-->') === -1) k++;
@@ -675,7 +680,7 @@ video { width: 100%; height: auto; background: #000; }
       for (i = 0; i < c.length; i++) if (t >= c[i].ini && t <= c[i].fim) { achou = c[i]; legendaUltimo = i; break; }
     }
     var html = achou ? achou.html : '';
-    if (els.psub.innerHTML !== html) els.psub.innerHTML = html;
+    if (legendaHtml !== html) { legendaHtml = html; els.psub.innerHTML = html; }
   }
 
   // idx de /legendas; -1 (ou idx desconhecido) desliga.
@@ -683,17 +688,33 @@ video { width: 100%; height: auto; background: #000; }
     var meu = ++legendaToken;
     legendaCues = [];
     legendaUltimo = 0;
+    legendaHtml = '';
     els.psub.innerHTML = '';
+    legendaPendente = -1;
     var ok = false;
     for (var i = 0; i < legendaFaixas.length; i++) if (legendaFaixas[i].idx === idx) ok = true;
     legendaAtiva = ok ? idx : -1;
+    // Comando do celular chegou antes de /legendas responder: guarda e aplica quando a lista vier.
+    if (!ok && !legendaProntas && idx !== -1) legendaPendente = idx;
     if (!ok) return;
     var x = new XMLHttpRequest();
     x.open('GET', API + '/' + filmeAtual + '/legenda/' + idx);
+    x.timeout = LEGENDA_TIMEOUT_MS;
+    var falhou = function () {
+      if (meu !== legendaToken) return;
+      legendaAtiva = -1;  // senao o botao vermelho acha que esta ligada e o proximo toque so "desliga"
+      var p = els.pmsg;
+      if (p.innerHTML === '' || p.innerHTML.indexOf('Legenda:') === 0) {
+        p.innerHTML = 'Legenda: indisponivel';
+        setTimeout(function () { if (p.innerHTML.indexOf('Legenda:') === 0) p.innerHTML = ''; }, LEGENDA_MSG_MS);
+      }
+    };
     x.onreadystatechange = function () {
       if (x.readyState !== 4 || meu !== legendaToken) return;
       if (x.status === 200) { legendaCues = parseVtt(x.responseText); renderLegenda(); }
+      else if (x.status !== 0) falhou();  // status 0 = erro de rede/timeout, tratado abaixo
     };
+    x.onerror = x.ontimeout = falhou;
     x.send();
   }
 
@@ -702,6 +723,8 @@ video { width: 100%; height: auto; background: #000; }
       if (err || !faixas || filmeAtual !== id) return;
       legendaFaixas = [];
       for (var i = 0; i < faixas.length; i++) if (faixas[i].convertivel) legendaFaixas.push(faixas[i]);
+      legendaProntas = true;
+      if (legendaPendente !== -1) ativarLegenda(legendaPendente);
     });
   }
 
@@ -855,7 +878,9 @@ video { width: 100%; height: auto; background: #000; }
       var player = document.getElementById('player');
       if (fs === v) {
         var pedir = player.requestFullscreen || player.webkitRequestFullscreen;
-        if (pedir) { try { pedir.call(player); } catch (e) {} }
+        if (pedir) {
+          try { var r = pedir.call(player); if (r && r.catch) r.catch(function () {}); } catch (e) {}
+        }
       }
     };
     document.addEventListener('fullscreenchange', aoMudarTelaCheia, false);

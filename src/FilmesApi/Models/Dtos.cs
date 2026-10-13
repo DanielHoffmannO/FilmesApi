@@ -27,7 +27,7 @@ public record SerieAgrupada(string Chave, string Nome, List<FilmeResponse> Episo
 /// <summary>
 /// O catálogo já filtrado (tipo/visto/busca) e agrupado (filme solto / pasta de filme+extras /
 /// série com episódios), pronto pra tela desenhar sem nenhuma lógica própria. Calculado uma
-/// vez no servidor (<see cref="Services.FilmeService.MontarTela"/>) em vez de replicado em
+/// vez no servidor (<see cref="Services.CatalogoAgrupador.Montar"/>) em vez de replicado em
 /// cada uma das 3 telas (index.html, controle.html, tv.html) — era assim que o mesmo bug de
 /// agrupamento (acento/maiúscula, arco "Livro N", release com SxxExx na pasta) precisava ser
 /// corrigido 3 vezes.

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
@@ -33,6 +34,10 @@ public class SubtitleService
     private readonly MediaProbeService _probe;
     private readonly ILogger<SubtitleService> _logger;
     private readonly SemaphoreSlim _extracao = new(1, 1);
+    // Conversão que falhou não é tentada de novo a cada pedido (cada tentativa ocupa o _extracao
+    // e roda ffmpeg): espera alguns minutos antes de aceitar outra.
+    private static readonly TimeSpan EsperaAposFalha = TimeSpan.FromMinutes(5);
+    private readonly ConcurrentDictionary<string, DateTime> _falhas = new();
     private readonly CancellationToken _pararToken;
 
     public SubtitleService(FfmpegOptions ffmpeg, IConfiguration config, MediaProbeService probe,
@@ -108,33 +113,40 @@ public class SubtitleService
         if (idxRelativo >= embutidas)
             return await ObterVttExternoAsync(filmeId, externas[idxRelativo - embutidas], dir, ct);
 
+        if (FalhouRecentemente(destino)) return null;
         await _extracao.WaitAsync(ct);
+        string? parcial = null;
         try
         {
             if (File.Exists(destino) && new FileInfo(destino).Length > 0) return destino;
 
             Directory.CreateDirectory(dir);
+            // Grava num .tmp e só move no fim: se o processo morrer no meio (shutdown), o
+            // cache nunca vê um .vtt pela metade com Length > 0.
+            parcial = destino + ".tmp";
             var psi = new ProcessStartInfo(_ffmpegPath);
             foreach (var arg in new[]
             {
                 "-y", "-i", arquivoAbsoluto,
                 "-map", $"0:s:{idxRelativo}", "-c:s", "webvtt", "-f", "webvtt",
-                destino,
+                parcial,
             })
                 psi.ArgumentList.Add(arg);
 
             var (exit, stderr) = await ProcessRunner.ExecutarComTimeoutAsync(psi, TimeSpan.FromMinutes(3), null, _pararToken);
-            if (exit != 0 || !File.Exists(destino) || new FileInfo(destino).Length == 0)
+            if (exit != 0 || !File.Exists(parcial) || new FileInfo(parcial).Length == 0)
             {
                 _logger.LogWarning("Extração da legenda {Idx} do filme {Id} falhou (exit {Exit}): {Err}",
                     idxRelativo, filmeId, exit, stderr);
-                try { if (File.Exists(destino)) File.Delete(destino); } catch (IOException) { }
+                _falhas[destino] = DateTime.UtcNow;
                 return null;
             }
+            File.Move(parcial, destino, overwrite: true);
             return destino;
         }
         finally
         {
+            ApagarSilencioso(parcial);
             _extracao.Release();
         }
     }
@@ -155,29 +167,34 @@ public class SubtitleService
         var destino = Path.Combine(dir, $"ext_{chave}.vtt");
         if (File.Exists(destino) && new FileInfo(destino).Length > 0) return destino;
 
+        if (FalhouRecentemente(destino)) return null;
         await _extracao.WaitAsync(ct);
-        string? temporario = null;
+        string? origem = null, parcial = null;
         try
         {
             if (File.Exists(destino) && new FileInfo(destino).Length > 0) return destino;
 
             Directory.CreateDirectory(dir);
             var texto = LegendaExternaLocalizador.DecodificarTexto(await File.ReadAllBytesAsync(externa.Caminho, ct));
-            temporario = Path.Combine(dir, $"ext_{chave}{Path.GetExtension(externa.Caminho).ToLowerInvariant()}");
-            await File.WriteAllTextAsync(temporario, texto, new UTF8Encoding(false), ct);
+            // Nomes distintos do destino: uma legenda externa que já é .vtt não pode ser
+            // entrada e saída do ffmpeg ao mesmo tempo.
+            origem = Path.Combine(dir, $"ext_{chave}.src{Path.GetExtension(externa.Caminho).ToLowerInvariant()}");
+            parcial = destino + ".tmp";
+            await File.WriteAllTextAsync(origem, texto, new UTF8Encoding(false), ct);
 
             var psi = new ProcessStartInfo(_ffmpegPath);
-            foreach (var arg in new[] { "-y", "-i", temporario, "-f", "webvtt", destino })
+            foreach (var arg in new[] { "-y", "-i", origem, "-f", "webvtt", parcial })
                 psi.ArgumentList.Add(arg);
 
             var (exit, stderr) = await ProcessRunner.ExecutarComTimeoutAsync(psi, TimeSpan.FromMinutes(1), null, _pararToken);
-            if (exit != 0 || !File.Exists(destino) || new FileInfo(destino).Length == 0)
+            if (exit != 0 || !File.Exists(parcial) || new FileInfo(parcial).Length == 0)
             {
                 _logger.LogWarning("Conversão da legenda externa {Arquivo} do filme {Id} falhou (exit {Exit}): {Err}",
                     externa.Caminho, filmeId, exit, stderr);
-                try { if (File.Exists(destino)) File.Delete(destino); } catch (IOException) { }
+                _falhas[destino] = DateTime.UtcNow;
                 return null;
             }
+            File.Move(parcial, destino, overwrite: true);
             return destino;
         }
         catch (IOException ex)
@@ -187,8 +204,19 @@ public class SubtitleService
         }
         finally
         {
-            try { if (temporario is not null && File.Exists(temporario)) File.Delete(temporario); } catch (IOException) { }
+            ApagarSilencioso(origem);
+            ApagarSilencioso(parcial);
             _extracao.Release();
         }
+    }
+
+    private bool FalhouRecentemente(string destino) =>
+        _falhas.TryGetValue(destino, out var quando) && DateTime.UtcNow - quando < EsperaAposFalha;
+
+    private static void ApagarSilencioso(string? arquivo)
+    {
+        try { if (arquivo is not null && File.Exists(arquivo)) File.Delete(arquivo); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 }

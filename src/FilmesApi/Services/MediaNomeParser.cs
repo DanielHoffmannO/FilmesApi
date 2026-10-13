@@ -306,7 +306,7 @@ public static partial class MediaNomeParser
     // e CharUnicodeInfo não funcionam de forma confiável (passa no teste, que roda com ICU
     // completo no SDK, mas falha silenciosamente na imagem publicada). Por isso a troca de
     // acento é uma tabela ordinal explícita, igual ao resto do parser já faz.
-    private static char SemAcentoMinuscula(char c) => c switch
+    internal static char SemAcentoMinuscula(char c) => c switch
     {
         'á' or 'à' or 'â' or 'ã' or 'ä' or 'Á' or 'À' or 'Â' or 'Ã' or 'Ä' => 'a',
         'é' or 'è' or 'ê' or 'ë' or 'É' or 'È' or 'Ê' or 'Ë' => 'e',

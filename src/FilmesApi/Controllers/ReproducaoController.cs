@@ -183,7 +183,9 @@ public class ReproducaoController : ControllerBase
         var vtt = await _legendas.ObterVttAsync(id, path, idx, ct);
         if (vtt is null) return NotFound();
 
-        Response.Headers.CacheControl = "public, max-age=86400";
+        // Revalida sempre: o idx de legenda externa depende do que há na pasta e muda se um
+        // .srt entrar ou sair — cache de 24h serviria a legenda errada do mesmo idx.
+        Response.Headers.CacheControl = "no-cache";
         return PhysicalFile(vtt, "text/vtt; charset=utf-8");
     }
 
