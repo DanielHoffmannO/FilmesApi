@@ -33,6 +33,17 @@ csharp_style_prefer_switch_expression = true:suggestion
 # "unused using" vira aviso (pega no dotnet format / CI)
 dotnet_diagnostic.IDE0005.severity = warning
 
+# Teto de tamanho/complexidade — os arquivos gigantes não voltam sem alguém perceber.
+# CA1502 complexidade ciclomática (padrão 25), CA1505 índice de manutenibilidade (padrão 10),
+# CA1506 acoplamento de classes (padrão 95 pra tipo / 40 pra método).
+dotnet_diagnostic.CA1502.severity = warning
+dotnet_diagnostic.CA1505.severity = warning
+dotnet_diagnostic.CA1506.severity = warning
+
+# Program.cs é a raiz de composição (registra todos os serviços): acoplamento alto é o trabalho dele.
+[Program.cs]
+dotnet_diagnostic.CA1506.severity = none
+
 [*.{json,yml,yaml,csproj,props,targets}]
 indent_size = 2
 
