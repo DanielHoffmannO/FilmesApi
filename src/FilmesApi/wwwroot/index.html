@@ -62,8 +62,6 @@ main{padding:16px 24px;max-width:1000px;margin:0 auto}
 .search{background:#1a1a1a;border:1px solid var(--border);color:#eee;padding:7px 12px;border-radius:20px;font-size:13px;width:200px;transition:width .2s,border-color .2s}
 .search:focus{outline:none;border-color:var(--accent);width:260px}
 .header-links{display:flex;gap:14px;align-items:center;font-size:13px}
-.header-links a{color:var(--muted);text-decoration:none}
-.header-links a:hover{color:#fff}
 .scan-msg{position:fixed;bottom:20px;right:20px;background:var(--ok);color:#000;padding:10px 16px;border-radius:6px;font-size:13px;display:none}
 </style>
 </head>
@@ -130,11 +128,6 @@ const els = {
   busca: document.getElementById('busca'),
   proximoBox: document.getElementById('proximoBox'),
 };
-
-// GET que nunca lança: erro de rede ou resposta não-2xx viram null (chamador decide o fallback).
-async function fetchJsonOuNull(url) {
-  return fetch(url).then(r => r.ok ? r.json() : null).catch(() => null);
-}
 
 // ─── Configuração (valores antes soltos pelo código, alguns repetidos em mais de um
 // lugar com o mesmo literal significando coisas diferentes — ex.: dois "1500" e três "12") ──

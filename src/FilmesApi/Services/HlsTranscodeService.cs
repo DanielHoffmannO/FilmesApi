@@ -176,7 +176,7 @@ public class HlsTranscodeService
     {
         var caminho = CaminhoRemux(filmeId);
         if (!File.Exists(caminho)) return null;
-        RegistrarAcessoRemux(filmeId);
+        RegistrarAcesso(caminho);  // toca o mtime = sinal de LRU; /remux não passa mais por ObterStatusRemux depois de "disponivel"
         return caminho;
     }
 
@@ -303,23 +303,6 @@ public class HlsTranscodeService
         _logger.LogInformation("Remux do filme {Id} abortado: ninguém pediu status há mais de {Seg}s.",
             filmeId, _orphanTimeout.TotalSeconds);
         _ultimoAcesso.TryRemove(filmeId, out _);
-    }
-
-    /// <summary>Toca o mtime do .mp4 remuxado — sinal de LRU pra eviction, mesmo padrão do
-    /// <see cref="RegistrarAcesso"/> do HLS. Chamado a cada GET de /remux (que não passa mais
-    /// por <see cref="ObterStatusRemux"/> depois de "disponivel" — só assim o arquivo não
-    /// parece "sem uso" pra sempre depois da primeira vez).</summary>
-    private void RegistrarAcessoRemux(int filmeId)
-    {
-        try
-        {
-            var caminho = CaminhoRemux(filmeId);
-            if (!File.Exists(caminho)) return;
-            if (DateTime.UtcNow - File.GetLastWriteTimeUtc(caminho) > TimeSpan.FromMinutes(2))
-                File.SetLastWriteTimeUtc(caminho, DateTime.UtcNow);
-        }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
     }
 
     /// <summary>Se o cache de /remux passou do teto (<c>RemuxCacheMaxGB</c>), despeja os .mp4

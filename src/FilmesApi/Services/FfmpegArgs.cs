@@ -23,9 +23,7 @@ internal static class FfmpegArgs
         List<string> args = ["-y", "-i", origem, "-map", "0:v:0"];
         if (audioStreamIndex is int idx) args.AddRange(["-map", $"0:{idx}"]);
         args.Add("-c:v"); args.Add("copy");
-        if (audioStreamIndex is not null)
-            args.AddRange(audioJaCompativel ? ["-c:a", "copy"] : ["-c:a", "aac", "-b:a", "192k", "-ac", "2"]);
-        if (largura > 0 && altura > 0) args.AddRange(["-aspect", $"{largura}:{altura}"]);
+        AdicionarAudioEAspect(args, audioStreamIndex, audioJaCompativel, largura, altura);
         // -f mp4 explícito: o nome real é "{id}.mp4.tmp" (renomeado pro final só depois
         // de completo), e o ffmpeg escolhe o muxer pela ÚLTIMA extensão — ".tmp" sozinho
         // não é reconhecido, então sem isso ele recusa nem abrir o arquivo de saída.
@@ -106,9 +104,7 @@ internal static class FfmpegArgs
         // bom com 2 canais ou menos (audioJaCompativel), copiar é tão seguro quanto o vídeo e
         // poupa CPU de decode+encode de áudio à toa (visto: ffmpeg a 140%+ de CPU só pra
         // reencodar um AAC estéreo pro mesmo AAC estéreo).
-        if (audioStreamIndex is not null)
-            args.AddRange(audioJaCompativel ? ["-c:a", "copy"] : ["-c:a", "aac", "-b:a", "192k", "-ac", "2"]);
-        if (largura > 0 && altura > 0) args.AddRange(["-aspect", $"{largura}:{altura}"]);
+        AdicionarAudioEAspect(args, audioStreamIndex, audioJaCompativel, largura, altura);
         args.AddRange([
             "-f", "hls",
             "-hls_time", SegmentoSegundos.ToString(),
@@ -121,5 +117,14 @@ internal static class FfmpegArgs
             "playlist.m3u8",
         ]);
         return args;
+    }
+
+    // Parte comum dos dois jobs: áudio (copia se já está bom, senão AAC estéreo — ver o -ac 2
+    // em Hls) e correção de proporção de pixel (-aspect só reescreve o metadado do container).
+    private static void AdicionarAudioEAspect(List<string> args, int? audioStreamIndex, bool audioJaCompativel, int largura, int altura)
+    {
+        if (audioStreamIndex is not null)
+            args.AddRange(audioJaCompativel ? ["-c:a", "copy"] : ["-c:a", "aac", "-b:a", "192k", "-ac", "2"]);
+        if (largura > 0 && altura > 0) args.AddRange(["-aspect", $"{largura}:{altura}"]);
     }
 }
