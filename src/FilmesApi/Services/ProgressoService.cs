@@ -23,7 +23,7 @@ public class ProgressoService
     /// pra valer a retomada ou perto demais do fim; <c>Inserir</c>/<c>Atualizar</c> senão.
     /// Extraída como decisão pura (sem tocar o banco) pra dar pra testar a regra de negócio
     /// sem precisar de EF Core/SQLite no teste — mesmo padrão de
-    /// <see cref="HlsTranscodeService.ClassificarCompatibilidade"/>.</summary>
+    /// <see cref="CompatibilidadeVideo.Classificar"/>.</summary>
     internal enum DecisaoSalvarProgresso { Descartar, DescartarEMarcarAssistido, Inserir, Atualizar }
 
     internal static DecisaoSalvarProgresso DecidirSalvamento(double posicao, double? duracao, bool jaTemProgresso)
