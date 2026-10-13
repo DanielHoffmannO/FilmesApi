@@ -109,6 +109,19 @@ video { width: 100%; height: auto; background: #000; }
   z-index: 2;
 }
 #pmsg:empty { display: none; }
+/* legenda desenhada por nos (nao pelo <track> nativo, que muita TV nao renderiza) */
+#psub {
+  position: absolute;
+  left: 0; right: 0; bottom: 12%;
+  padding: 0 8%;
+  text-align: center;
+  font-size: 34px;
+  line-height: 1.25;
+  color: #fff;
+  text-shadow: 0 0 4px #000, 0 0 4px #000, 2px 2px 3px #000;
+  z-index: 1;
+}
+#psub:empty { display: none; }
 #phint {
   position: absolute;
   top: 0; right: 0;
@@ -139,6 +152,7 @@ video { width: 100%; height: auto; background: #000; }
 
 <div id="player">
   <video id="video" controls autoplay></video>
+  <div id="psub"></div>
   <div id="pmsg"></div>
   <div id="phint">&#8592; &#8594; 15s &middot; OK pausa &middot; Vermelho = legenda &middot; Voltar = lista</div>
 </div>
@@ -207,6 +221,7 @@ video { width: 100%; height: auto; background: #000; }
   var els = {
     video: document.getElementById('video'),
     pmsg: document.getElementById('pmsg'),
+    psub: document.getElementById('psub'),
     grid: document.getElementById('grid'),
     player: document.getElementById('player'),
     msg: document.getElementById('msg'),
@@ -615,28 +630,80 @@ video { width: 100%; height: auto; background: #000; }
       });
   }
 
+  // Legenda desenhada num <div> (#psub), nao pelo <track> nativo: muita smart TV toca o video
+  // mas nao renderiza <track>. Baixa o .vtt, parseia os cues e mostra o da posicao atual a
+  // cada timeupdate. Botao VERMELHO liga/desliga durante o filme.
+  var legendaFaixas = [];   // faixas convertiveis do filme atual
+  var legendaAtiva = -1;    // idx da faixa mostrada (-1 = desligada)
+  var legendaCues = [];     // [{ini, fim, html}] da faixa ativa, em ordem
+  var legendaUltimo = 0;    // indice do ultimo cue achado (atalho — o tempo anda pra frente)
+  var legendaToken = 0;     // invalida download de legenda ainda em voo
+
   function removerLegendas() {
-    var v = els.video;
-    var tr = v.getElementsByTagName('track');
-    while (tr.length) v.removeChild(tr[0]);
+    legendaToken++;
+    legendaFaixas = [];
+    legendaAtiva = -1;
+    legendaCues = [];
+    els.psub.innerHTML = '';
   }
 
-  // Legenda embutida (as de texto) como <track>. Em TV muito velha pode nao renderizar
-  // — mas nao atrapalha. Botao VERMELHO liga/desliga durante o filme.
+  function tempoVtt(t) {
+    var p = t.replace(',', '.').split(':'), n = 0;
+    for (var i = 0; i < p.length; i++) n = n * 60 + parseFloat(p[i]);
+    return n;
+  }
+
+  function parseVtt(txt) {
+    var cues = [], blocos = txt.replace(/\r/g, '').split('\n\n');
+    for (var i = 0; i < blocos.length; i++) {
+      var linhas = blocos[i].split('\n'), k = 0;
+      while (k < linhas.length && linhas[k].indexOf('-->') === -1) k++;
+      if (k >= linhas.length) continue;
+      var tempos = linhas[k].split('-->');
+      var corpo = [];
+      for (var j = k + 1; j < linhas.length; j++) if (linhas[j]) corpo.push(esc(linhas[j].replace(/<[^>]*>/g, '')));
+      if (!corpo.length) continue;
+      cues.push({ ini: tempoVtt(tempos[0].replace(/^\s+|\s+$/g, '')),
+                  fim: tempoVtt(tempos[1].replace(/^\s+/, '').split(' ')[0]),
+                  html: corpo.join('<br>') });
+    }
+    return cues;
+  }
+
+  function renderLegenda() {
+    var t = els.video.currentTime, c = legendaCues, i = legendaUltimo, achou = null;
+    if (!c.length) return;
+    if (c[i] && t >= c[i].ini && t <= c[i].fim) achou = c[i];
+    else {
+      for (i = 0; i < c.length; i++) if (t >= c[i].ini && t <= c[i].fim) { achou = c[i]; legendaUltimo = i; break; }
+    }
+    var html = achou ? achou.html : '';
+    if (els.psub.innerHTML !== html) els.psub.innerHTML = html;
+  }
+
+  function ativarLegenda(idx) {
+    var meu = ++legendaToken;
+    legendaCues = [];
+    legendaUltimo = 0;
+    els.psub.innerHTML = '';
+    var ok = false;
+    for (var i = 0; i < legendaFaixas.length; i++) if (legendaFaixas[i].idx === idx) ok = true;
+    legendaAtiva = ok ? idx : -1;
+    if (!ok) return;
+    var x = new XMLHttpRequest();
+    x.open('GET', API + '/' + filmeAtual + '/legenda/' + idx);
+    x.onreadystatechange = function () {
+      if (x.readyState !== 4 || meu !== legendaToken) return;
+      if (x.status === 200) { legendaCues = parseVtt(x.responseText); renderLegenda(); }
+    };
+    x.send();
+  }
+
   function carregarLegendas(id) {
     get(API + '/' + id + '/legendas', function (err, faixas) {
       if (err || !faixas || filmeAtual !== id) return;
-      var v = els.video;
-      removerLegendas();
-      for (var i = 0; i < faixas.length; i++) {
-        if (!faixas[i].convertivel) continue;
-        var t = document.createElement('track');
-        t.kind = 'subtitles';
-        t.setAttribute('src', API + '/' + id + '/legenda/' + faixas[i].idx);
-        t.setAttribute('srclang', faixas[i].idioma || 'und');
-        t.setAttribute('label', faixas[i].titulo || faixas[i].idioma || ('Legenda ' + (faixas[i].idx + 1)));
-        v.appendChild(t);
-      }
+      legendaFaixas = [];
+      for (var i = 0; i < faixas.length; i++) if (faixas[i].convertivel) legendaFaixas.push(faixas[i]);
     });
   }
 
@@ -783,6 +850,8 @@ video { width: 100%; height: auto; background: #000; }
       ultimoSalvo = t;
       salvarProgresso();
     };
+    v.addEventListener('timeupdate', renderLegenda, false);
+    v.addEventListener('seeked', renderLegenda, false);
     v.onpause = function () { salvarProgresso(); };
     v.onended = function () {
       if (filmeAtual == null) return;
@@ -858,18 +927,8 @@ video { width: 100%; height: auto; background: #000; }
     if (estado.aceitarProximoVersion !== anterior.aceitarProximoVersion && proximoPendente) irProximo();
   }
 
-  // Casa o idx (indice da faixa no arquivo original) com o <track> certo — carregarLegendas
-  // criou eles na mesma ordem de /legendas, com a url terminando em /legenda/{idx}.
-  function aplicarLegendaRemota(idx) {
-    var v = els.video;
-    var tt = v.textTracks;
-    var tracks = v.getElementsByTagName('track');
-    for (var i = 0; i < tt.length; i++) {
-      var src = tracks[i] ? tracks[i].getAttribute('src') : '';
-      var m = src && src.match(/\/legenda\/(\d+)$/);
-      tt[i].mode = (m && Number(m[1]) === idx) ? 'showing' : 'disabled';
-    }
-  }
+  // Troca a faixa de legenda mostrada (idx de /legendas; -1 desliga).
+  function aplicarLegendaRemota(idx) { ativarLegenda(idx); }
 
   // Ao contrario da legenda (so troca o <track> ativo, sem tocar no servidor), a dublagem
   // vai dentro dos segments HLS/remux — trocar precisa regerar o video inteiro. Guarda a
@@ -949,15 +1008,12 @@ video { width: 100%; height: auto; background: #000; }
 
       // botao VERMELHO (403 na maioria dos controles): liga/desliga legenda
       if (k === 403) {
-        var tt = v.textTracks, algum = false, xi;
-        if (tt) {
-          for (xi = 0; xi < tt.length; xi++) if (tt[xi].mode === 'showing') algum = true;
-          for (xi = 0; xi < tt.length; xi++) tt[xi].mode = 'disabled';
-          if (!algum && tt.length) tt[0].mode = 'showing';
-          var pm = els.pmsg;
-          pm.innerHTML = 'Legenda: ' + (algum ? 'off' : (tt.length ? (tt[0].label || 'on') : 'nenhuma'));
-          setTimeout(function () { var p = els.pmsg; if (p.innerHTML.indexOf('Legenda:') === 0) p.innerHTML = ''; }, LEGENDA_MSG_MS);
-        }
+        var ligada = legendaAtiva !== -1;
+        if (ligada || !legendaFaixas.length) ativarLegenda(-1);
+        else ativarLegenda(legendaFaixas[0].idx);
+        var f = legendaFaixas[0];
+        els.pmsg.innerHTML = 'Legenda: ' + (ligada ? 'off' : (f ? (f.titulo || f.idioma || 'on') : 'nenhuma'));
+        setTimeout(function () { var p = els.pmsg; if (p.innerHTML.indexOf('Legenda:') === 0) p.innerHTML = ''; }, LEGENDA_MSG_MS);
         if (e.preventDefault) e.preventDefault();
         return false;
       }
