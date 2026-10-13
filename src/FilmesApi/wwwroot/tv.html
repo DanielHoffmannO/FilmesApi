@@ -151,7 +151,7 @@ video { width: 100%; height: auto; background: #000; }
 </div>
 
 <div id="player">
-  <video id="video" controls autoplay></video>
+  <video id="video" controls controlsList="nofullscreen" autoplay></video>
   <div id="psub"></div>
   <div id="pmsg"></div>
   <div id="phint">&#8592; &#8594; 15s &middot; OK pausa &middot; Vermelho = legenda &middot; Voltar = lista</div>
@@ -850,6 +850,18 @@ video { width: 100%; height: auto; background: #000; }
       ultimoSalvo = t;
       salvarProgresso();
     };
+    // Tela cheia nativa do <video> mostra SO o <video> — a legenda (#psub) some. Se o botao
+    // nativo ainda existir, passa a tela cheia pro #player inteiro (video + legenda + avisos).
+    var aoMudarTelaCheia = function () {
+      var fs = document.fullscreenElement || document.webkitFullscreenElement;
+      var player = document.getElementById('player');
+      if (fs === v) {
+        var pedir = player.requestFullscreen || player.webkitRequestFullscreen;
+        if (pedir) { try { pedir.call(player); } catch (e) {} }
+      }
+    };
+    document.addEventListener('fullscreenchange', aoMudarTelaCheia, false);
+    document.addEventListener('webkitfullscreenchange', aoMudarTelaCheia, false);
     v.addEventListener('timeupdate', renderLegenda, false);
     v.addEventListener('seeked', renderLegenda, false);
     v.onpause = function () { salvarProgresso(); };
