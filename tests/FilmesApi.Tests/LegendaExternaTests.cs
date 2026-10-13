@@ -33,6 +33,11 @@ public class LegendaExternaTests
     [InlineData("Show S01E01", "Show S01E02", false)]
     [InlineData("The Twilight Zone [1x01] Shatterday", "The Twilight Zone [1x01] Shatterday", true)]
     [InlineData("Filme 1920x1080", "Outro 1920x1080", false)]             // resolução não é episódio
+    [InlineData("Alien", "Alien 3", false)]                               // outro filme, não idioma
+    [InlineData("Toy Story", "Toy Story 2.por", false)]
+    [InlineData("Filme", "Filme forced", true)]
+    [InlineData("Show.S01.E02.720p", "Show - S01E02", true)]              // mesmo parser do catálogo
+    [InlineData("Show 1x6", "Show 1x06", true)]
     [InlineData("", "Filme", false)]
     public void Casa_reconhece(string video, string legenda, bool esperado) =>
         Assert.Equal(esperado, LegendaExternaLocalizador.Casa(video, legenda));
@@ -183,6 +188,43 @@ public class LegendaExternaTests
             Assert.Equal(["Português", "Português 2"], r.Select(x => x.Titulo));
         }
         finally { Limpa(dir); }
+    }
+
+    [Fact]
+    public void Normalizar_tira_acento_sem_depender_de_ICU() =>
+        Assert.Equal("legenda forcada", LegendaExternaLocalizador.Normalizar("Legenda Forçada"));
+
+    [Fact]
+    public void Forcada_so_por_palavra_inteira()
+    {
+        var dir = TestesComuns.CriarPastaTemp();
+        try
+        {
+            Toca(dir, "Filme.mkv");
+            Toca(dir, "Filme.por.srt"); Toca(dir, "Filme.forced.srt");
+            var r = LegendaExternaLocalizador.Localizar(Path.Combine(dir, "Filme.mkv"));
+            Assert.Single(r, x => x.Forced);
+
+            Toca(dir, "Filme.Enforced.srt");  // não é "forced" como palavra: nem casa, nem é forçada
+            Assert.Single(LegendaExternaLocalizador.Localizar(Path.Combine(dir, "Filme.mkv")), x => x.Forced);
+        }
+        finally { Limpa(dir); }
+    }
+
+    [Fact]
+    public void Ignora_symlink_e_arquivo_vazio()
+    {
+        var dir = TestesComuns.CriarPastaTemp();
+        var fora = TestesComuns.CriarPastaTemp();
+        try
+        {
+            Toca(dir, "Filme.mkv");
+            Toca(fora, "segredo.srt");
+            File.CreateSymbolicLink(Path.Combine(dir, "Filme.por.srt"), Path.Combine(fora, "segredo.srt"));
+            File.WriteAllBytes(Path.Combine(dir, "Filme.eng.srt"), []);
+            Assert.Empty(LegendaExternaLocalizador.Localizar(Path.Combine(dir, "Filme.mkv")));
+        }
+        finally { Limpa(dir); Limpa(fora); }
     }
 
     [Fact]

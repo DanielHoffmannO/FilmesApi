@@ -1,6 +1,4 @@
-using System.Globalization;
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace FilmesApi.Services;
 
@@ -23,7 +21,7 @@ internal record LegendaExterna(string Caminho, string? Idioma, string Titulo, bo
 /// usa as candidatas — com teto pra não varrer uma pasta-lixeira.</item>
 /// </list>
 /// </summary>
-internal static partial class LegendaExternaLocalizador
+internal static class LegendaExternaLocalizador
 {
     private static readonly string[] ExtLegenda = [".srt", ".vtt", ".ass", ".ssa"];
     private static readonly string[] ExtVideo = [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v"];
@@ -129,8 +127,14 @@ internal static partial class LegendaExternaLocalizador
         }
     }
 
-    internal static bool EhLegenda(string caminho) =>
-        ExtLegenda.Contains(Path.GetExtension(caminho), StringComparer.OrdinalIgnoreCase);
+    // Link simbólico pode apontar pra fora da pasta de mídia (ou pra FIFO/dispositivo, que
+    // travaria a leitura); arquivo vazio não tem o que mostrar. Só arquivo comum entra.
+    internal static bool EhLegenda(string caminho)
+    {
+        if (!ExtLegenda.Contains(Path.GetExtension(caminho), StringComparer.OrdinalIgnoreCase)) return false;
+        var fi = new FileInfo(caminho);
+        return fi.LinkTarget is null && fi.Length > 0;
+    }
 
     internal static bool EhPastaDeLegenda(string nome)
     {
@@ -148,9 +152,10 @@ internal static partial class LegendaExternaLocalizador
     {
         var sb = new StringBuilder(s.Length);
         var ultimoEspaco = true;
-        foreach (var c in s.Normalize(NormalizationForm.FormD))
+        foreach (var original in s)
         {
-            if (CharUnicodeInfo.GetUnicodeCategory(c) == UnicodeCategory.NonSpacingMark) continue;
+            // Não usar string.Normalize(FormD): sem ICU (InvariantGlobalization) não decompõe nada.
+            var c = MediaNomeParser.SemAcentoMinuscula(original);
             if (char.IsLetterOrDigit(c)) { sb.Append(char.ToLowerInvariant(c)); ultimoEspaco = false; }
             else if (!ultimoEspaco) { sb.Append(' '); ultimoEspaco = true; }
         }
@@ -164,21 +169,27 @@ internal static partial class LegendaExternaLocalizador
         var nv = Normalizar(videoStem);
         var ns = Normalizar(legendaStem);
         if (nv.Length == 0 || ns.Length == 0) return false;
-        if (ns == nv || ns.StartsWith(nv + " ", StringComparison.Ordinal)) return true;
+        if (ns == nv) return true;
+        // "Filme.pt-BR.srt" casa com "Filme"; "Alien 3.srt" NÃO casa com "Alien" — só vale o
+        // que sobra do nome se for marca de idioma/forçada.
+        if (ns.StartsWith(nv + " ", StringComparison.Ordinal) && SoMarcaDeIdioma(ns[nv.Length..])) return true;
 
         var kv = ChaveEpisodio(videoStem);
         return kv is not null && kv == ChaveEpisodio(legendaStem);
     }
 
-    /// <summary>(temporada, episódio) de "S02E05" ou "2x05"; null se o nome não traz. Resolução
-    /// tipo "1920x1080" não conta (o lookbehind/lookahead exige fronteira de dígito).</summary>
-    internal static (int Temporada, int Episodio)? ChaveEpisodio(string stem)
-    {
-        var m = ReSxxExx().Match(stem);
-        if (m.Success) return (int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value));
-        m = ReNxNN().Match(stem);
-        return m.Success ? (int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value)) : null;
-    }
+    private static readonly HashSet<string> TokensForcada = new(StringComparer.Ordinal)
+        { "forced", "forcada", "forcado", "forcadas", "sdh", "cc" };
+
+    private static bool SoMarcaDeIdioma(string resto) =>
+        resto.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .All(t => t == "br" || TokenIdioma.ContainsKey(t) || TokensForcada.Contains(t));
+
+    /// <summary>(temporada, episódio) pelo MESMO parser do catálogo — assim "S01.E02", "1x6" etc.
+    /// pareiam igual ao que a tela classifica como episódio. A extensão postiça evita que
+    /// o parser trate o fim do nome ("...S01.E02") como extensão de arquivo.</summary>
+    internal static (int Temporada, int Episodio)? ChaveEpisodio(string stem) =>
+        MediaNomeParser.OrdemEpisodio(stem + ".x");
 
     /// <summary>Idioma ("por", "eng"…) lido do que sobra do nome depois do nome do vídeo
     /// ("Filme.pt-BR.srt" → por) e do nome da subpasta ("eng_subs" → eng). Null se não dá
@@ -215,8 +226,7 @@ internal static partial class LegendaExternaLocalizador
     {
         var stem = Path.GetFileNameWithoutExtension(caminho);
         var norm = Normalizar(stem + " " + pasta);
-        var forced = norm.Contains("forced", StringComparison.Ordinal)
-                  || norm.Contains("forcad", StringComparison.Ordinal);
+        var forced = norm.Split(' ', StringSplitOptions.RemoveEmptyEntries).Any(TokensForcada.Contains);
         var idioma = IdiomaDoNome(videoStem, stem, pasta);
 
         string titulo;
@@ -240,10 +250,4 @@ internal static partial class LegendaExternaLocalizador
         }
         return resultado;
     }
-
-    [GeneratedRegex(@"(?<![0-9a-z])s([0-9]{1,2})e([0-9]{1,3})(?![0-9])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex ReSxxExx();
-
-    [GeneratedRegex(@"(?<![0-9])([0-9]{1,2})x([0-9]{2,3})(?![0-9])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex ReNxNN();
 }
