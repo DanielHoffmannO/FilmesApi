@@ -641,6 +641,8 @@ video { width: 100%; height: auto; background: #000; }
   var legendaToken = 0;     // invalida download de legenda ainda em voo
   var legendaProntas = false; // /legendas ja respondeu para o filme atual
   var legendaPendente = -1;   // idx pedido pelo celular antes de /legendas responder
+  var legendaDiag = 3;      // quantas vezes ainda loga a legenda desenhada (diagnostico: TV sem console, cai no docker logs)
+  var legendaSemCue = 0;    // timeupdates seguidos sem cue na posicao atual (so pro diagnostico)
   var legendaHtml = '';     // ultimo html escrito em #psub (comparar com o innerHTML relido nao serve: o navegador reserializa)
 
   function removerLegendas() {
@@ -681,6 +683,21 @@ video { width: 100%; height: auto; background: #000; }
     }
     var html = achou ? achou.html : '';
     if (legendaHtml !== html) { legendaHtml = html; els.psub.innerHTML = html; }
+    if (achou && legendaDiag > 0) { legendaDiag--; diagLegendaTela(); }
+    else if (!achou && legendaDiag === 3 && ++legendaSemCue === 40)
+      logDiag('legenda: ' + c.length + ' cues carregados, nenhum na posicao t=' + t + ' (primeiro ' + c[0].ini + '-' + c[0].fim + ')');
+  }
+
+  // Diagnostico: onde o div da legenda caiu e se o video esta em tela cheia nativa (nesse caso
+  // algumas TVs desenham o video por cima de qualquer elemento HTML).
+  function diagLegendaTela() {
+    try {
+      var s = els.psub, v = els.video;
+      var cs = window.getComputedStyle ? window.getComputedStyle(s, null) : null;
+      logDiag('legenda desenhada: psub ' + s.offsetWidth + 'x' + s.offsetHeight + ' display=' + (cs && cs.display) +
+        ' visibility=' + (cs && cs.visibility) + ' z=' + (cs && cs.zIndex) + ' | video ' + v.offsetWidth + 'x' + v.offsetHeight +
+        ' | telaCheia=' + !!(document.fullscreenElement || document.webkitFullscreenElement) + ' t=' + v.currentTime);
+    } catch (e) {}
   }
 
   // idx de /legendas; -1 (ou idx desconhecido) desliga.
@@ -689,6 +706,7 @@ video { width: 100%; height: auto; background: #000; }
     legendaCues = [];
     legendaUltimo = 0;
     legendaHtml = '';
+    legendaSemCue = 0;
     els.psub.innerHTML = '';
     legendaPendente = -1;
     var ok = false;
@@ -711,10 +729,19 @@ video { width: 100%; height: auto; background: #000; }
     };
     x.onreadystatechange = function () {
       if (x.readyState !== 4 || meu !== legendaToken) return;
-      if (x.status === 200) { legendaCues = parseVtt(x.responseText); renderLegenda(); }
-      else if (x.status !== 0) falhou();  // status 0 = erro de rede/timeout, tratado abaixo
+      if (x.status === 200) {
+        legendaCues = parseVtt(x.responseText);
+        logDiag('legenda idx=' + idx + ' baixada: ' + x.responseText.length + ' bytes, ' + legendaCues.length + ' cues' +
+          (legendaCues[0] ? ', primeiro ' + legendaCues[0].ini + '-' + legendaCues[0].fim : '') +
+          ' | t=' + els.video.currentTime + ' dur=' + els.video.duration);
+        renderLegenda();
+      }
+      else if (x.status !== 0) { logDiag('legenda idx=' + idx + ' falhou: HTTP ' + x.status); falhou(); }  // status 0 = erro de rede/timeout, tratado abaixo
     };
-    x.onerror = x.ontimeout = falhou;
+    x.onerror = x.ontimeout = function () {
+      logDiag('legenda idx=' + idx + ' sem resposta (erro de rede ou timeout)');
+      falhou();
+    };
     x.send();
   }
 
