@@ -154,7 +154,7 @@ video { width: 100%; height: auto; background: #000; }
   <video id="video" controls controlsList="nofullscreen" autoplay></video>
   <div id="psub"></div>
   <div id="pmsg"></div>
-  <div id="phint">&#8592; &#8594; 15s &middot; OK pausa &middot; Vermelho = legenda &middot; Voltar = lista</div>
+  <div id="phint">&#8592; &#8594; 15s &middot; OK pausa &middot; Vermelho = legenda &middot; &#8593; tela cheia &middot; Voltar = lista</div>
 </div>
 
 <script src="/vendor/hls.min.js"></script>
@@ -954,6 +954,25 @@ video { width: 100%; height: auto; background: #000; }
     if (ajusteDiag > 0) { ajusteDiag--; logDiag('video ' + vw + 'x' + vh + ' ajustado pra ' + w + 'x' + h + ' (tela ' + W + 'x' + H + ')'); }
   }
 
+  // Tela cheia do #player INTEIRO (video + legenda #psub + avisos), pela tecla ↑. O botao de
+  // expandir nativo poe so o <video> em tela cheia — na J5200 nem a legenda nativa (<track>,
+  // 464 cues em modo showing no log) e desenhada ali, entao a legenda some. Em tela cheia do
+  // container os filhos dele continuam sendo desenhados. requestFullscreen so e aceito dentro
+  // de um gesto do usuario (num fullscreenchange nao funciona, ja tentado): a tecla e o gesto.
+  function alternarTelaCheiaPlayer() {
+    var p = els.player;
+    var fs = document.fullscreenElement || document.webkitFullscreenElement;
+    var sair = document.exitFullscreen || document.webkitExitFullscreen || document.webkitCancelFullScreen;
+    var pedir = p.requestFullscreen || p.webkitRequestFullscreen || p.webkitRequestFullScreen;
+    try {
+      if (fs) { if (sair) sair.call(document); return; }
+      if (!pedir) { logDiag('tela cheia do #player: API indisponivel neste navegador'); return; }
+      logDiag('tela cheia do #player: pedindo (tecla)');
+      var r = pedir.call(p);
+      if (r && r.catch) r.catch(function (err) { logDiag('tela cheia do #player recusada: ' + err); });
+    } catch (ex) { logDiag('tela cheia do #player lancou: ' + ex); }
+  }
+
   function configurarProgresso() {
     var v = els.video;
     v.onloadeddata = aplicarRetomada;
@@ -979,7 +998,11 @@ video { width: 100%; height: auto; background: #000; }
         logDiag('tela cheia mudou: elemento=' + (fs ? (fs.tagName + '#' + fs.id) : 'nenhum'));
         if (fs === v) setTimeout(diagTrilhasNativas, 1500);
       }
+      setTimeout(ajustarVideo, 300);   // o tamanho da tela muda (863 -> 960 de altura); resize nem sempre dispara
     };
+    var erroTelaCheia = function () { logDiag('fullscreenerror: o navegador recusou o pedido de tela cheia'); };
+    document.addEventListener('fullscreenerror', erroTelaCheia, false);
+    document.addEventListener('webkitfullscreenerror', erroTelaCheia, false);
     document.addEventListener('fullscreenchange', aoMudarTelaCheia, false);
     document.addEventListener('webkitfullscreenchange', aoMudarTelaCheia, false);
     v.addEventListener('webkitbeginfullscreen', function () { logDiag('video entrou em tela cheia nativa (webkitbeginfullscreen) — a legenda #psub nao aparece nesse modo'); }, false);
@@ -1145,6 +1168,13 @@ video { width: 100%; height: auto; background: #000; }
       if (proximoPendente) {
         if (k === 13 || k === 32) { if (e.preventDefault) e.preventDefault(); irProximo(); return false; }
         return true;
+      }
+
+      // ↑: tela cheia do #player (video + legenda) — ver alternarTelaCheiaPlayer.
+      if (k === 38) {
+        alternarTelaCheiaPlayer();
+        if (e.preventDefault) e.preventDefault();
+        return false;
       }
 
       // botao VERMELHO (403 na maioria dos controles): liga/desliga legenda
