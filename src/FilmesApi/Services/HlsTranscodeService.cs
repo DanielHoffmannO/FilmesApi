@@ -135,9 +135,19 @@ public class HlsTranscodeService
     /// aleatório (endpoint sem auth) não consegue inflar o dicionário sem limite.</summary>
     public void RegistrarInteresse(int filmeId)
     {
-        if (_jobs.ContainsKey(filmeId) || _completos.ContainsKey(filmeId) || Directory.Exists(DiretorioCache(filmeId)))
+        if (_jobs.ContainsKey(filmeId) || _remuxJobs.ContainsKey(filmeId) || _completos.ContainsKey(filmeId)
+            || Directory.Exists(DiretorioCache(filmeId)))
             _ultimoAcesso[filmeId] = DateTime.UtcNow;
     }
+
+    /// <summary>Ninguém pede status/segmento/keepalive deste filme há mais que
+    /// <paramref name="timeout"/> — quem disparou o job desistiu. Sem registro de acesso (ou
+    /// timeout zero) nunca é órfão. Pura, pra testar sem subir ffmpeg.</summary>
+    internal static bool InteresseExpirou(DateTime? ultimoAcesso, DateTime agora, TimeSpan timeout) =>
+        timeout > TimeSpan.Zero && ultimoAcesso is DateTime visto && agora - visto > timeout;
+
+    private bool SemInteresse(int filmeId) =>
+        InteresseExpirou(_ultimoAcesso.TryGetValue(filmeId, out var visto) ? visto : null, DateTime.UtcNow, _orphanTimeout);
 
     /// <summary>Só responde "dá pra tocar direto?" sem disparar transcode nenhum — o
     /// <c>tv.html</c> numa TV antiga usa isso pra decidir entre /stream e /original sem HLS.</summary>
@@ -195,6 +205,7 @@ public class HlsTranscodeService
                 _jobCancelRemux[filmeId] = cts;
                 _remuxJobs[filmeId] = Task.Run(() => ExecutarRemuxAsync(filmeId, origem, cts.Token));
             }
+            _ultimoAcesso[filmeId] = DateTime.UtcNow;  // disparo e cada poll contam como interesse (ver ExecutarRemuxAsync)
             return (RemuxStatus.Preparando, EstimarProgressoRemux(filmeId, origem));
         }
     }
@@ -218,6 +229,7 @@ public class HlsTranscodeService
         var final = CaminhoRemux(filmeId);
         var tmp = final + ".tmp";
         var slotObtido = false;
+        var orfao = false;
         try
         {
             // Mesmo gate de temperatura/concorrência do HLS: mesmo o remux sendo leve
@@ -227,6 +239,9 @@ public class HlsTranscodeService
             await _slotEncoder.WaitAsync(ct);
             slotObtido = true;
             await _thermal.AguardarResfriamentoAsync(ct);
+
+            // Ficou na fila (slot/temperatura) e quem pediu já foi embora: nem começa.
+            if (SemInteresse(filmeId)) { RemuxOrfao(filmeId); return; }
 
             var info = await _probe.InspecionarAsync(origem, CancellationToken.None)
                 ?? throw new InvalidOperationException("probe falhou");
@@ -239,7 +254,22 @@ public class HlsTranscodeService
             var psi = new ProcessStartInfo(_ffmpegPath);
             foreach (var a in args) psi.ArgumentList.Add(a);
 
-            var (exit, stderr) = await ProcessRunner.ExecutarComTimeoutAsync(psi, _jobTimeout, null, ct);
+            // Mesmo detector de órfão do HLS: pré-busca do próximo episódio que ninguém chegou
+            // a assistir não pode remuxar o arquivo inteiro de graça.
+            bool Travou()
+            {
+                if (!SemInteresse(filmeId)) return false;
+                orfao = true;
+                return true;
+            }
+
+            var (exit, stderr) = await ProcessRunner.ExecutarComTimeoutAsync(psi, _jobTimeout, Travou, ct);
+            if (orfao)
+            {
+                RemuxOrfao(filmeId);
+                try { if (File.Exists(tmp)) File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+                return;
+            }
             if (exit != 0) throw new InvalidOperationException($"ffmpeg exit {exit}: {stderr}");
 
             File.Move(tmp, final, overwrite: true);
@@ -265,6 +295,14 @@ public class HlsTranscodeService
         }
 
         if (!ct.IsCancellationRequested) LimparRemuxCacheExcedente();
+    }
+
+    /// <summary>Remux abandonado: não marca _remuxFalhas (fica retentável quando alguém pedir de novo).</summary>
+    private void RemuxOrfao(int filmeId)
+    {
+        _logger.LogInformation("Remux do filme {Id} abortado: ninguém pediu status há mais de {Seg}s.",
+            filmeId, _orphanTimeout.TotalSeconds);
+        _ultimoAcesso.TryRemove(filmeId, out _);
     }
 
     /// <summary>Toca o mtime do .mp4 remuxado — sinal de LRU pra eviction, mesmo padrão do
@@ -690,9 +728,7 @@ public class HlsTranscodeService
         {
             // Ninguém pede status/segmento deste filme há muito tempo — quem pediu desistiu.
             // Aborta pra não fritar a placa 1h transcodificando um 4K que ninguém vai ver.
-            if (_orphanTimeout > TimeSpan.Zero
-                && _ultimoAcesso.TryGetValue(filmeId, out var visto)
-                && DateTime.UtcNow - visto > _orphanTimeout)
+            if (SemInteresse(filmeId))
             {
                 orfao = true;
                 return true;
