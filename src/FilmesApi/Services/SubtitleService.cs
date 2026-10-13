@@ -38,6 +38,7 @@ public class SubtitleService
     // e roda ffmpeg): espera alguns minutos antes de aceitar outra.
     private static readonly TimeSpan EsperaAposFalha = TimeSpan.FromMinutes(5);
     private readonly ConcurrentDictionary<string, DateTime> _falhas = new();
+    private readonly ConcurrentDictionary<(int FilmeId, int Idx), byte> _preparando = new();
     private readonly CancellationToken _pararToken;
 
     public SubtitleService(FfmpegOptions ffmpeg, IConfiguration config, MediaProbeService probe,
@@ -69,7 +70,58 @@ public class SubtitleService
     /// índice usado no endpoint <c>/legenda/{idx}</c>; nas embutidas é o relativo (0,1,2…)
     /// de <c>-map 0:s:N</c>.</summary>
     public async Task<List<LegendaInfo>> ListarAsync(string arquivoAbsoluto, CancellationToken ct) =>
-        (await ListarCompletoAsync(arquivoAbsoluto, ct)).Todas;
+        OrdenarPorRelevancia((await ListarCompletoAsync(arquivoAbsoluto, ct)).Todas);
+
+    /// <summary>Quão boa é a faixa pra quem quer legenda em português (menor = melhor): 0
+    /// português completa, 1 português SDH/CC, 2 idioma não informado (comum em .srt solto),
+    /// 3 outro idioma, 4 forçada (só traduz fala estrangeira pontual), 5 bitmap (não converte).
+    /// "Forçada" também vale pelo título: arquivo com a flag errada ("FORÇADA PT-BR" sem
+    /// <c>forced</c>) é comum em release.</summary>
+    internal static int Relevancia(LegendaInfo f)
+    {
+        if (!f.Convertivel) return 5;
+        var tokens = LegendaExternaLocalizador.Normalizar(f.Titulo ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (f.Forced || tokens.Any(t => t.StartsWith("forc", StringComparison.Ordinal))) return 4;
+        if (EscolhaAudio.EhPortugues(f.Idioma))
+            return tokens.Any(t => t is "sdh" or "cc" or "hearing") ? 1 : 0;
+        return string.IsNullOrEmpty(f.Idioma) || f.Idioma == "und" ? 2 : 3;
+    }
+
+    /// <summary>Melhor faixa primeiro; o resto na ordem original (sort estável). O <c>Idx</c> de
+    /// cada faixa não muda — é a identidade dela em <c>/legenda/{idx}</c> — só a posição na lista,
+    /// que é o que o botão CC do celular e o vermelho da TV usam pra escolher "a primeira".</summary>
+    internal static List<LegendaInfo> OrdenarPorRelevancia(List<LegendaInfo> faixas) =>
+        faixas.OrderBy(Relevancia).ToList();
+
+    /// <summary>Qual legenda vale deixar pronta no cache. Só quem assiste com áudio que não é
+    /// em português usa legenda: com áudio em português, ou de idioma desconhecido (não dá pra
+    /// saber), devolve null. <paramref name="faixasOrdenadas"/> vem de <see cref="OrdenarPorRelevancia"/>;
+    /// só serve português ou idioma não informado — legenda em inglês pra áudio em inglês não.</summary>
+    internal static int? LegendaParaPreparar(string? idiomaDoAudio, IReadOnlyList<LegendaInfo> faixasOrdenadas)
+    {
+        // "und"/"unk": o arquivo não diz (ffprobe repete o que o muxer gravou) — não adivinha.
+        if (string.IsNullOrEmpty(idiomaDoAudio) || idiomaDoAudio.ToLowerInvariant() is "und" or "unk") return null;
+        if (EscolhaAudio.EhPortugues(idiomaDoAudio)) return null;
+        var melhor = faixasOrdenadas.FirstOrDefault();
+        return melhor is not null && Relevancia(melhor) <= 2 ? melhor.Idx : null;
+    }
+
+    /// <summary>Extrai/converte a legenda pro cache sem ninguém esperar. A 1ª extração de uma
+    /// legenda embutida num MKV grande lê o arquivo inteiro e passa dos 20 s que a TV espera —
+    /// feita quando o filme abre, já está pronta quando o usuário liga a legenda. Idempotente:
+    /// o mesmo (filme, faixa) não roda duas vezes ao mesmo tempo, e o cache e o recuo depois de
+    /// falha de <see cref="ObterVttAsync"/> evitam repetir trabalho.</summary>
+    public void PrepararEmSegundoPlano(int filmeId, string arquivoAbsoluto, int idx)
+    {
+        if (!_preparando.TryAdd((filmeId, idx), 0)) return;
+        _ = Task.Run(async () =>
+        {
+            try { await ObterVttAsync(filmeId, arquivoAbsoluto, idx, _pararToken); }
+            catch (OperationCanceledException) { }   // servidor parando
+            catch (Exception ex) { _logger.LogWarning(ex, "Preparo da legenda {Idx} do filme {Id} falhou.", idx, filmeId); }
+            finally { _preparando.TryRemove((filmeId, idx), out _); }
+        });
+    }
 
     private async Task<(List<LegendaInfo> Todas, int Embutidas, IReadOnlyList<LegendaExterna> Externas)>
         ListarCompletoAsync(string arquivoAbsoluto, CancellationToken ct)
