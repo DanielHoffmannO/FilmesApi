@@ -314,32 +314,53 @@ public class HlsTranscodeService
         if (_remuxCacheMaxBytes == long.MaxValue) return;
         try
         {
-            if (!Directory.Exists(_remuxCachePath)) return;
-
-            var arquivos = Directory.EnumerateFiles(_remuxCachePath, "*.mp4")
-                .Select(p => new FileInfo(p))
-                .OrderBy(f => f.LastWriteTimeUtc)
-                .ToList();
-            var total = arquivos.Sum(f => f.Length);
-            if (total <= _remuxCacheMaxBytes) return;
-
-            var alvo = (long)(_remuxCacheMaxBytes * 0.9);
-            var corte = DateTime.UtcNow - TimeSpan.FromMinutes(30);
-            foreach (var f in arquivos)
-            {
-                if (total <= alvo) break;
-                if (f.LastWriteTimeUtc >= corte) continue;  // acessado há pouco, pode estar em uso
-                try { f.Delete(); }
-                catch (IOException) { continue; }
-                catch (UnauthorizedAccessException) { continue; }
-                total -= f.Length;
-                _logger.LogInformation("Cache de remux acima do teto: despejando {Nome} ({Mb} MB).", f.Name, f.Length / 1024 / 1024);
-            }
+            foreach (var (nome, bytes) in DespejarExcedenteRemux(_remuxCachePath, _remuxCacheMaxBytes, DateTime.UtcNow))
+                _logger.LogInformation("Cache de remux acima do teto: despejando {Nome} ({Mb} MB).", nome, bytes / 1024 / 1024);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Falha ao avaliar/despejar cache de remux excedente.");
         }
+    }
+
+    /// <summary>Despeja os .mp4 mais antigos de <paramref name="pasta"/> até o total cair a 90%
+    /// do teto. Pula o que foi acessado há menos de 30 min (pode estar tocando). Devolve o que
+    /// apagou. O tamanho é lido UMA vez, antes de apagar: <c>FileInfo.Delete()</c> invalida o
+    /// cache do próprio FileInfo e ler <c>.Length</c> depois lança FileNotFoundException — era o
+    /// que abortava a limpeza (com warning no log) logo na 1ª remoção de cada rodada.</summary>
+    internal static List<(string Nome, long Bytes)> DespejarExcedenteRemux(string pasta, long tetoBytes, DateTime agoraUtc)
+    {
+        var despejados = new List<(string Nome, long Bytes)>();
+        if (!Directory.Exists(pasta)) return despejados;
+
+        var arquivos = new List<(string Caminho, string Nome, long Bytes, DateTime Mtime)>();
+        foreach (var caminho in Directory.EnumerateFiles(pasta, "*.mp4"))
+        {
+            try
+            {
+                var fi = new FileInfo(caminho);
+                arquivos.Add((caminho, fi.Name, fi.Length, fi.LastWriteTimeUtc));
+            }
+            catch (IOException) { }   // sumiu entre listar e medir (outro job apagou/renomeou)
+        }
+        arquivos.Sort((a, b) => a.Mtime.CompareTo(b.Mtime));
+
+        var total = arquivos.Sum(a => a.Bytes);
+        if (total <= tetoBytes) return despejados;
+
+        var alvo = (long)(tetoBytes * 0.9);
+        var corte = agoraUtc - TimeSpan.FromMinutes(30);
+        foreach (var a in arquivos)
+        {
+            if (total <= alvo) break;
+            if (a.Mtime >= corte) continue;  // acessado há pouco, pode estar em uso
+            try { File.Delete(a.Caminho); }
+            catch (IOException) { continue; }
+            catch (UnauthorizedAccessException) { continue; }
+            total -= a.Bytes;
+            despejados.Add((a.Nome, a.Bytes));
+        }
+        return despejados;
     }
 
     /// <summary>Apaga best-effort o cache HLS do filme — usado ao deletar o filme do catálogo.</summary>

@@ -5,6 +5,10 @@ internal static class EscolhaAudio
 {
     private static readonly string[] IdiomasAudioPreferidos = ["por", "pt", "pob"];
 
+    /// <summary>Idioma ffprobe ("por", "pt", "pob") é português?</summary>
+    internal static bool EhPortugues(string? idioma) =>
+        idioma is not null && IdiomasAudioPreferidos.Contains(idioma.ToLowerInvariant());
+
     /// <summary>Índice global (pra <c>-map</c>) da faixa de áudio que vai pro HLS/remux. Se
     /// <paramref name="preferenciaManual"/> aponta pra uma faixa que existe de verdade nesse
     /// arquivo, usa ela (controle remoto escolheu uma "dublagem" — ver
