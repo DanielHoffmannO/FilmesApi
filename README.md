@@ -336,7 +336,6 @@ filmes ainda sem metadados (roda ~30s depois do boot e reprocessa a cada scan).
 
 | Método | Rota | Descrição |
 |---|---|---|
-| `GET` | `/api/filmes/continuar` | "Continuar assistindo" (mais recentes primeiro). |
 | `GET` `PUT` | `/api/filmes/{id}/progresso` | Lê / salva (`{posicao, duracao}`) onde a reprodução parou. `400` se `posicao` for negativa/inválida, `404` se o filme não existir. |
 | `POST` | `/api/filmes/{id}/concluir` | Marca assistido e limpa a retomada (evento `ended` do player). |
 | `DELETE` | `/api/filmes/{id}/progresso` | Tira da lista de "continuar assistindo" sem marcar assistido — só apaga a retomada (botão "✕" no `index.html`). |

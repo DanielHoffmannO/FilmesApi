@@ -44,6 +44,8 @@ public class ProgressoService
         var filme = await _db.Filmes.Include(f => f.Progresso).FirstOrDefaultAsync(f => f.Id == filmeId);
         if (filme is null) return false;
 
+        // `is > 0` já exclui NaN (NaN > 0 é false); +Infinity é que precisa de guarda.
+        if (duracao is not > 0 || double.IsInfinity(duracao.Value)) duracao = null;
         posicao = Math.Max(0, posicao);
         var decisao = DecidirSalvamento(posicao, duracao, filme.Progresso is not null);
 

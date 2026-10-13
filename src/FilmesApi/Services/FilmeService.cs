@@ -279,10 +279,14 @@ public class FilmeService
         return i >= 0 && i + 1 < episodios.Count ? episodios[i + 1] : null;
     }
 
-    /// <summary>Só o ArquivoPath — para o streaming resolver o caminho no disco sem
-    /// arrastar o JOIN em Progressos que o <c>ObterAsync</c> completo faz.</summary>
-    public Task<string?> ObterArquivoPathAsync(int id)
-        => _db.Filmes.AsNoTracking().Where(f => f.Id == id).Select(f => f.ArquivoPath).FirstOrDefaultAsync();
+    /// <summary>Caminho absoluto do arquivo no disco, ou null se o filme não existe ou o
+    /// arquivo sumiu. Lê só o ArquivoPath — sem o JOIN em Progressos do <c>ObterAsync</c>.</summary>
+    public async Task<string?> ResolverCaminhoAsync(int id)
+    {
+        var arquivoPath = await _db.Filmes.AsNoTracking()
+            .Where(f => f.Id == id).Select(f => f.ArquivoPath).FirstOrDefaultAsync();
+        return arquivoPath is null ? null : ObterCaminhoAbsoluto(arquivoPath);
+    }
 
     public async Task<bool> MarcarAssistidoAsync(int id)
     {
@@ -441,7 +445,7 @@ public class FilmeService
     /// a checagem de containment fica como defesa em profundidade — barata e nunca confiar
     /// cegamente num caminho vindo do banco pra montar um caminho de arquivo.
     /// </summary>
-    public string? ObterCaminhoAbsoluto(string relativePath)
+    private string? ObterCaminhoAbsoluto(string relativePath)
     {
         var raiz = Path.GetFullPath(_mediaPath);
         var full = Path.GetFullPath(Path.Combine(raiz, relativePath));
