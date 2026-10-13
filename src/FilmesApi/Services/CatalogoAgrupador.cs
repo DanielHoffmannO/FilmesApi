@@ -33,20 +33,49 @@ public static class CatalogoAgrupador
         // uma pasta de filme+extras só por esconder temporariamente os outros arquivos dela.
         var porPasta = todos.GroupBy(f => f.Pasta).ToDictionary(g => g.Key, g => g.Count());
 
+        var (filmesSoltos, pastasFilme, series) = SepararPorTipo(todos.Where(PassaFiltro), porPasta);
+        ColapsarPastasComUmFilme(pastasFilme, filmesSoltos);
+        var gruposFranquia = AgruparFranquias(filmesSoltos, pastasFilme);
+
+        filmesSoltos.Sort((a, b) => string.Compare(a.Titulo, b.Titulo, StringComparison.OrdinalIgnoreCase));
+        foreach (var serie in series.Values) OrdenarEpisodios(serie.Itens);
+
+        var pastasOrdenadas = pastasFilme
+            .Select(kv => new PastaAgrupada(kv.Key, MediaNomeParser.NomePastaExibicao(kv.Key), kv.Value))
+            .Concat(gruposFranquia)
+            .OrderBy(p => p.Nome, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var seriesOrdenadas = series
+            .Select(kv => new SerieAgrupada(kv.Key, NomeMaisFrequente(kv.Value.Nomes), kv.Value.Itens))
+            .OrderBy(s => s.Nome, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new TelaCatalogoResponse(continuarAssistindo, filmesSoltos, pastasOrdenadas, seriesOrdenadas, todos.Count == 0);
+    }
+
+    /// <summary>Nomes: conta ocorrência de cada Serie "bruto" dentro do grupo -- decide o nome de
+    /// exibição pelo MAIS FREQUENTE (não o primeiro visto), senão um apelido/pasta de release
+    /// feia com poucos episódios podia "vencer" a exibição de um grupo com centenas de
+    /// episódios só por coincidência de ordem (ver ApelidosSerie).</summary>
+    private sealed record SerieAcumulada(Dictionary<string, int> Nomes, List<FilmeResponse> Itens);
+
+    /// <summary>Primeira passada: cada item filtrado vira episódio de série, item de pasta
+    /// filme+extras (pasta com 2+ arquivos na lista INTEIRA) ou filme solto.</summary>
+    private static (List<FilmeResponse> FilmesSoltos, Dictionary<string, List<FilmeResponse>> PastasFilme,
+        Dictionary<string, SerieAcumulada> Series) SepararPorTipo(
+        IEnumerable<FilmeResponse> filtrados, Dictionary<string, int> porPasta)
+    {
         var filmesSoltos = new List<FilmeResponse>();
         var pastasFilme = new Dictionary<string, List<FilmeResponse>>();
-        // Nomes: conta ocorrência de cada Serie "bruto" dentro do grupo -- decide o nome de
-        // exibição pelo MAIS FREQUENTE (não o primeiro visto), senão um apelido/pasta de
-        // release feia com poucos episódios podia "vencer" a exibição de um grupo com
-        // centenas de episódios só por coincidência de ordem (ver ApelidosSerie).
-        var series = new Dictionary<string, (Dictionary<string, int> Nomes, List<FilmeResponse> Itens)>();
+        var series = new Dictionary<string, SerieAcumulada>();
 
-        foreach (var f in todos.Where(PassaFiltro))
+        foreach (var f in filtrados)
         {
             if (f.EhEpisodio)
             {
                 var chave = f.SerieChave ?? f.Serie ?? "";
-                if (!series.TryGetValue(chave, out var g)) { g = ([], []); series[chave] = g; }
+                if (!series.TryGetValue(chave, out var g)) { g = new SerieAcumulada([], []); series[chave] = g; }
                 var nome = f.Serie ?? "";
                 g.Nomes[nome] = g.Nomes.GetValueOrDefault(nome) + 1;
                 g.Itens.Add(f);
@@ -63,43 +92,37 @@ public static class CatalogoAgrupador
             else if (!f.EhExtra) filmesSoltos.Add(f);
         }
 
-        // pasta com 1 filme "de verdade" + resto extra (trailer/sample) -> mostra o filme
-        // direto. Pasta com 0 filme de verdade (ex.: todo o conteúdo real da pasta virou
-        // episódio de série — sobrou só um promo/propaganda do uploader) -> descarta a pasta
-        // inteira, não tem nada de real pra mostrar.
+        return (filmesSoltos, pastasFilme, series);
+    }
+
+    /// <summary>Pasta com 1 filme "de verdade" + resto extra (trailer/sample) -> mostra o filme
+    /// direto. Pasta com 0 filme de verdade (ex.: todo o conteúdo real da pasta virou episódio
+    /// de série — sobrou só um promo/propaganda do uploader) -> descarta a pasta inteira, não
+    /// tem nada de real pra mostrar.</summary>
+    private static void ColapsarPastasComUmFilme(
+        Dictionary<string, List<FilmeResponse>> pastasFilme, List<FilmeResponse> filmesSoltos)
+    {
         foreach (var pasta in pastasFilme.Keys.ToList())
         {
             var principais = pastasFilme[pasta].Where(f => !f.EhExtra).ToList();
             if (principais.Count == 1) filmesSoltos.Add(principais[0]);
             if (principais.Count <= 1) pastasFilme.Remove(pasta);
         }
+    }
 
-        // Franquia por título: junta filmes/pastas da MESMA franquia que moram em pastas sem
-        // relação nenhuma (sem pasta-mãe "Trilogia .../" ligando elas -- RePastaColecao não
-        // cobre esse caso). Cobre tanto "cada filme solto na sua pasta" (Toy Story 1/2/3, cada
-        // um sozinho) quanto "1 filme solto + outros já numa pasta de verdade juntos"
-        // (Homem-Aranha 1 sozinho; Homem-Aranha 2 e 3 já juntos em "TRILOGIA.../", pasta real
-        // com 2 arquivos). Só corta um marcador de SEQUÊNCIA do título (número/romano no
-        // fim) -- não é correspondência de nome parecido (isso juntaria "Poder" com "Poder
-        // Absoluto" à toa).
-        var candidatosFranquia = new List<(string Chave, string PastaOrigem, List<FilmeResponse> Itens)>();
-        foreach (var f in filmesSoltos)
-        {
-            var chave = MediaNomeParser.ChaveBaseFranquia(f.Titulo);
-            if (!string.IsNullOrEmpty(chave)) candidatosFranquia.Add((chave, "", [f]));
-        }
-        foreach (var (pastaChave, itensPasta) in pastasFilme)
-        {
-            // Só considera a pasta inteira pra franquia se TODOS os itens dela concordam na
-            // mesma chave -- uma pasta "filme + extras" onde os títulos não convergem pra uma
-            // franquia só não entra (ex.: 2 cortes/versões do mesmo filme com títulos diferentes).
-            var chavesDaPasta = itensPasta
-                .Select(f => MediaNomeParser.ChaveBaseFranquia(f.Titulo))
-                .Where(c => !string.IsNullOrEmpty(c))
-                .Distinct()
-                .ToList();
-            if (chavesDaPasta.Count == 1) candidatosFranquia.Add((chavesDaPasta[0]!, pastaChave, itensPasta));
-        }
+    /// <summary>Franquia por título: junta filmes/pastas da MESMA franquia que moram em pastas sem
+    /// relação nenhuma (sem pasta-mãe "Trilogia .../" ligando elas -- RePastaColecao não
+    /// cobre esse caso). Cobre tanto "cada filme solto na sua pasta" (Toy Story 1/2/3, cada
+    /// um sozinho) quanto "1 filme solto + outros já numa pasta de verdade juntos"
+    /// (Homem-Aranha 1 sozinho; Homem-Aranha 2 e 3 já juntos em "TRILOGIA.../", pasta real
+    /// com 2 arquivos). Só corta um marcador de SEQUÊNCIA do título (número/romano no
+    /// fim) -- não é correspondência de nome parecido (isso juntaria "Poder" com "Poder
+    /// Absoluto" à toa). Remove de <paramref name="filmesSoltos"/> e <paramref name="pastasFilme"/>
+    /// o que foi absorvido por uma franquia e devolve os grupos novos.</summary>
+    private static List<PastaAgrupada> AgruparFranquias(
+        List<FilmeResponse> filmesSoltos, Dictionary<string, List<FilmeResponse>> pastasFilme)
+    {
+        var candidatosFranquia = CandidatosDeFranquia(filmesSoltos, pastasFilme);
 
         var gruposFranquia = new List<PastaAgrupada>();
         var pastasDeFranquiaParaRemover = new List<string>();
@@ -113,15 +136,11 @@ public static class CatalogoAgrupador
                 var nome = MediaNomeParser.NomeBaseFranquia(f.Titulo);
                 nomesBase[nome] = nomesBase.GetValueOrDefault(nome) + 1;
             }
-            var nomeExibicao = nomesBase
-                .OrderByDescending(nc => nc.Value)
-                .ThenBy(nc => nc.Key, StringComparer.OrdinalIgnoreCase)
-                .First().Key;
             var itensOrdenados = itensDoGrupo
                 .OrderBy(f => f.AnoLancamento ?? int.MaxValue)
                 .ThenBy(f => f.Titulo, StringComparer.OrdinalIgnoreCase)
                 .ToList();
-            gruposFranquia.Add(new PastaAgrupada("franquia:" + grupo.Key, nomeExibicao, itensOrdenados));
+            gruposFranquia.Add(new PastaAgrupada("franquia:" + grupo.Key, NomeMaisFrequente(nomesBase), itensOrdenados));
 
             foreach (var c in grupo)
             {
@@ -133,35 +152,46 @@ public static class CatalogoAgrupador
         if (idsSoltosDeFranquiaParaRemover.Count > 0)
             filmesSoltos.RemoveAll(f => idsSoltosDeFranquiaParaRemover.Contains(f.Id));
 
-        filmesSoltos.Sort((a, b) => string.Compare(a.Titulo, b.Titulo, StringComparison.OrdinalIgnoreCase));
-
-        foreach (var lista in series.Values.Select(v => v.Itens))
-            lista.Sort((a, b) =>
-            {
-                var c = (a.Temporada ?? 0).CompareTo(b.Temporada ?? 0);
-                if (c != 0) return c;
-                c = (a.Episodio ?? 0).CompareTo(b.Episodio ?? 0);
-                return c != 0 ? c : string.Compare(a.Titulo, b.Titulo, StringComparison.OrdinalIgnoreCase);
-            });
-
-        var pastasOrdenadas = pastasFilme
-            .Select(kv => new PastaAgrupada(kv.Key, MediaNomeParser.NomePastaExibicao(kv.Key), kv.Value))
-            .Concat(gruposFranquia)
-            .OrderBy(p => p.Nome, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        // Nome de exibição = o mais frequente no grupo; empate resolvido alfabeticamente,
-        // só pra dar um resultado determinístico (não devia acontecer na prática).
-        string NomeMaisFrequente(Dictionary<string, int> nomes) => nomes
-            .OrderByDescending(nc => nc.Value)
-            .ThenBy(nc => nc.Key, StringComparer.OrdinalIgnoreCase)
-            .First().Key;
-
-        var seriesOrdenadas = series
-            .Select(kv => new SerieAgrupada(kv.Key, NomeMaisFrequente(kv.Value.Nomes), kv.Value.Itens))
-            .OrderBy(s => s.Nome, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        return new TelaCatalogoResponse(continuarAssistindo, filmesSoltos, pastasOrdenadas, seriesOrdenadas, todos.Count == 0);
+        return gruposFranquia;
     }
+
+    private static List<(string Chave, string PastaOrigem, List<FilmeResponse> Itens)> CandidatosDeFranquia(
+        List<FilmeResponse> filmesSoltos, Dictionary<string, List<FilmeResponse>> pastasFilme)
+    {
+        var candidatos = new List<(string Chave, string PastaOrigem, List<FilmeResponse> Itens)>();
+        foreach (var f in filmesSoltos)
+        {
+            var chave = MediaNomeParser.ChaveBaseFranquia(f.Titulo);
+            if (!string.IsNullOrEmpty(chave)) candidatos.Add((chave, "", [f]));
+        }
+        foreach (var (pastaChave, itensPasta) in pastasFilme)
+        {
+            // Só considera a pasta inteira pra franquia se TODOS os itens dela concordam na
+            // mesma chave -- uma pasta "filme + extras" onde os títulos não convergem pra uma
+            // franquia só não entra (ex.: 2 cortes/versões do mesmo filme com títulos diferentes).
+            var chavesDaPasta = itensPasta
+                .Select(f => MediaNomeParser.ChaveBaseFranquia(f.Titulo))
+                .Where(c => !string.IsNullOrEmpty(c))
+                .Distinct()
+                .ToList();
+            if (chavesDaPasta.Count == 1) candidatos.Add((chavesDaPasta[0]!, pastaChave, itensPasta));
+        }
+        return candidatos;
+    }
+
+    private static void OrdenarEpisodios(List<FilmeResponse> episodios) =>
+        episodios.Sort((a, b) =>
+        {
+            var c = (a.Temporada ?? 0).CompareTo(b.Temporada ?? 0);
+            if (c != 0) return c;
+            c = (a.Episodio ?? 0).CompareTo(b.Episodio ?? 0);
+            return c != 0 ? c : string.Compare(a.Titulo, b.Titulo, StringComparison.OrdinalIgnoreCase);
+        });
+
+    /// <summary>Nome de exibição = o mais frequente no grupo; empate resolvido alfabeticamente,
+    /// só pra dar um resultado determinístico (não devia acontecer na prática).</summary>
+    private static string NomeMaisFrequente(Dictionary<string, int> nomes) => nomes
+        .OrderByDescending(nc => nc.Value)
+        .ThenBy(nc => nc.Key, StringComparer.OrdinalIgnoreCase)
+        .First().Key;
 }
