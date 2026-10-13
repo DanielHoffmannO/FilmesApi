@@ -845,6 +845,7 @@ video { width: 100%; height: auto; background: #000; }
     if (!ehRetry && posInicial == null) send('POST', PLAYER + '/selecionar/' + id);
     els.list.className = 'hide';
     els.player.className = 'on';
+    els.video.style.width = ''; els.video.style.height = '';  // o ajuste do filme anterior nao vale pra este (ver ajustarVideo)
     document.body.className = 'playing';
     var v = els.video;
     var pmsg = els.pmsg;
@@ -895,6 +896,24 @@ video { width: 100%; height: auto; background: #000; }
     try { v.currentTime = posicaoRetomar; } catch (e) {}
   }
 
+  // Preenche a tela por conta propria. O CSS (width/height:auto + max-*:100%) nunca AUMENTA o
+  // video: um 720p num viewport de 1707x960 ficava a 1280x720, com sobra preta em volta, e o
+  // usuario apertava o "expandir" nativo da TV — que passa o video pra um plano de hardware
+  // por cima de qualquer HTML, e a legenda (#psub) some. Cabendo na tela aqui, nao precisa
+  // expandir. Em JS e nao object-fit, porque TV antiga distorce a imagem com ele (ver
+  // comentario do #player.on video). videoWidth/Height ja vem com a proporcao de pixel aplicada.
+  var ajusteDiag = 4;       // quantas vezes ainda loga o ajuste (diagnostico: TV sem console)
+  function ajustarVideo() {
+    var v = els.video, vw = v.videoWidth, vh = v.videoHeight;
+    if (!vw || !vh || els.player.className !== 'on') return;
+    var W = els.player.clientWidth || window.innerWidth, H = els.player.clientHeight || window.innerHeight;
+    if (!W || !H) return;
+    var f = Math.min(W / vw, H / vh), w = Math.floor(vw * f), h = Math.floor(vh * f);
+    v.style.width = w + 'px';
+    v.style.height = h + 'px';
+    if (ajusteDiag > 0) { ajusteDiag--; logDiag('video ' + vw + 'x' + vh + ' ajustado pra ' + w + 'x' + h + ' (tela ' + W + 'x' + H + ')'); }
+  }
+
   function configurarProgresso() {
     var v = els.video;
     v.onloadeddata = aplicarRetomada;
@@ -909,8 +928,13 @@ video { width: 100%; height: auto; background: #000; }
     };
     // Tela cheia nativa do <video> mostra SO o <video> — a legenda (#psub) some. Se o botao
     // nativo ainda existir, passa a tela cheia pro #player inteiro (video + legenda + avisos).
+    var telaCheiaDiag = 6;
     var aoMudarTelaCheia = function () {
       var fs = document.fullscreenElement || document.webkitFullscreenElement;
+      if (telaCheiaDiag > 0) {
+        telaCheiaDiag--;
+        logDiag('tela cheia mudou: elemento=' + (fs ? (fs.tagName + '#' + fs.id) : 'nenhum'));
+      }
       var player = document.getElementById('player');
       if (fs === v) {
         var pedir = player.requestFullscreen || player.webkitRequestFullscreen;
@@ -921,6 +945,11 @@ video { width: 100%; height: auto; background: #000; }
     };
     document.addEventListener('fullscreenchange', aoMudarTelaCheia, false);
     document.addEventListener('webkitfullscreenchange', aoMudarTelaCheia, false);
+    v.addEventListener('webkitbeginfullscreen', function () { logDiag('video entrou em tela cheia nativa (webkitbeginfullscreen) — a legenda #psub nao aparece nesse modo'); }, false);
+    v.addEventListener('webkitendfullscreen', function () { logDiag('video saiu da tela cheia nativa'); ajustarVideo(); }, false);
+    v.addEventListener('loadedmetadata', ajustarVideo, false);
+    v.addEventListener('resize', ajustarVideo, false);   // o <video> dispara quando videoWidth/Height muda
+    window.addEventListener('resize', ajustarVideo, false);
     v.addEventListener('timeupdate', renderLegenda, false);
     v.addEventListener('seeked', renderLegenda, false);
     v.onpause = function () { salvarProgresso(); };
