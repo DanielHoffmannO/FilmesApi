@@ -13,7 +13,7 @@ public class CompatibilidadeDiretaTests
     [Fact]
     public void Mp4_h264_aac_e_totalmente_compativel()
     {
-        var r = HlsTranscodeService.ClassificarCompatibilidade(".mp4", "h264", video10Bit: false, "aac");
+        var r = CompatibilidadeVideo.Classificar(".mp4", "h264", video10Bit: false, "aac");
         Assert.Equal(CompatibilidadeDireta.Compativel, r);
     }
 
@@ -21,7 +21,7 @@ public class CompatibilidadeDiretaTests
     public void Mkv_h264_eac3_precisa_so_de_remux_de_audio()
     {
         // O caso real de hoje: WEB-DL com vídeo h264 (ok) e áudio EAC3 5.1 (TV recusa).
-        var r = HlsTranscodeService.ClassificarCompatibilidade(".mkv", "h264", video10Bit: false, "eac3");
+        var r = CompatibilidadeVideo.Classificar(".mkv", "h264", video10Bit: false, "eac3");
         Assert.Equal(CompatibilidadeDireta.SoAudioIncompativel, r);
     }
 
@@ -31,7 +31,7 @@ public class CompatibilidadeDiretaTests
         // Extensão restrita de propósito: MKV nunca é "Compativel" mesmo com codecs bons —
         // comportamento de sempre, só não pode virar SoAudioIncompativel (não precisa remux,
         // o áudio já está ok — cai pro /original mesmo, que players costumam aceitar).
-        var r = HlsTranscodeService.ClassificarCompatibilidade(".mkv", "h264", video10Bit: false, "aac");
+        var r = CompatibilidadeVideo.Classificar(".mkv", "h264", video10Bit: false, "aac");
         Assert.Equal(CompatibilidadeDireta.Incompativel, r);
     }
 
@@ -40,21 +40,21 @@ public class CompatibilidadeDiretaTests
     {
         // Remux só copia vídeo (sem re-encode) — se o vídeo também precisa mudar, não é o
         // caso do /remux (isso é trabalho do HLS com reencode completo).
-        var r = HlsTranscodeService.ClassificarCompatibilidade(".mkv", "hevc", video10Bit: false, "eac3");
+        var r = CompatibilidadeVideo.Classificar(".mkv", "hevc", video10Bit: false, "eac3");
         Assert.Equal(CompatibilidadeDireta.Incompativel, r);
     }
 
     [Fact]
     public void Sem_faixa_de_audio_conta_como_audio_ok()
     {
-        var r = HlsTranscodeService.ClassificarCompatibilidade(".mp4", "h264", video10Bit: false, null);
+        var r = CompatibilidadeVideo.Classificar(".mp4", "h264", video10Bit: false, null);
         Assert.Equal(CompatibilidadeDireta.Compativel, r);
     }
 
     [Fact]
     public void Sem_video_e_incompativel()
     {
-        var r = HlsTranscodeService.ClassificarCompatibilidade(".mp4", null, video10Bit: false, "aac");
+        var r = CompatibilidadeVideo.Classificar(".mp4", null, video10Bit: false, "aac");
         Assert.Equal(CompatibilidadeDireta.Incompativel, r);
     }
 
@@ -63,7 +63,7 @@ public class CompatibilidadeDiretaTests
     [Fact]
     public void Mp4_h264_10bit_nao_e_compativel_mesmo_com_audio_bom()
     {
-        var r = HlsTranscodeService.ClassificarCompatibilidade(".mp4", "h264", video10Bit: true, "aac");
+        var r = CompatibilidadeVideo.Classificar(".mp4", "h264", video10Bit: true, "aac");
         Assert.Equal(CompatibilidadeDireta.Incompativel, r);
     }
 
@@ -72,15 +72,15 @@ public class CompatibilidadeDiretaTests
     {
         // /remux só copia o vídeo (-c:v copy) — copiar um stream 10-bit não resolve nada,
         // então 10-bit não pode cair no caminho "só precisa arrumar áudio".
-        var r = HlsTranscodeService.ClassificarCompatibilidade(".mp4", "h264", video10Bit: true, "eac3");
+        var r = CompatibilidadeVideo.Classificar(".mp4", "h264", video10Bit: true, "eac3");
         Assert.Equal(CompatibilidadeDireta.Incompativel, r);
     }
 
     [Fact]
     public void VideoTocavelSemReencode_recusa_10bit_mesmo_com_codec_da_lista()
     {
-        Assert.False(HlsTranscodeService.VideoTocavelSemReencode("h264", video10Bit: true));
-        Assert.True(HlsTranscodeService.VideoTocavelSemReencode("h264", video10Bit: false));
+        Assert.False(CompatibilidadeVideo.VideoTocavelSemReencode("h264", video10Bit: true));
+        Assert.True(CompatibilidadeVideo.VideoTocavelSemReencode("h264", video10Bit: false));
     }
 
     // Regressão real: usuário relatou áudio em inglês E português tocando JUNTO na tela normal
@@ -93,7 +93,7 @@ public class CompatibilidadeDiretaTests
     [Fact]
     public void Duas_faixas_de_audio_nunca_e_compativel_mesmo_com_codec_bom()
     {
-        var r = HlsTranscodeService.ClassificarCompatibilidade(
+        var r = CompatibilidadeVideo.Classificar(
             ".mp4", "h264", video10Bit: false, "aac", quantidadeFaixasAudio: 2);
         Assert.Equal(CompatibilidadeDireta.SoAudioIncompativel, r);
     }
@@ -102,7 +102,7 @@ public class CompatibilidadeDiretaTests
     public void Duas_faixas_de_audio_com_video_incompativel_continua_incompativel()
     {
         // Mesma regra de sempre pra vídeo ruim: /remux só copia vídeo, não serve pra esse caso.
-        var r = HlsTranscodeService.ClassificarCompatibilidade(
+        var r = CompatibilidadeVideo.Classificar(
             ".mp4", "hevc", video10Bit: false, "aac", quantidadeFaixasAudio: 2);
         Assert.Equal(CompatibilidadeDireta.Incompativel, r);
     }
@@ -112,7 +112,7 @@ public class CompatibilidadeDiretaTests
     {
         // Comportamento de sempre preservado -- só a chamada explícita com 1 (ou omitida,
         // default) segue tocando direto.
-        var r = HlsTranscodeService.ClassificarCompatibilidade(
+        var r = CompatibilidadeVideo.Classificar(
             ".mp4", "h264", video10Bit: false, "aac", quantidadeFaixasAudio: 1);
         Assert.Equal(CompatibilidadeDireta.Compativel, r);
     }
@@ -125,7 +125,7 @@ public class CompatibilidadeDiretaTests
     [Fact]
     public void Sar_diferente_de_1x1_nunca_e_compativel_mesmo_com_codec_bom()
     {
-        var r = HlsTranscodeService.ClassificarCompatibilidade(
+        var r = CompatibilidadeVideo.Classificar(
             ".mp4", "h264", video10Bit: false, "mp3", sampleAspectRatio: "40:33");
         Assert.Equal(CompatibilidadeDireta.SoAudioIncompativel, r);
     }
@@ -133,7 +133,7 @@ public class CompatibilidadeDiretaTests
     [Fact]
     public void Sar_1x1_continua_compativel()
     {
-        var r = HlsTranscodeService.ClassificarCompatibilidade(
+        var r = CompatibilidadeVideo.Classificar(
             ".mp4", "h264", video10Bit: false, "aac", sampleAspectRatio: "1:1");
         Assert.Equal(CompatibilidadeDireta.Compativel, r);
     }
@@ -143,7 +143,7 @@ public class CompatibilidadeDiretaTests
     {
         // "0:1" é o que o ffprobe reporta quando o bitstream não informa SAR nenhum -- é o
         // caso comum (maioria dos arquivos), não pode ser tratado como suspeito.
-        var r = HlsTranscodeService.ClassificarCompatibilidade(
+        var r = CompatibilidadeVideo.Classificar(
             ".mp4", "h264", video10Bit: false, "aac", sampleAspectRatio: "0:1");
         Assert.Equal(CompatibilidadeDireta.Compativel, r);
     }
@@ -151,7 +151,7 @@ public class CompatibilidadeDiretaTests
     [Fact]
     public void Sar_nulo_continua_compativel()
     {
-        var r = HlsTranscodeService.ClassificarCompatibilidade(
+        var r = CompatibilidadeVideo.Classificar(
             ".mp4", "h264", video10Bit: false, "aac", sampleAspectRatio: null);
         Assert.Equal(CompatibilidadeDireta.Compativel, r);
     }
@@ -160,7 +160,7 @@ public class CompatibilidadeDiretaTests
     public void Sar_ruim_com_video_incompativel_continua_incompativel()
     {
         // Mesma regra de sempre: /remux só copia vídeo, vídeo ruim não tem conserto por lá.
-        var r = HlsTranscodeService.ClassificarCompatibilidade(
+        var r = CompatibilidadeVideo.Classificar(
             ".mp4", "hevc", video10Bit: false, "aac", sampleAspectRatio: "40:33");
         Assert.Equal(CompatibilidadeDireta.Incompativel, r);
     }
@@ -173,6 +173,6 @@ public class CompatibilidadeDiretaTests
     [InlineData("4:3", true)]
     public void SarPrecisaCorrecao_reconhece(string? sar, bool esperado)
     {
-        Assert.Equal(esperado, HlsTranscodeService.SarPrecisaCorrecao(sar));
+        Assert.Equal(esperado, CompatibilidadeVideo.SarPrecisaCorrecao(sar));
     }
 }

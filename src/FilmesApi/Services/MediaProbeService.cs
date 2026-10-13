@@ -7,7 +7,7 @@ namespace FilmesApi.Services;
 
 /// <summary><c>Canais</c>: null quando o ffprobe não informa (raro) — tratar como
 /// "desconhecido", não como mono/estéreo, pra não arriscar pular o reencode de proteção
-/// contra áudio multicanal (ver <see cref="HlsTranscodeService.AudioJaCompativel"/>).</summary>
+/// contra áudio multicanal (ver <see cref="EscolhaAudio.JaCompativel"/>).</summary>
 public record FaixaAudio(int Index, string? Codec, string? Idioma, bool Default, int? Canais);
 
 /// <summary><c>IdxRelativo</c> = posição entre as faixas de legenda (0,1,2…), usada em
@@ -17,13 +17,13 @@ public record FaixaLegenda(int IdxRelativo, string Codec, string? Idioma, string
 /// <summary><c>Video10Bit</c>: H.264/HEVC "High 10"/"Main 10" (pix_fmt tipo <c>yuv420p10le</c>
 /// ou <c>bits_per_raw_sample</c> ≥ 9) — o navegador não decodifica, mesmo com codec_name
 /// "compatível". Sem isso o arquivo tocava direto com tela preta e nenhum erro em lugar
-/// nenhum (ver <see cref="HlsTranscodeService.ClassificarCompatibilidade"/>).
+/// nenhum (ver <see cref="CompatibilidadeVideo.Classificar"/>).
 /// <c>SampleAspectRatio</c>: proporção de pixel bruta do ffprobe ("1:1" normal, "0:1" = não
 /// informado no bitstream — trate como normal). Um valor diferente disso é metadado de
 /// proporção quebrado, sobra de um encode anterior nunca resetado — caso real: "Diários de Um
 /// Vampiro" T8 (release LAPUMiAFiLMES.COM), 1280x720 com SAR 40:33 herdado de uma fonte DVD
 /// NTSC, fazendo o navegador desenhar o vídeo fora de "tela cheia" mesmo com largura/altura em
-/// pixel corretas. Ver <see cref="HlsTranscodeService.SarPrecisaCorrecao"/>.</summary>
+/// pixel corretas. Ver <see cref="CompatibilidadeVideo.SarPrecisaCorrecao"/>.</summary>
 public record MediaInfo(
     string? VideoCodec, int Largura, int Altura, bool Video10Bit, string? SampleAspectRatio,
     double? DuracaoSegundos, IReadOnlyList<FaixaAudio> Audios, IReadOnlyList<FaixaLegenda> Legendas);
@@ -115,7 +115,7 @@ public class MediaProbeService
 
     /// <summary><c>internal</c> de propósito: dá pra testar o parsing do JSON do ffprobe
     /// (attached_pic, 10-bit…) sem rodar processo nenhum — mesma ideia do
-    /// <see cref="HlsTranscodeService.MontarArgsFfmpegHls"/>.</summary>
+    /// <see cref="FfmpegArgs.Hls"/>.</summary>
     internal static MediaInfo Parsear(string json)
     {
         using var doc = JsonDocument.Parse(json);

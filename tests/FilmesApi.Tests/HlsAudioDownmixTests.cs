@@ -20,7 +20,7 @@ public class HlsAudioDownmixTests
     [Fact]
     public void Reencode_com_audio_sempre_forca_ac_2()
     {
-        var args = HlsTranscodeService.MontarArgsFfmpegHls(
+        var args = FfmpegArgs.Hls(
             "/media/x.mkv", videoCompativel: false, usarRkmpp: false,
             audioStreamIndex: 1, downscalePara: null, decodeHw: false);
 
@@ -33,7 +33,7 @@ public class HlsAudioDownmixTests
     {
         // -c:v copy, mas o áudio nunca é copiado: 5.1 no container original
         // continuaria 5.1 e quebraria o mesmo jeito.
-        var args = HlsTranscodeService.MontarArgsFfmpegHls(
+        var args = FfmpegArgs.Hls(
             "/media/x.mkv", videoCompativel: true, usarRkmpp: false,
             audioStreamIndex: 0, downscalePara: null, decodeHw: false);
 
@@ -45,7 +45,7 @@ public class HlsAudioDownmixTests
     [Fact]
     public void Sem_faixa_de_audio_nao_passa_flags_de_audio()
     {
-        var args = HlsTranscodeService.MontarArgsFfmpegHls(
+        var args = FfmpegArgs.Hls(
             "/media/mudo.mkv", videoCompativel: false, usarRkmpp: false,
             audioStreamIndex: null, downscalePara: null, decodeHw: false);
 
@@ -60,7 +60,7 @@ public class HlsAudioDownmixTests
     [Fact]
     public void Largura_altura_conhecidas_adicionam_aspect()
     {
-        var args = HlsTranscodeService.MontarArgsFfmpegHls(
+        var args = FfmpegArgs.Hls(
             "/media/x.mkv", videoCompativel: true, usarRkmpp: false,
             audioStreamIndex: 0, downscalePara: null, decodeHw: false, largura: 1280, altura: 720);
 
@@ -72,7 +72,7 @@ public class HlsAudioDownmixTests
     {
         // Default (0, 0) preserva o comportamento de sempre -- chamadora que não sabe a
         // resolução não devia forçar um -aspect sem sentido tipo "0:0".
-        var args = HlsTranscodeService.MontarArgsFfmpegHls(
+        var args = FfmpegArgs.Hls(
             "/media/x.mkv", videoCompativel: true, usarRkmpp: false,
             audioStreamIndex: 0, downscalePara: null, decodeHw: false);
 
@@ -82,7 +82,7 @@ public class HlsAudioDownmixTests
     [Fact]
     public void Remux_com_largura_altura_adiciona_aspect_sem_reencodar_video()
     {
-        var args = HlsTranscodeService.MontarArgsFfmpegRemux(
+        var args = FfmpegArgs.Remux(
             "/media/x.mkv", "/data/remux/1.mp4.tmp", audioStreamIndex: 1, largura: 1280, altura: 720);
 
         Assert.Equal("copy", ParDepoisDe(args, "-c:v"));
@@ -92,7 +92,7 @@ public class HlsAudioDownmixTests
     [Fact]
     public void Remux_sem_largura_altura_nao_passa_aspect()
     {
-        var args = HlsTranscodeService.MontarArgsFfmpegRemux(
+        var args = FfmpegArgs.Remux(
             "/media/x.mkv", "/data/remux/1.mp4.tmp", audioStreamIndex: 1);
 
         Assert.DoesNotContain("-aspect", args);
@@ -114,19 +114,19 @@ public class HlsAudioDownmixTests
     public void AudioJaCompativel_reconhece(string? codec, int? canais, bool esperado)
     {
         var audio = new FaixaAudio(0, codec, "por", Default: true, canais);
-        Assert.Equal(esperado, HlsTranscodeService.AudioJaCompativel(audio));
+        Assert.Equal(esperado, EscolhaAudio.JaCompativel(audio));
     }
 
     [Fact]
     public void AudioJaCompativel_nulo_e_false()
     {
-        Assert.False(HlsTranscodeService.AudioJaCompativel(null));
+        Assert.False(EscolhaAudio.JaCompativel(null));
     }
 
     [Fact]
     public void Hls_com_audio_ja_compativel_copia_em_vez_de_reencodar()
     {
-        var args = HlsTranscodeService.MontarArgsFfmpegHls(
+        var args = FfmpegArgs.Hls(
             "/media/x.mkv", videoCompativel: true, usarRkmpp: false,
             audioStreamIndex: 1, downscalePara: null, decodeHw: false, audioJaCompativel: true);
 
@@ -137,7 +137,7 @@ public class HlsAudioDownmixTests
     [Fact]
     public void Remux_com_audio_ja_compativel_copia_em_vez_de_reencodar()
     {
-        var args = HlsTranscodeService.MontarArgsFfmpegRemux(
+        var args = FfmpegArgs.Remux(
             "/media/x.mkv", "/data/remux/1.mp4.tmp", audioStreamIndex: 1, audioJaCompativel: true);
 
         Assert.Equal("copy", ParDepoisDe(args, "-c:v"));
@@ -168,7 +168,7 @@ public class HlsAudioDownmixTests
             // transcoda com os args reais do serviço
             var outDir = Path.Combine(dir, "hls");
             Directory.CreateDirectory(outDir);
-            var args = HlsTranscodeService.MontarArgsFfmpegHls(
+            var args = FfmpegArgs.Hls(
                 fonte, videoCompativel: false, usarRkmpp: false,
                 audioStreamIndex: 1, downscalePara: null, decodeHw: false);
             var (code, err) = await Rodar(ffmpeg, string.Join(' ', args.Select(Cita)), outDir);

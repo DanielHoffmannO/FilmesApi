@@ -16,28 +16,28 @@ public class EscolherStreamAudioTests
     [Fact]
     public void Sem_audio_devolve_null()
     {
-        Assert.Null(HlsTranscodeService.EscolherStreamAudio([]));
+        Assert.Null(EscolhaAudio.Escolher([]));
     }
 
     [Fact]
     public void Sem_preferencia_prioriza_portugues_mesmo_nao_sendo_a_primeira_nem_default()
     {
         var audios = new[] { Ingles(1, def: true), Portugues(2) };
-        Assert.Equal(2, HlsTranscodeService.EscolherStreamAudio(audios));
+        Assert.Equal(2, EscolhaAudio.Escolher(audios));
     }
 
     [Fact]
     public void Sem_preferencia_sem_portugues_usa_a_default()
     {
         var audios = new[] { Ingles(1), Ingles(2, def: true) };
-        Assert.Equal(2, HlsTranscodeService.EscolherStreamAudio(audios));
+        Assert.Equal(2, EscolhaAudio.Escolher(audios));
     }
 
     [Fact]
     public void Sem_preferencia_sem_portugues_sem_default_usa_a_primeira()
     {
         var audios = new[] { Ingles(5), Ingles(7) };
-        Assert.Equal(5, HlsTranscodeService.EscolherStreamAudio(audios));
+        Assert.Equal(5, EscolhaAudio.Escolher(audios));
     }
 
     [Fact]
@@ -46,7 +46,7 @@ public class EscolherStreamAudioTests
         // Preferência aponta pra faixa em inglês — mesmo havendo uma em português "melhor"
         // pela regra automática, o controle remoto escolheu essa de propósito.
         var audios = new[] { Portugues(1, def: true), Ingles(2) };
-        Assert.Equal(2, HlsTranscodeService.EscolherStreamAudio(audios, preferenciaManual: 2));
+        Assert.Equal(2, EscolhaAudio.Escolher(audios, preferenciaManual: 2));
     }
 
     [Fact]
@@ -55,7 +55,7 @@ public class EscolherStreamAudioTests
         // Caso real: arquivo foi re-escaneado/trocado e o índice guardado não bate mais com
         // nenhuma faixa atual — não pode travar nem escolher nada fora do intervalo.
         var audios = new[] { Ingles(1), Portugues(2) };
-        Assert.Equal(2, HlsTranscodeService.EscolherStreamAudio(audios, preferenciaManual: 99));
+        Assert.Equal(2, EscolhaAudio.Escolher(audios, preferenciaManual: 99));
     }
 
     [Fact]
@@ -63,7 +63,7 @@ public class EscolherStreamAudioTests
     {
         var audios = new[] { Ingles(1, def: true), Portugues(2) };
         Assert.Equal(
-            HlsTranscodeService.EscolherStreamAudio(audios),
-            HlsTranscodeService.EscolherStreamAudio(audios, preferenciaManual: null));
+            EscolhaAudio.Escolher(audios),
+            EscolhaAudio.Escolher(audios, preferenciaManual: null));
     }
 }

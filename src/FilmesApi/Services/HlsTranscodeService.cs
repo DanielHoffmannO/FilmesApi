@@ -11,7 +11,7 @@ public enum RemuxStatus { Preparando, Disponivel, Erro }
 /// <summary>Classificação de compatibilidade "tocar sem HLS", numa leitura de probe só —
 /// <c>Compativel</c> (toca cru, sem processar nada), <c>SoAudioIncompativel</c> (vídeo ok,
 /// mas precisa de /remux — áudio incompatível, 2+ faixas, OU proporção de pixel quebrada, ver
-/// <see cref="HlsTranscodeService.SarPrecisaCorrecao"/>) ou <c>Incompativel</c> (nem isso:
+/// <see cref="CompatibilidadeVideo.SarPrecisaCorrecao"/>) ou <c>Incompativel</c> (nem isso:
 /// /original é o único recurso, pode falhar dependendo do player).</summary>
 public enum CompatibilidadeDireta { Compativel, SoAudioIncompativel, Incompativel }
 
@@ -24,12 +24,6 @@ public enum CompatibilidadeDireta { Compativel, SoAudioIncompativel, Incompative
 /// </summary>
 public class HlsTranscodeService
 {
-    private const int SegmentoSegundos = 6;
-
-    private static readonly string[] VideoCodecsCompativeis = ["h264", "vp9", "av1"];
-    private static readonly string[] AudioCodecsCompativeis = ["aac", "mp3", "opus"];
-    private static readonly string[] IdiomasAudioPreferidos = ["por", "pt", "pob"];
-
     /// <summary>Nome do marcador que sinaliza "esse cache é só remux stream-copy" — pura
     /// duplicata do original, sem ganho de compressão, então é o primeiro a ser despejado.</summary>
     private const string MarcadorRemux = ".remux";
@@ -64,7 +58,7 @@ public class HlsTranscodeService
     private readonly ConcurrentDictionary<int, CancellationTokenSource> _jobCancelRemux = new();
     /// <summary>Preferência manual de faixa de áudio por filme (controle remoto escolheu uma
     /// "dublagem" diferente da automática) — ver <see cref="DefinirPreferenciaAudio"/> e
-    /// <see cref="EscolherStreamAudio"/>. Em memória só: some num restart, volta pra automática.</summary>
+    /// <see cref="EscolhaAudio.Escolher"/>. Em memória só: some num restart, volta pra automática.</summary>
     private readonly ConcurrentDictionary<int, int> _preferenciaAudio = new();
     /// <summary>filmeId -> quando o transcode falhou. Não é permanente: depois de
     /// <c>HlsFalhaCooldownMinutes</c> a entrada expira e o filme volta a ser tentável
@@ -159,59 +153,10 @@ public class HlsTranscodeService
         var info = await _probe.InspecionarAsync(path, ct);
         if (info is null) return CompatibilidadeDireta.Incompativel;
         var primeiroAudio = info.Audios.Count > 0 ? info.Audios[0].Codec : null;
-        return ClassificarCompatibilidade(Path.GetExtension(path), info.VideoCodec, info.Video10Bit, primeiroAudio,
+        return CompatibilidadeVideo.Classificar(Path.GetExtension(path), info.VideoCodec, info.Video10Bit, primeiroAudio,
             info.Audios.Count, info.SampleAspectRatio);
     }
 
-    /// <summary>SAR (proporção de pixel) diferente de "1:1"/"0:1"/ausente é metadado quebrado —
-    /// sobra de um encode anterior nunca resetado (caso real: "Diários de Um Vampiro" T8,
-    /// release LAPUMiAFiLMES.COM, SAR 40:33 herdado de uma fonte DVD NTSC num arquivo já
-    /// reencodado pra 1280x720 "widescreen quadrado"). O navegador confia nesse metadado pra
-    /// desenhar o vídeo — o resultado observado foi o vídeo não preencher a tela mesmo com a
-    /// resolução em pixel certa. "0:1" é o valor que o ffprobe reporta quando o bitstream não
-    /// informa SAR nenhum (a maioria dos arquivos) — tratado como normal, não como "ausente
-    /// então suspeito".</summary>
-    internal static bool SarPrecisaCorrecao(string? sampleAspectRatio) =>
-        sampleAspectRatio is not (null or "1:1" or "0:1");
-
-    /// <summary>Vídeo tocável sem reencodar (stream direto OU remux <c>-c:v copy</c>): codec
-    /// numa lista curta E não 10-bit — 10-bit (<c>High 10</c>/<c>Main 10</c>) o navegador não
-    /// decodifica mesmo com <c>codec_name</c> "compatível", e copiar o stream não muda isso.
-    /// Compartilhado entre <see cref="ClassificarCompatibilidade"/> (decide /stream e /remux)
-    /// e <see cref="TranscodificarHlsAsync"/> (decide remux vs reencode dentro do HLS) — as
-    /// duas decisões já divergiram uma vez (<c>b19d789</c>) por checarem isso cada uma do seu jeito.</summary>
-    internal static bool VideoTocavelSemReencode(string? videoCodec, bool video10Bit) =>
-        videoCodec is not null && VideoCodecsCompativeis.Contains(videoCodec) && !video10Bit;
-
-    /// <summary>Decisão pura de compatibilidade, separada do probe (I/O) pra dar pra testar
-    /// direto — mesma ideia do <see cref="MontarArgsFfmpegHls"/>. Ver <see cref="AnalisarCompatibilidadeAsync"/>
-    /// pro caminho real, que lê o arquivo com ffprobe antes de chamar isso.</summary>
-    internal static CompatibilidadeDireta ClassificarCompatibilidade(
-        string extensao, string? videoCodec, bool video10Bit, string? primeiroAudioCodec,
-        int quantidadeFaixasAudio = 1, string? sampleAspectRatio = null)
-    {
-        var videoOk = VideoTocavelSemReencode(videoCodec, video10Bit);
-        // 2+ faixas de áudio (dual-áudio) nunca é "Compativel" mesmo com codec bom — /stream
-        // serve o arquivo cru sem `-map` nenhum, e o navegador não isola só a faixa default
-        // de forma confiável (chegou a tocar as duas faixas juntas, inglês+português, até o
-        // usuário trocar manualmente pelo seletor nativo do <video>). /remux já resolve isso
-        // de verdade: EscolherStreamAudio elege 1 faixa (idioma pt > default > primeira) e
-        // remuxa só ela — então força pelo mesmo caminho que áudio incompatível usaria.
-        var audioOk = quantidadeFaixasAudio <= 1
-            && (primeiroAudioCodec is null || AudioCodecsCompativeis.Contains(primeiroAudioCodec));
-        // SAR quebrado (ver SarPrecisaCorrecao) força o mesmo caminho de /remux mesmo com
-        // vídeo/áudio ok — é lá que o -aspect corrige o metadado sem reencodar vídeo.
-        var sarOk = !SarPrecisaCorrecao(sampleAspectRatio);
-
-        // "Compativel" (toca cru, sem processar nada) só vale pra containers que o <video>
-        // entende sem drama — extensão restrita de propósito, MKV mesmo com codecs bons fica
-        // de fora (comportamento de sempre, ver histórico do antigo EhCompativelAsync).
-        var containerOk = extensao.ToLowerInvariant() is ".mp4" or ".webm" or ".mov" or ".m4v";
-
-        if (containerOk && videoOk && audioOk && sarOk) return CompatibilidadeDireta.Compativel;
-        if (videoOk && (!audioOk || !sarOk)) return CompatibilidadeDireta.SoAudioIncompativel;
-        return CompatibilidadeDireta.Incompativel;
-    }
 
     public string CaminhoRemux(int filmeId) => Path.Combine(_remuxCachePath, $"{filmeId}.mp4");
 
@@ -286,10 +231,10 @@ public class HlsTranscodeService
             var info = await _probe.InspecionarAsync(origem, CancellationToken.None)
                 ?? throw new InvalidOperationException("probe falhou");
             var preferencia = _preferenciaAudio.TryGetValue(filmeId, out var pref) ? pref : (int?)null;
-            var audioIdx = EscolherStreamAudio(info.Audios, preferencia);
-            var audioJaCompativel = AudioJaCompativel(info.Audios.FirstOrDefault(a => a.Index == audioIdx));
+            var audioIdx = EscolhaAudio.Escolher(info.Audios, preferencia);
+            var audioJaCompativel = EscolhaAudio.JaCompativel(info.Audios.FirstOrDefault(a => a.Index == audioIdx));
 
-            var args = MontarArgsFfmpegRemux(origem, tmp, audioIdx, info.Largura, info.Altura, audioJaCompativel);
+            var args = FfmpegArgs.Remux(origem, tmp, audioIdx, info.Largura, info.Altura, audioJaCompativel);
 
             var psi = new ProcessStartInfo(_ffmpegPath);
             foreach (var a in args) psi.ArgumentList.Add(a);
@@ -396,14 +341,14 @@ public class HlsTranscodeService
 
     /// <summary>Faixas de áudio do arquivo ("dublagens" disponíveis), com qual delas o
     /// remux/HLS usaria agora — pro controle.html listar e já destacar a atual. Ver
-    /// <see cref="EscolherStreamAudio"/>.</summary>
+    /// <see cref="EscolhaAudio.Escolher"/>.</summary>
     public async Task<IReadOnlyList<AudioInfo>> ListarAudiosAsync(int filmeId, string arquivoAbsoluto, CancellationToken ct)
     {
         var info = await _probe.InspecionarAsync(arquivoAbsoluto, ct);
         if (info is null || info.Audios.Count == 0) return [];
 
         var preferencia = _preferenciaAudio.TryGetValue(filmeId, out var pref) ? pref : (int?)null;
-        var escolhida = EscolherStreamAudio(info.Audios, preferencia);
+        var escolhida = EscolhaAudio.Escolher(info.Audios, preferencia);
         return info.Audios
             .Select(a => new AudioInfo(a.Index, a.Codec, a.Idioma, a.Default, a.Index == escolhida))
             .ToList();
@@ -411,7 +356,7 @@ public class HlsTranscodeService
 
     /// <summary>Troca a faixa de áudio preferida manualmente pra este filme (controle remoto —
     /// "dublagem" em <c>controle.html</c>), sobrepondo a escolha automática por idioma de
-    /// <see cref="EscolherStreamAudio"/>. Cancela um job de HLS/remux em andamento pra este
+    /// <see cref="EscolhaAudio.Escolher"/>. Cancela um job de HLS/remux em andamento pra este
     /// filme (se houver) e apaga o cache já pronto (HLS e /remux), pra forçar regerar com a
     /// faixa nova na próxima vez que /hls/playlist.m3u8 ou /remux-status for pedido — o áudio
     /// vai dentro dos segments/arquivo, não dá pra trocar sem reprocessar.</summary>
@@ -618,7 +563,7 @@ public class HlsTranscodeService
             // Uma leitura de ffprobe só (cacheada): codec, resolução e faixa de áudio.
             var info = await _probe.InspecionarAsync(origem, CancellationToken.None)
                        ?? throw new InvalidOperationException("ffprobe não conseguiu ler o arquivo.");
-            var videoCompativel = VideoTocavelSemReencode(info.VideoCodec, info.Video10Bit);
+            var videoCompativel = CompatibilidadeVideo.VideoTocavelSemReencode(info.VideoCodec, info.Video10Bit);
 
             // 4K/UHD decodificado + encodado em software trava o Radxa por minutos e esquenta
             // a placa. Se vamos reencodar e a entrada passa do teto, reduz a resolução no
@@ -635,8 +580,8 @@ public class HlsTranscodeService
 
             var usarRkmpp = !videoCompativel && await _rkmpp.DisponivelAsync();
             var preferencia = _preferenciaAudio.TryGetValue(filmeId, out var pref) ? pref : (int?)null;
-            var audioStreamIndex = EscolherStreamAudio(info.Audios, preferencia);
-            var audioJaCompativel = AudioJaCompativel(info.Audios.FirstOrDefault(a => a.Index == audioStreamIndex));
+            var audioStreamIndex = EscolhaAudio.Escolher(info.Audios, preferencia);
+            var audioJaCompativel = EscolhaAudio.JaCompativel(info.Audios.FirstOrDefault(a => a.Index == audioStreamIndex));
 
             // Decode por hardware só faz diferença (e só vale o risco) no 4K com downscale —
             // 1080p decodifica barato em software. Fallback em cascata: hw-decode+hw-encode →
@@ -725,128 +670,11 @@ public class HlsTranscodeService
         }
     }
 
-    /// <summary>Monta a linha de argumentos do ffmpeg pro job de <c>/remux</c> (vídeo copiado
-    /// <c>-c:v copy</c>, áudio reencodado pra AAC estéreo — exceto quando
-    /// <paramref name="audioJaCompativel"/>, ver <see cref="AudioJaCompativel"/>: copia também,
-    /// sem gastar CPU decodificando+reencodando áudio que já estava bom). Pura e <c>internal</c>
-    /// de propósito, mesma ideia do <see cref="MontarArgsFfmpegHls"/>. <paramref name="largura"/>/
-    /// <paramref name="altura"/> viram <c>-aspect largura:altura</c> quando os dois são &gt; 0
-    /// — corrige metadado de proporção de pixel quebrado (SAR, ver
-    /// <see cref="SarPrecisaCorrecao"/>) sem reencodar vídeo: <c>-aspect</c> só sobrescreve o
-    /// DAR gravado no container, o stream-copy não toca no pixel. Aplicado sempre que
-    /// conhecidos (não só quando o SAR está ruim) — é inofensivo num arquivo já correto e evita
-    /// ter que replicar aqui a mesma decisão de "está ruim?" do <see cref="ClassificarCompatibilidade"/>.</summary>
-    internal static List<string> MontarArgsFfmpegRemux(
-        string origem, string destino, int? audioStreamIndex, int largura = 0, int altura = 0, bool audioJaCompativel = false)
-    {
-        List<string> args = ["-y", "-i", origem, "-map", "0:v:0"];
-        if (audioStreamIndex is int idx) args.AddRange(["-map", $"0:{idx}"]);
-        args.Add("-c:v"); args.Add("copy");
-        if (audioStreamIndex is not null)
-            args.AddRange(audioJaCompativel ? ["-c:a", "copy"] : ["-c:a", "aac", "-b:a", "192k", "-ac", "2"]);
-        if (largura > 0 && altura > 0) args.AddRange(["-aspect", $"{largura}:{altura}"]);
-        // -f mp4 explícito: o nome real é "{id}.mp4.tmp" (renomeado pro final só depois
-        // de completo), e o ffmpeg escolhe o muxer pela ÚLTIMA extensão — ".tmp" sozinho
-        // não é reconhecido, então sem isso ele recusa nem abrir o arquivo de saída.
-        args.AddRange(["-f", "mp4", "-movflags", "+faststart", destino]);
-        return args;
-    }
-
-    /// <summary>Monta a linha de argumentos do ffmpeg pro job HLS. Pura e <c>internal</c>
-    /// de propósito: dá pra testar a decisão de encode (ex.: o <c>-ac 2</c> obrigatório)
-    /// sem subir processo — ver <c>FilmesApi.Tests</c>. <paramref name="largura"/>/
-    /// <paramref name="altura"/>: mesma correção de <c>-aspect</c> do
-    /// <see cref="MontarArgsFfmpegRemux"/>, ver comentário lá. <paramref name="audioJaCompativel"/>:
-    /// ver <see cref="AudioJaCompativel"/> — copia o áudio em vez de reencodar quando a faixa já
-    /// está num formato que o navegador aceita.</summary>
-    internal static List<string> MontarArgsFfmpegHls(
-        string origem, bool videoCompativel, bool usarRkmpp, int? audioStreamIndex, int? downscalePara, bool decodeHw,
-        int largura = 0, int altura = 0, bool audioJaCompativel = false)
-    {
-        List<string> args = ["-y"];
-
-        // -hwaccel/-hwaccel_output_format são opções de INPUT — têm que vir ANTES do -i
-        // (diferente do -init_hw_device do caminho sem hw-decode, que prepara o device pro
-        // filtro/output e fica depois). decodeHw só é true no 4K+downscale via rkmpp.
-        if (decodeHw)
-            args.AddRange(["-init_hw_device", "rkmpp=rk", "-filter_hw_device", "rk",
-                           "-hwaccel", "rkmpp", "-hwaccel_output_format", "drm_prime"]);
-
-        // -map explícito: sem isso o ffmpeg escolhe sozinho, por heurística de codec/canais,
-        // qual stream de cada tipo entra no output — e essa heurística ignora idioma e pode
-        // até ignorar a flag "default" do arquivo. Em filme dual-áudio (ex.: português +
-        // francês) isso já produziu HLS com a faixa errada mesmo com português marcado como
-        // default. Mapear video+áudio manualmente também impede que uma legenda embutida
-        // incompatível (ex.: PGS/bitmap) entre sozinha no output e quebre o encode — a API
-        // não serve legenda nenhuma, então nem faz sentido incluir.
-        args.AddRange(["-i", origem, "-map", "0:v:0"]);
-        if (audioStreamIndex is int audioIdx) args.AddRange(["-map", $"0:{audioIdx}"]);
-
-        if (videoCompativel)
-        {
-            args.AddRange(["-c:v", "copy"]);
-        }
-        else
-        {
-            if (usarRkmpp && decodeHw && downscalePara is int altHw)
-            {
-                // Frames já vêm decodificados em memória de VPU (drm_prime). O RGA escala e
-                // converte pra nv12 (8-bit) sem round-trip pela CPU; h264_rkmpp consome direto.
-                args.AddRange(["-vf", $"scale_rkrga=w=-2:h={altHw}:format=nv12", "-c:v", "h264_rkmpp"]);
-            }
-            else if (usarRkmpp)
-            {
-                // Decode em software; scale/format em CPU e sobe pro VPU só pra encodar.
-                // format=nv12 força 8-bit 4:2:0 (mata HDR/10-bit, mas é o que os players aqui aguentam).
-                var filtro = downscalePara is int alt
-                    ? $"scale=-2:{alt},format=nv12,hwupload"
-                    : "format=nv12,hwupload";
-                args.AddRange(["-init_hw_device", "rkmpp=rk", "-filter_hw_device", "rk", "-vf", filtro, "-c:v", "h264_rkmpp"]);
-            }
-            else
-            {
-                // -pix_fmt yuv420p: nunca deixa passar 10-bit (High 10) pro output — navegador não toca.
-                args.AddRange(["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p"]);
-                if (downscalePara is int alt2) args.AddRange(["-vf", $"scale=-2:{alt2}"]);
-            }
-
-            // Segmentação previsível mesmo com fps/keyframes irregulares da fonte — vale
-            // pros dois encoders de reencode, só não faz sentido no remux acima (-c:v copy
-            // só pode cortar em keyframes que já existem no arquivo original).
-            args.AddRange(["-sc_threshold", "0", "-force_key_frames", $"expr:gte(t,n_forced*{SegmentoSegundos})"]);
-        }
-
-        // -ac 2: downmix pra estéreo. Áudio 5.1/7.1 (EAC3 de WEB-DL é o caso comum) reencodado
-        // pra AAC multicanal sai sem channel_layout que o decoder AAC do Chrome (MSE/hls.js)
-        // reconheça — e ele rejeita EM SILÊNCIO: a API responde 200, playlist e segments
-        // existem, mas o vídeo não toca e não há erro em log nenhum. ffprobe e players desktop
-        // toleram, então é quase impossível diagnosticar sem saber disso de antemão. Esse risco
-        // só existe decodificando+reencodando de novo — se a faixa escolhida JÁ está num codec
-        // bom com 2 canais ou menos (audioJaCompativel), copiar é tão seguro quanto o vídeo e
-        // poupa CPU de decode+encode de áudio à toa (visto: ffmpeg a 140%+ de CPU só pra
-        // reencodar um AAC estéreo pro mesmo AAC estéreo).
-        if (audioStreamIndex is not null)
-            args.AddRange(audioJaCompativel ? ["-c:a", "copy"] : ["-c:a", "aac", "-b:a", "192k", "-ac", "2"]);
-        if (largura > 0 && altura > 0) args.AddRange(["-aspect", $"{largura}:{altura}"]);
-        args.AddRange([
-            "-f", "hls",
-            "-hls_time", SegmentoSegundos.ToString(),
-            "-hls_list_size", "0",
-            "-hls_playlist_type", "event",
-            "-hls_flags", "temp_file+independent_segments",
-            "-hls_segment_type", "mpegts",
-            "-start_number", "0",
-            "-hls_segment_filename", "seg_%05d.ts",
-            "playlist.m3u8",
-        ]);
-        return args;
-    }
-
     private async Task<(int ExitCode, string Stderr, bool Orfao, bool TravouSemProgresso)> RunFfmpegHlsAsync(
         int filmeId, string origem, string dir, bool videoCompativel, bool usarRkmpp, int? audioStreamIndex, int? downscalePara, bool decodeHw,
         int largura, int altura, bool audioJaCompativel, CancellationToken ct)
     {
-        var args = MontarArgsFfmpegHls(origem, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw, largura, altura, audioJaCompativel);
+        var args = FfmpegArgs.Hls(origem, videoCompativel, usarRkmpp, audioStreamIndex, downscalePara, decodeHw, largura, altura, audioJaCompativel);
 
         var psi = new ProcessStartInfo(_ffmpegPath) { WorkingDirectory = dir };
         foreach (var arg in args) psi.ArgumentList.Add(arg);
@@ -895,32 +723,6 @@ public class HlsTranscodeService
     /// o hardware — degradação progressiva que só um restart do container conserta.</summary>
     internal static bool ContaComoFalhaDeEncoder(bool orfao, bool travouSemProgresso) => !orfao && !travouSemProgresso;
 
-    /// <summary>Índice global (pra <c>-map</c>) da faixa de áudio que vai pro HLS/remux. Se
-    /// <paramref name="preferenciaManual"/> aponta pra uma faixa que existe de verdade nesse
-    /// arquivo, usa ela (controle remoto escolheu uma "dublagem" — ver
-    /// <see cref="DefinirPreferenciaAudio"/>); senão prioridade automática: primeiro uma em
-    /// português — rip "dual áudio" costuma marcar a faixa errada como default —, senão a
-    /// default, senão a primeira. null se não há áudio. Função pura sobre o probe (testável
-    /// sem ffprobe de verdade, ver <c>FilmesApi.Tests</c>).</summary>
-    internal static int? EscolherStreamAudio(IReadOnlyList<FaixaAudio> audios, int? preferenciaManual = null)
-    {
-        if (audios.Count == 0) return null;
-        if (preferenciaManual is int pref && audios.Any(a => a.Index == pref)) return pref;
-        return audios.Where(a => a.Idioma is not null && IdiomasAudioPreferidos.Contains(a.Idioma))
-                .Select(a => (int?)a.Index).FirstOrDefault()
-            ?? audios.Where(a => a.Default).Select(a => (int?)a.Index).FirstOrDefault()
-            ?? audios[0].Index;
-    }
-
-    /// <summary>A faixa escolhida por <see cref="EscolherStreamAudio"/> já está num formato que
-    /// o navegador toca sem drama (codec da lista + mono/estéreo) — nesse caso dá pra copiar em
-    /// vez de reencodar. O reencode pra AAC estéreo existe só pra dois problemas: codec
-    /// incompatível (EAC3/DTS) e o bug do AAC multicanal sem channel_layout que o Chrome
-    /// reconheça (ver comentário grande sobre <c>-ac 2</c> em <see cref="MontarArgsFfmpegHls"/>)
-    /// — nenhum dos dois existe quando a faixa já chega com codec bom e 2 canais ou menos. Canal
-    /// desconhecido (ffprobe não informou) conta como "não sei, não arrisca" — fica no reencode.</summary>
-    internal static bool AudioJaCompativel(FaixaAudio? audio) =>
-        audio?.Codec is string codec && AudioCodecsCompativeis.Contains(codec) && audio.Canais is int c && c <= 2;
 
     private readonly object _cacheStatsLock = new();
 
