@@ -643,6 +643,7 @@ video { width: 100%; height: auto; background: #000; }
   var legendaPendente = -1;   // idx pedido pelo celular antes de /legendas responder
   var legendaDiag = 3;      // quantas vezes ainda loga a legenda desenhada (diagnostico: TV sem console, cai no docker logs)
   var legendaSemCue = 0;    // timeupdates seguidos sem cue na posicao atual (so pro diagnostico)
+  var teclasDiag = 15;      // quantas teclas "desconhecidas" ainda loga (diagnostico: que keyCode o vermelho manda?)
   var legendaHtml = '';     // ultimo html escrito em #psub (comparar com o innerHTML relido nao serve: o navegador reserializa)
 
   function removerLegendas() {
@@ -1055,6 +1056,13 @@ video { width: 100%; height: auto; background: #000; }
     var k = e.keyCode;
     var playerAtivo = els.player.className === 'on';
 
+    // Diagnostico (TV sem console): se o vermelho nao manda 403 nesta TV a legenda nunca liga e
+    // nada aparece no log. Loga as teclas que nao sao seta/OK pra descobrir o codigo de verdade.
+    if (playerAtivo && k !== 37 && k !== 38 && k !== 39 && k !== 40 && k !== 13 && k !== 32 && teclasDiag > 0) {
+      teclasDiag--;
+      logDiag('tecla keyCode=' + k + (e.key ? ' key=' + e.key : '') + (e.which && e.which !== k ? ' which=' + e.which : ''));
+    }
+
     // Voltar (varia por fabricante: 8, 27, 461, 10009, 166)
     if (k === 8 || k === 27 || k === 461 || k === 10009 || k === 166) {
       if (playerAtivo) { fecharPlayer(); if (e.preventDefault) e.preventDefault(); return false; }
@@ -1077,6 +1085,7 @@ video { width: 100%; height: auto; background: #000; }
       if (k === 403) {
         var ligada = legendaAtiva !== -1;
         var f = legendaFaixas[0];
+        logDiag('botao vermelho: faixas=' + legendaFaixas.length + ' prontas=' + legendaProntas + ' ligada=' + ligada);
         ativarLegenda(ligada || !f ? -1 : f.idx);
         els.pmsg.innerHTML = 'Legenda: ' + (ligada ? 'off' : (f ? (f.titulo || f.idioma || 'on') : 'nenhuma'));
         setTimeout(function () { var p = els.pmsg; if (p.innerHTML.indexOf('Legenda:') === 0) p.innerHTML = ''; }, LEGENDA_MSG_MS);
