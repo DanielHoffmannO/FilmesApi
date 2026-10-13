@@ -15,6 +15,8 @@
 * { margin: 0; padding: 0; box-sizing: border-box }
 body { font-family: system-ui, sans-serif; background: var(--bg-1); color: #eee; min-height: 100vh }
 header { background: var(--bg-2); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #222 }
+header a { color: var(--muted); text-decoration: none }
+header a:hover { color: #fff }
 h1 { font-size: 20px; font-weight: 600 }
 .filter-btn { background: none; border: 1px solid var(--border); color: var(--muted); padding: 6px 12px; border-radius: 20px; font-size: 12px }
 .filter-btn.active { border-color: var(--accent); color: #fff }

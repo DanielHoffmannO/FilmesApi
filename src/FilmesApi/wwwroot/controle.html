@@ -12,8 +12,7 @@
    Reset, header, .filter-btn, #grid, .row/.grupo-hd e as cores em variável (--accent etc.)
    vêm de css/base.css (compartilhado com index.html). Aqui só o que é específico desta tela. */
 body{padding-bottom:96px}
-header a{color:var(--muted);text-decoration:none;font-size:13px}
-header a:hover{color:#fff}
+header a{font-size:13px}
 main{padding:16px 24px;max-width:640px;margin:0 auto}
 .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
 .row.tocando{background:var(--bg-3)}
@@ -138,7 +137,7 @@ async function render() {
   const grid = document.getElementById('grid');
   const msg = document.getElementById('msg');
   const params = new URLSearchParams({ tipo: filtroTipo, visto: 'all' });
-  const t = await fetch(`${API}/tela?${params}`).then(r => r.ok ? r.json() : null).catch(() => null);
+  const t = await fetchJsonOuNull(`${API}/tela?${params}`);
 
   if (!t) { msg.style.display = 'block'; msg.textContent = 'Falha ao carregar a lista.'; return; }
 
@@ -340,7 +339,7 @@ async function pollRemote() {
       if (trocouFilme) {
         remoteCarregarLegendas(estado.filmeId);
         remoteCarregarAudios(estado.filmeId);
-        filmeAtualRemoto = await fetch(`${API}/${estado.filmeId}`).then(r => r.ok ? r.json() : null).catch(() => null);
+        filmeAtualRemoto = await fetchJsonOuNull(`${API}/${estado.filmeId}`);
         atualizarBotaoProximoEp(estado.filmeId);
       }
       const f = filmeAtualRemoto;

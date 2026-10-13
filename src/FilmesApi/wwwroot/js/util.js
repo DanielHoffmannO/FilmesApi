@@ -19,6 +19,12 @@ function formatarTempo(seg) {
   return h ? (h + 'h ' + m + 'min') : (m + 'min');
 }
 
+// GET que nunca lança: erro de rede ou resposta não-2xx viram null (quem chama decide o
+// fallback). Só index.html e controle.html usam — a TV velha não tem fetch e vai de XHR.
+function fetchJsonOuNull(url) {
+  return fetch(url).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+}
+
 // Colapsa/expande um <div class="grupo"> (série ou pasta de filme+extras). `folderSet` é o
 // Set (por página) que lembra quais grupos ficam abertos entre renders — index.html e
 // controle.html têm cada um o seu, com o mesmo nome (foldersAbertos), mas passado explícito
