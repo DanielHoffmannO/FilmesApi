@@ -697,11 +697,30 @@ function salvarProgresso() {
   }).catch(() => {});
 }
 
+// AdminToken (opcional no servidor): se o scan voltar 401, pede o token uma vez e guarda neste navegador.
+async function postarScan() {
+  const headers = () => { const t = localStorage.getItem('adminToken'); return t ? { 'X-Admin-Token': t } : {}; };
+  let res = await fetch(`${API}/scan`, { method: 'POST', headers: headers() });
+  if (res.status === 401) {
+    const token = prompt('O servidor pede um token de administrador pro scan:');
+    if (token) { localStorage.setItem('adminToken', token); res = await fetch(`${API}/scan`, { method: 'POST', headers: headers() }); }
+  }
+  return res;
+}
+
+function msgScanErro(texto) {
+  const msg = document.getElementById('scanMsg');
+  msg.textContent = texto;
+  msg.style.display = 'block';
+  setTimeout(() => msg.style.display = 'none', SCAN_MSG_DURATION_MS);
+}
+
 async function scanMedia() {
   const btn = document.querySelector('.actions button');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Escaneando…'; }
   try {
-    const res = await fetch(`${API}/scan`, { method: 'POST' });
+    const res = await postarScan();
+    if (res.status === 401) { msgScanErro('Token de administrador errado ou ausente.'); return; }
     const data = await res.json();
     const msg = document.getElementById('scanMsg');
     const partes = [`${data.importados} importado(s)`];

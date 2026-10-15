@@ -1,3 +1,5 @@
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using FilmesApi.Models;
 
@@ -12,7 +14,8 @@ public record RepetidoDiag(string Serie, int Temporada, int Episodio, List<Arqui
 
 public record UmEpisodioDiag(string Serie, int Temporada, int Episodio, ArquivoDiag Arquivo);
 
-public record SuspeitoDiag(ArquivoDiag Arquivo, string Motivo);
+/// <summary><c>EntradaIgnorar</c>: o caminho já entre aspas, pronto pra colar na lista <c>ignorar</c> do <c>nomes.json</c>.</summary>
+public record SuspeitoDiag(ArquivoDiag Arquivo, string Motivo, string EntradaIgnorar);
 
 public record DiagnosticoResponse(
     int TotalArquivos,
@@ -133,14 +136,20 @@ public static partial class DiagnosticoCatalogo
         foreach (var f in catalogo)
         {
             var nome = f.ArquivoPath ?? "";
-            if (ReSample().IsMatch(nome)) { suspeitos.Add(new SuspeitoDiag(comTamanho(f), "nome tem 'Sample'")); continue; }
+            if (ReSample().IsMatch(nome)) { suspeitos.Add(Suspeito(comTamanho(f), "nome tem 'Sample'")); continue; }
             if (!ReNomeDePropaganda().IsMatch(nome)) continue;
             var arquivo = comTamanho(f);
             if (arquivo.Bytes is long b && b < LimitePropagandaBytes)
-                suspeitos.Add(new SuspeitoDiag(arquivo, $"nome de uploader e só {b / 1024 / 1024} MB"));
+                suspeitos.Add(Suspeito(arquivo, $"nome de uploader e só {b / 1024 / 1024} MB"));
         }
         return suspeitos;
     }
+
+    private static readonly JsonSerializerOptions JsonLegivel = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
+    // Sem escape de glob: um nome com "*" ou "?" casaria mais que ele mesmo (raro em arquivo de vídeo).
+    private static SuspeitoDiag Suspeito(ArquivoDiag arquivo, string motivo) =>
+        new(arquivo, motivo, JsonSerializer.Serialize(arquivo.Caminho, JsonLegivel));
 
     private static string NomeSemExtensao(FilmeResponse f) => Path.GetFileNameWithoutExtension(f.ArquivoPath ?? "");
 

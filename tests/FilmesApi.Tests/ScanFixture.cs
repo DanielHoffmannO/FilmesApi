@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace FilmesApi.Tests;
 
@@ -19,7 +20,11 @@ internal sealed class ScanFixture : IDisposable
     public string Media => Path.Combine(Raiz, "media");
     public IServiceScopeFactory Escopos => _provider.GetRequiredService<IServiceScopeFactory>();
 
-    public ScanFixture(double estabilidadeSegundos = 0, double? intervaloMinutos = null)
+    /// <summary>Linhas de log (nível + mensagem) de tudo que os serviços escreveram.</summary>
+    public List<string> Logs { get; } = [];
+
+    public ScanFixture(double estabilidadeSegundos = 0, double? intervaloMinutos = null,
+        string? ffmpeg = null, string? ffprobe = null, Dictionary<string, string?>? configExtra = null)
     {
         Directory.CreateDirectory(Media);
         _conexao.Open();
@@ -31,27 +36,15 @@ internal sealed class ScanFixture : IDisposable
             ["SubtitleCachePath"] = Path.Combine(Raiz, "subs"),
             ["ScanEstabilidadeSegundos"] = estabilidadeSegundos.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["ScanIntervaloMinutos"] = intervaloMinutos?.ToString(System.Globalization.CultureInfo.InvariantCulture),
-        }).Build();
+        }.Concat(configExtra ?? []).ToDictionary(kv => kv.Key, kv => kv.Value)).Build();
 
-        var servicos = new ServiceCollection();
-        servicos.AddSingleton<IConfiguration>(config);
-        servicos.AddLogging();
-        servicos.AddSingleton<IHostApplicationLifetime, LifetimeFalso>();
-        servicos.AddDbContext<AppDbContext>(o => o.UseSqlite(_conexao));
-        servicos.AddSingleton(new FfmpegOptions("ffmpeg-nao-usado", "ffprobe-nao-usado"));
-        servicos.AddSingleton<MediaProbeService>();
-        servicos.AddSingleton<ClassificacaoCache>();
-        servicos.AddSingleton<RkmppCapabilityService>();
-        servicos.AddSingleton<ThermalService>();
-        servicos.AddSingleton<HlsTranscodeService>();
-        servicos.AddSingleton<SubtitleService>();
-        servicos.AddScoped<FilmeService>();
-        servicos.AddScoped<ProgressoService>();
-        _provider = servicos.BuildServiceProvider();
+        _provider = MontarServicos(config, ffmpeg, ffprobe);
 
         using var escopo = _provider.CreateScope();
         escopo.ServiceProvider.GetRequiredService<AppDbContext>().Database.EnsureCreated();
     }
+
+    public EstadoMontagens Montagens => _provider.GetRequiredService<EstadoMontagens>();
 
     public string CacheHls => Path.Combine(Raiz, "hls");
     public string CacheRemux => Path.Combine(Raiz, "remux");
@@ -78,6 +71,26 @@ internal sealed class ScanFixture : IDisposable
         var remux = Path.Combine(CacheRemux, $"{filmeId}.mp4");
         File.WriteAllText(remux, "mp4");
         return (dir, remux);
+    }
+
+    private ServiceProvider MontarServicos(IConfiguration config, string? ffmpeg, string? ffprobe)
+    {
+        var servicos = new ServiceCollection();
+        servicos.AddSingleton<IConfiguration>(config);
+        servicos.AddLogging(b => b.AddProvider(new LogsEmMemoria(Logs)));
+        servicos.AddSingleton<IHostApplicationLifetime, LifetimeFalso>();
+        servicos.AddDbContext<AppDbContext>(o => o.UseSqlite(_conexao));
+        servicos.AddSingleton(new FfmpegOptions(ffmpeg ?? "ffmpeg-nao-usado", ffprobe ?? "ffprobe-nao-usado"));
+        servicos.AddSingleton<MediaProbeService>();
+        servicos.AddSingleton<ClassificacaoCache>();
+        servicos.AddSingleton<EstadoMontagens>();
+        servicos.AddSingleton<RkmppCapabilityService>();
+        servicos.AddSingleton<ThermalService>();
+        servicos.AddSingleton<HlsTranscodeService>();
+        servicos.AddSingleton<SubtitleService>();
+        servicos.AddScoped<FilmeService>();
+        servicos.AddScoped<ProgressoService>();
+        return servicos.BuildServiceProvider();
     }
 
     /// <summary>Cria (com conteúdo) o arquivo relativo à pasta de mídia.</summary>
@@ -116,6 +129,22 @@ internal sealed class ScanFixture : IDisposable
         _provider.Dispose();
         _conexao.Dispose();
         try { Directory.Delete(Raiz, recursive: true); } catch (IOException) { }
+    }
+
+    private sealed class LogsEmMemoria(List<string> destino) : ILoggerProvider
+    {
+        public ILogger CreateLogger(string categoria) => new Registro(destino);
+        public void Dispose() { }
+
+        private sealed class Registro(List<string> destino) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public bool IsEnabled(LogLevel logLevel) => true;
+            public void Log<TState>(LogLevel nivel, EventId id, TState estado, Exception? ex, Func<TState, Exception?, string> formatar)
+            {
+                lock (destino) destino.Add($"{nivel}: {formatar(estado, ex)}");
+            }
+        }
     }
 
     private sealed class LifetimeFalso : IHostApplicationLifetime

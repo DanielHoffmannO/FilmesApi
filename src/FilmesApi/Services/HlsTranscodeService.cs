@@ -83,6 +83,13 @@ public class HlsTranscodeService
     private (long HlsBytes, int HlsItens, long RemuxBytes, int RemuxItens, DateTime Quando) _cacheStats = (0, 0, 0, 0, DateTime.MinValue);
     private readonly EscritaDeCache _escrita = new();
 
+    /// <summary>Quantos jobs (HLS ou remux) estão parados esperando um slot de encoder — o pré-aquecimento só começa com
+    /// zero e cede o lugar se aparecer alguém (ver <see cref="PoliticaPreAquecimento"/>).</summary>
+    private int _esperandoSlot;
+    /// <summary>Remuxes iniciados só pra aquecer (ninguém pediu ainda): não dependem de alguém olhando e cedem o lugar.
+    /// Saem daqui quando um pedido de verdade chega (<see cref="ObterStatusRemux"/>) ou o job termina.</summary>
+    private readonly ConcurrentDictionary<int, byte> _remuxQuente = new();
+
     public HlsTranscodeService(FfmpegOptions ffmpeg, IConfiguration config, RkmppCapabilityService rkmpp,
         ThermalService thermal, MediaProbeService probe, ILogger<HlsTranscodeService> logger,
         IHostApplicationLifetime lifetime)
@@ -190,10 +197,12 @@ public class HlsTranscodeService
     /// do original — o vídeo é copiado quase 1:1, só o áudio encolhe, então isso sobra perto
     /// do fim; por isso o teto de 99% até realmente terminar). É só pra não parecer travado
     /// num filme de 2h+ — não precisa ser exato.</summary>
-    public (RemuxStatus Status, int? ProgressoPercent) ObterStatusRemux(int filmeId, string origem)
+    public (RemuxStatus Status, int? ProgressoPercent) ObterStatusRemux(int filmeId, string origem, bool preAquecimento = false)
     {
         lock (_remuxLock)
         {
+            // um pedido de verdade assume o job: dali em diante vale a regra normal (órfão aborta, não cede lugar)
+            if (!preAquecimento) _remuxQuente.TryRemove(filmeId, out _);
             if (_remuxFalhas.TryGetValue(filmeId, out var falhouEm))
             {
                 if (DateTime.UtcNow - falhouEm < _falhaCooldown) return (RemuxStatus.Erro, null);
@@ -202,6 +211,7 @@ public class HlsTranscodeService
             if (File.Exists(CaminhoRemux(filmeId))) return (RemuxStatus.Disponivel, 100);
             if (!_remuxJobs.ContainsKey(filmeId))
             {
+                if (preAquecimento) _remuxQuente[filmeId] = 0;
                 var cts = CancellationTokenSource.CreateLinkedTokenSource(_pararToken);
                 _jobCancelRemux[filmeId] = cts;
                 _remuxJobs[filmeId] = Task.Run(() => ExecutarRemuxAsync(filmeId, origem, cts.Token));
@@ -237,12 +247,13 @@ public class HlsTranscodeService
             // (video só copia, só o áudio processa), ele ainda compete pela mesma CPU/placa —
             // sem isso um remux e um reencode HLS rodando juntos já esquentaram a placa hoje.
             await _thermal.AguardarResfriamentoAsync(ct);
-            await _slotEncoder.WaitAsync(ct);
+            await EsperarSlotAsync(ct);
             slotObtido = true;
             await _thermal.AguardarResfriamentoAsync(ct);
 
-            // Ficou na fila (slot/temperatura) e quem pediu já foi embora: nem começa.
-            if (SemInteresse(filmeId)) { RemuxOrfao(filmeId); return; }
+            // Ficou na fila (slot/temperatura) e quem pediu já foi embora: nem começa. (Pré-aquecimento não tem quem
+            // peça: ele mesmo confere de novo se ainda vale a pena começar.)
+            if (_remuxQuente.ContainsKey(filmeId) ? CederPreAquecimento() : SemInteresse(filmeId)) { RemuxOrfao(filmeId); return; }
 
             var info = await _probe.InspecionarAsync(origem, CancellationToken.None)
                 ?? throw new InvalidOperationException("probe falhou");
@@ -259,11 +270,12 @@ public class HlsTranscodeService
             // a assistir não pode remuxar o arquivo inteiro de graça.
             bool Travou()
             {
-                if (!SemInteresse(filmeId)) return false;
-                orfao = true;
-                return true;
+                var abortar = _remuxQuente.ContainsKey(filmeId) ? CederPreAquecimento() : SemInteresse(filmeId);
+                if (abortar) orfao = true;
+                return abortar;
             }
 
+            var relogio = Stopwatch.StartNew();
             var (exit, stderr) = await ProcessRunner.ExecutarComTimeoutAsync(psi, _jobTimeout, Travou, ct);
             if (orfao)
             {
@@ -276,6 +288,7 @@ public class HlsTranscodeService
 
             File.Move(tmp, final, overwrite: true);
             _escrita.ContarArquivo(final);
+            LogarVelocidadeDoRemux(filmeId, final, relogio.Elapsed);
         }
         catch (OperationCanceledException)
         {
@@ -295,6 +308,7 @@ public class HlsTranscodeService
         finally
         {
             _remuxJobs.TryRemove(filmeId, out _);
+            _remuxQuente.TryRemove(filmeId, out _);
             if (_jobCancelRemux.TryRemove(filmeId, out var cts)) cts.Dispose();
             if (slotObtido) _slotEncoder.Release();
         }
@@ -302,11 +316,60 @@ public class HlsTranscodeService
         if (!ct.IsCancellationRequested) LimparRemuxCacheExcedente();
     }
 
+    private async Task EsperarSlotAsync(CancellationToken ct)
+    {
+        Interlocked.Increment(ref _esperandoSlot);
+        try { await _slotEncoder.WaitAsync(ct); }
+        finally { Interlocked.Decrement(ref _esperandoSlot); }
+    }
+
+    private bool CederPreAquecimento() => PoliticaPreAquecimento.DeveCeder(Volatile.Read(ref _esperandoSlot), _thermal.EstaThrottling);
+
+    /// <summary>MB, segundos e MB/s do remux que acabou — pra dar pra ver, nos logs, se piorou (disco, térmica).</summary>
+    private void LogarVelocidadeDoRemux(int filmeId, string arquivo, TimeSpan duracao)
+    {
+        try
+        {
+            var mb = new FileInfo(arquivo).Length / 1048576.0;
+            var seg = Math.Max(0.001, duracao.TotalSeconds);
+            _logger.LogInformation("Remux do filme {Id} pronto: {Mb:F0} MB em {Seg:F0} s ({Velocidade:F1} MB/s){Quente}.",
+                filmeId, mb, seg, mb / seg, _remuxQuente.ContainsKey(filmeId) ? ", pré-aquecido" : "");
+        }
+        catch (IOException) { }
+    }
+
+    /// <summary>Sem job de HLS/remux, ninguém esperando slot e a placa fora do throttling térmico.</summary>
+    public bool Ocioso => _jobs.IsEmpty && _remuxJobs.IsEmpty && Volatile.Read(ref _esperandoSlot) == 0 && !_thermal.EstaThrottling;
+
+    /// <summary>Começa o remux de <paramref name="filmeId"/> SEM ninguém ter pedido (ver <see cref="PoliticaPreAquecimento"/>).
+    /// Só com o servidor ocioso e se o arquivo cabe no teto do cache sem expulsar nada. Devolve true se o job começou.</summary>
+    public bool PreAquecerRemux(int filmeId, string origem)
+    {
+        if (!Ocioso || File.Exists(CaminhoRemux(filmeId))) return false;
+
+        long tamanho;
+        try { tamanho = new FileInfo(origem).Length; }
+        catch (IOException) { return false; }
+        var noCache = MedirCacheRemux().Bytes;
+        if (!PoliticaPreAquecimento.CabeNoCache(noCache, tamanho, _remuxCacheMaxBytes))
+        {
+            _logger.LogInformation("Pré-aquecimento do filme {Id} adiado: o remux ({Mb:F0} MB) não cabe no teto do cache sem expulsar nada.", filmeId, tamanho / 1048576.0);
+            return false;
+        }
+
+        var (status, _) = ObterStatusRemux(filmeId, origem, preAquecimento: true);
+        if (status == RemuxStatus.Preparando) _logger.LogInformation("Pré-aquecendo o remux do filme {Id} ({Mb:F0} MB).", filmeId, tamanho / 1048576.0);
+        return status == RemuxStatus.Preparando;
+    }
+
     /// <summary>Remux abandonado: não marca _remuxFalhas (fica retentável quando alguém pedir de novo).</summary>
     private void RemuxOrfao(int filmeId)
     {
-        _logger.LogInformation("Remux do filme {Id} abortado: ninguém pediu status há mais de {Seg}s.",
-            filmeId, _orphanTimeout.TotalSeconds);
+        if (_remuxQuente.ContainsKey(filmeId))
+            _logger.LogInformation("Pré-aquecimento do remux do filme {Id} cedeu o lugar: outro job precisa do encoder ou a placa esquentou.", filmeId);
+        else
+            _logger.LogInformation("Remux do filme {Id} abortado: ninguém pediu status há mais de {Seg}s.",
+                filmeId, _orphanTimeout.TotalSeconds);
         _ultimoAcesso.TryRemove(filmeId, out _);
     }
 
@@ -608,7 +671,7 @@ public class HlsTranscodeService
         try
         {
             await _thermal.AguardarResfriamentoAsync(ct);
-            await _slotEncoder.WaitAsync(ct);
+            await EsperarSlotAsync(ct);
             slotObtido = true;
 
             // Rechecagem: o slot pode ter demorado a liberar e a placa esquentado de novo

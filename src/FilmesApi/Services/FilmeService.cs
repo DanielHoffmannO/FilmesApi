@@ -11,6 +11,7 @@ public class FilmeService
     private readonly SubtitleService _legendas;
     private readonly ProgressoService _progresso;
     private readonly ClassificacaoCache _classificacao;
+    private readonly EstadoMontagens _montagens;
     private readonly ILogger<FilmeService> _logger;
     private readonly string _mediaPath;
     private readonly TimeSpan _estabilidadeScan;
@@ -20,13 +21,14 @@ public class FilmeService
     private static readonly SemaphoreSlim _scanLock = new(1, 1);
 
     public FilmeService(AppDbContext db, HlsTranscodeService transcode, SubtitleService legendas,
-        ProgressoService progresso, ClassificacaoCache classificacao, IConfiguration config, ILogger<FilmeService> logger)
+        ProgressoService progresso, ClassificacaoCache classificacao, EstadoMontagens montagens, IConfiguration config, ILogger<FilmeService> logger)
     {
         _db = db;
         _transcode = transcode;
         _legendas = legendas;
         _progresso = progresso;
         _classificacao = classificacao;
+        _montagens = montagens;
         _logger = logger;
         _mediaPath = config.GetValue<string>("MediaPath") ?? "/media";
         // Arquivo novo só entra se o tamanho não mudou entre duas leituras com esta pausa no meio —
@@ -49,6 +51,8 @@ public class FilmeService
     {
         var lista = await _db.Filmes.AsNoTracking()
             .OrderByDescending(f => f.DataAdicionado).Select(ToResponse).ToListAsync();
+        // "ignorar" do nomes.json: o arquivo some do catálogo (a linha fica no banco até o próximo scan limpar)
+        lista.RemoveAll(f => MediaNomeParser.Ignorado(f.ArquivoPath));
 
         return _classificacao.Classificar(lista);
     }
@@ -166,9 +170,12 @@ public class FilmeService
             // EnumerarArquivosDeVideo (não Directory.EnumerateFiles direto) porque pula
             // diretórios sem permissão (ex: /media/lost+found) em vez de abortar a varredura
             // inteira no primeiro UnauthorizedAccessException.
-            var noDisco = EnumerarArquivosDeVideo(_mediaPath)
+            var todosNoDisco = EnumerarArquivosDeVideo(_mediaPath)
                 .Select(f => Path.GetRelativePath(_mediaPath, f).Replace('\\', '/'))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            // O que está no disco de verdade (todosNoDisco) decide se uma pasta/montagem está viva; o que o catálogo
+            // enxerga (noDisco) já descontou o "ignorar" do nomes.json — o arquivo ignorado continua no disco.
+            var noDisco = todosNoDisco.Where(r => !MediaNomeParser.Ignorado(r)).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             var noBanco = await _db.Filmes.Where(f => f.ArquivoPath != null).ToListAsync();
             var existentes = noBanco.Select(f => f.ArquivoPath!).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -176,9 +183,9 @@ public class FilmeService
             // Remove órfãos (arquivo sumiu — ex.: pasta reorganizada, ou apagada de propósito), exceto quando
             // o sumiço parece montagem caída (ver PrefixosRemoviveis) — apagaria o catálogo e o progresso de
             // assistido do disco que caiu.
-            var prefixosVivos = noDisco.Select(PrefixoDe).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var prefixosVivos = todosNoDisco.Select(PrefixoDe).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var prefixosNoBanco = noBanco.Select(f => PrefixoDe(f.ArquivoPath!)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            var removiveis = PrefixosRemoviveis(prefixosNoBanco, prefixosVivos, noDisco.Count, PastaVaziaOuInacessivel);
+            var removiveis = PrefixosRemoviveis(prefixosNoBanco, prefixosVivos, todosNoDisco.Count, PastaVaziaOuInacessivel);
             var candidatos = noBanco.Where(f => !noDisco.Contains(f.ArquivoPath!)).ToList();
             foreach (var prefixo in candidatos.Select(f => PrefixoDe(f.ArquivoPath!))
                          .Where(pr => !removiveis.Contains(pr)).Distinct(StringComparer.OrdinalIgnoreCase))
@@ -223,12 +230,33 @@ public class FilmeService
             }
 
             if (novos > 0 || removidos > 0 || limpos > 0) await _db.SaveChangesAsync();
+            GuardarEstadoDasMontagens(noBanco, orfaos, aImportar, todosNoDisco, removiveis);
             return new ScanResultado(novos, removidos, limpos);
         }
         finally
         {
             _scanLock.Release();
         }
+    }
+
+    /// <summary>Guarda por prefixo (itens no catálogo × arquivos no disco × suspeita ou não) pra <c>/api/status</c> e
+    /// <c>/health</c> — a MESMA decisão do scan (<paramref name="removiveis"/>), sem varrer o disco de novo.</summary>
+    private void GuardarEstadoDasMontagens(
+        List<Filme> noBanco, List<Filme> removidos, List<string> importados,
+        HashSet<string> todosNoDisco, HashSet<string> removiveis)
+    {
+        var idsRemovidos = removidos.Select(o => o.Id).ToHashSet();
+        var itens = noBanco
+            .Where(f => !idsRemovidos.Contains(f.Id) && !MediaNomeParser.Ignorado(f.ArquivoPath))
+            .Select(f => PrefixoDe(f.ArquivoPath!))
+            .Concat(importados.Select(PrefixoDe))
+            .GroupBy(p => p, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+        var arquivos = todosNoDisco
+            .GroupBy(PrefixoDe, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+
+        _montagens.Atualizar(EstadoMontagens.Classificar(itens, arquivos, removiveis));
     }
 
     /// <summary>Pasta de 1º nível do caminho relativo (<c>extra/Séries/x.mkv</c> → <c>extra</c>); vazio

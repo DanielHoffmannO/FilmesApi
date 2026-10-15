@@ -47,6 +47,24 @@ function secao(titulo, descricao, itens, tabela) {
 
 const arquivo = a => `<span class="path">${esc(a.caminho)}</span> <span class="size">${tamanho(a.bytes)}</span>`;
 
+// Copia a linha pronta pra lista "ignorar" do nomes.json. navigator.clipboard só existe em HTTPS/localhost —
+// no servidor de casa (http://IP:8080) cai no execCommand.
+async function copiar(botao, texto) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(texto);
+    else {
+      const t = document.createElement('textarea');
+      t.value = texto; t.style.position = 'fixed'; t.style.opacity = '0';
+      document.body.appendChild(t); t.select();
+      const ok = document.execCommand('copy');
+      t.remove();
+      if (!ok) throw new Error('copy falhou');
+    }
+    botao.textContent = 'copiado ✓';
+  } catch { botao.textContent = 'não deu — copie: ' + texto; }
+  setTimeout(() => { botao.textContent = 'copiar p/ ignorar'; }, 2500);
+}
+
 function render(d) {
   const html = [
     secao('Episódios faltando', 'Buracos entre o episódio 1 e o maior número da temporada (arquivo duplo conta como 2).', d.faltando,
@@ -60,10 +78,13 @@ function render(d) {
         `<tr><td>${esc(u.serie)}</td><td>T${esc(u.temporada)}E${esc(String(u.episodio).padStart(2, '0'))}</td><td>${arquivo(u.arquivo)}</td></tr>`).join('')}</table>`),
     secao('Solto na raiz, parece episódio', 'Está na raiz de /media sem marcador que o parser entenda, mas o nome parece de episódio.', d.soltosQueParecemEpisodio,
       it => `<table>${it.map(a => `<tr><td>${arquivo(a)}</td></tr>`).join('')}</table>`),
-    secao('Suspeito de propaganda', 'Menos de 60 MB com nome de uploader (1XBET, BLUDV, COMANDOTORRENTS, LAPUMIA), ou "Sample".', d.suspeitosDePropaganda,
-      it => `<table><tr><th>Arquivo</th><th>Motivo</th></tr>${it.map(s => `<tr><td>${arquivo(s.arquivo)}</td><td>${esc(s.motivo)}</td></tr>`).join('')}</table>`),
+    secao('Suspeito de propaganda', 'Menos de 60 MB com nome de uploader (1XBET, BLUDV, COMANDOTORRENTS, LAPUMIA), ou "Sample". Não dá pra apagar (torrent em seed)? Cole a linha na lista "ignorar" do nomes.json: o arquivo some do catálogo e continua no disco.', d.suspeitosDePropaganda,
+      it => `<table><tr><th>Arquivo</th><th>Motivo</th><th></th></tr>${it.map((s, i) => `<tr><td>${arquivo(s.arquivo)}</td><td>${esc(s.motivo)}</td><td><button data-i="${i}">copiar p/ ignorar</button></td></tr>`).join('')}</table>`),
   ].join('');
-  document.getElementById('conteudo').innerHTML = html;
+  const conteudo = document.getElementById('conteudo');
+  conteudo.innerHTML = html;
+  conteudo.querySelectorAll('button[data-i]').forEach(b =>
+    b.addEventListener('click', () => copiar(b, d.suspeitosDePropaganda[Number(b.dataset.i)].entradaIgnorar + ',')));
   document.getElementById('resumo').textContent = `${d.totalArquivos} arquivo(s) no catálogo`;
 }
 

@@ -186,7 +186,9 @@ build nem deploy. Crie `data/nomes.json` (no contêiner, `/data/nomes.json`):
 ```json
 {
   "apelidos": { "attack on titan": "ataque dos titas" },
-  "nomes":    { "ataque dos titas": "Ataque dos Titãs" }
+  "nomes":    { "ataque dos titas": "Ataque dos Titãs" },
+  "ignorar":  ["extra/Laranja.Mecanica*/1XBET*", "**/Sample/*"],
+  "tipos":    { "cabo do medo": "filme" }
 }
 ```
 
@@ -194,6 +196,12 @@ build nem deploy. Crie `data/nomes.json` (no contêiner, `/data/nomes.json`):
 - `nomes`: chave → como aparece na tela. Só muda a exibição; nenhuma pasta é renomeada.
 - Acento, maiúscula e espaço nas chaves não importam (`"Attack on Titan"` serve).
 - O padrão embutido no código continua valendo; o arquivo **soma** e, na mesma chave, **sobrescreve**.
+- `ignorar`: lista de **globs** no caminho relativo (`*` não atravessa pasta, `**` atravessa, `?` um caractere, sem
+  diferença de maiúscula). O arquivo **some do catálogo, do scan e do diagnóstico, mas continua no disco**: serve pra
+  propaganda de torrent que ainda está em seed e não dá pra apagar. `"extra/Laranja.Mecanica*/1XBET*"`,
+  `"**/Sample/*"`. No diagnóstico, cada suspeito de propaganda tem um botão que copia a linha pronta pra colar aqui.
+- `tipos`: `{ "cabo do medo": "filme" }` força "filme avulso" pra uma série (a chave é a mesma do apelido, sem acento nem
+  maiúscula) — pra quando um `S01E10` falso no nome enganou o parser. Só `"filme"` é aceito.
 - Vale em até 15 s depois de salvar, ou na hora com `POST /api/admin/recarregar-nomes`. Arquivo
   inválido não derruba nada: o servidor registra o erro no log e mantém os nomes que já valiam
   (o `POST` devolve `400`). Apagar o arquivo volta ao padrão.
@@ -241,6 +249,13 @@ dele é apagado** na hora: já visto quase nunca volta, e esse cache é a maior 
 servidor (rever o episódio depois só custa um transcode novo). O quanto foi gravado desde que o servidor
 subiu aparece em `/api/status` e na página de status. Só **1 transcodificação por vez** por padrão
 (`MaxConcurrentTranscodeJobs`).
+
+**Pré-aquecimento do remux.** O remux de um episódio de ~500 MB leva ~25 s e o de um filme de ~5 GB uns 4 min com a
+TV mostrando "Preparando áudio". Por isso o servidor deixa pronto, antes de você abrir, o remux do **primeiro item do
+"continuar assistindo"** (o que mais se abre) — mas só com o servidor **ocioso** (nenhum job, ninguém esperando o
+encoder, placa fora do limite térmico) e **se couber no teto do cache sem expulsar nada**. Esse job não precisa de
+ninguém olhando e **cede o lugar** na hora se outro pedido precisar do encoder ou a placa esquentar. Todo remux loga, ao
+terminar, `MB em N s (X MB/s)` — dá pra ver nos logs se o disco ou a térmica pioraram.
 
 **`/remux` — não confundir com o remux stream-copy do passo 2 acima (esse é interno ao pipeline
 HLS).** Pra TV sem HLS nenhum (nem MediaSource nem `<video>` nativo): quando o **vídeo** já é
@@ -336,6 +351,7 @@ usam `__` (ex.: `ConnectionStrings__Default`).
 |---|---|---|
 | `MediaPath` | `/media` | Pasta com os vídeos (varredura recursiva). |
 | `NomesPath` | `/data/nomes.json` | Apelidos de série e nomes de exibição editáveis — ver [Apelidos e nomes de exibição](#apelidos-e-nomes-de-exibição-nomesjson). |
+| `AdminToken` | _(vazio)_ | Token **opcional** pras rotas que mexem no servidor: com ele definido, `POST /api/filmes/scan` (scan manual) e tudo em `/api/admin/*` exigem o header `X-Admin-Token: <token>` (senão `401`); vazio = abertas, como sempre. **Não** vale pras rotas do player nem pro `/api/diag/log` (a TV e o celular não têm onde guardar token), nem pro scan automático. O botão **Scan Mídia** do `index.html` pede o token uma vez e guarda no navegador. Exige reiniciar pra valer. |
 | `ScanIntervaloMinutos` | `10` | Scan automático da pasta de mídia (mesmo do botão **Scan Mídia**), pra download novo aparecer sozinho. `0` desliga. Varrer acorda HD externo em repouso — num backup que deveria dormir, aumente ou desligue. |
 | `ScanEstabilidadeSegundos` | `2` | Arquivo novo só entra se o tamanho não mudou durante esta pausa (download/cópia em andamento fica pro próximo scan). `0` desliga. |
 | `ConnectionStrings__Default` | `Data Source=/data/filmes.db` | Banco SQLite. |
@@ -359,6 +375,8 @@ usam `__` (ex.: `ConnectionStrings__Default`).
 | `ForceSoftwareEncoder` | `false` | Ignora a VPU e usa sempre `libx264`. |
 | `HlsRkmppDecodeHw` | `false` | Tenta decode por hardware no caminho 4K (experimental — ver acima). |
 | `RemuxCacheMaxGB` | `15` | Teto do cache de `/remux`; acima disso, despejo LRU. `0` = ilimitado. |
+| `PreAquecerContinuarMinutos` | `5` | De quanto em quanto tempo o servidor confere o "continuar assistindo" nº 1 e, se ele precisa de remux, **já deixa o remux pronto** (ver abaixo). `0` desliga. |
+| `PreAquecerAtrasoInicialSegundos` | `60` | Espera depois de subir antes da 1ª conferência. |
 | `HlsFalhaCooldownMinutes` | `10` | Depois de uma tentativa de `/remux` que falhou, espera este tempo antes de tentar de novo (em vez de martelar o ffmpeg a cada request). |
 
 ### Governador térmico (opt-in)
@@ -451,10 +469,11 @@ Estado único em memória (`PlayerStateService`) — pensado pra uma casa com um
 
 | Método | Rota | Descrição |
 |---|---|---|
-| `GET` | `/api/status` | Temperatura, fila de transcode, tamanho dos caches de HLS e de remux, **total gravado nos caches desde que o servidor subiu** (inclusive o que já foi apagado), estado da VPU (consumido pela `status.html`). |
+| `GET` | `/api/status` | Temperatura, fila de transcode, tamanho dos caches de HLS e de remux, **total gravado nos caches desde que o servidor subiu** (inclusive o que já foi apagado), estado da VPU e, por pasta/disco de 1º nível, `montagens: [{prefixo, itensNoCatalogo, arquivosNoDisco, estado: ok\|suspeita}]` do último scan (consumido pela `status.html`). |
 | `POST` | `/api/diag/log` | `{msg}` (cortada em 500 caracteres) — o `tv.html` manda erro de JS/hls.js/`<video>` pra cá (cai no log do servidor). TV não tem console acessível; sem isso não dava pra depurar o que acontecia na tela dela. |
-| `POST` | `/api/admin/recarregar-nomes` | Relê o `nomes.json` agora. `{resultado: aplicado/semarquivo, apelidos, nomes}`; `400` se o arquivo está inválido (os nomes anteriores continuam valendo). Sem autenticação — rede de casa. |
-| `GET` | `/health` | Health check (usado pelo `healthcheck` do `docker-compose.yml`): checa se `MediaPath` está montado e se o binário do ffmpeg existe. |
+| `POST` | `/api/admin/recarregar-nomes` | Relê o `nomes.json` agora. `{resultado: aplicado/semarquivo, apelidos, nomes, ignorar, tipos}`; `400` se o arquivo está inválido (os nomes anteriores continuam valendo). Sem autenticação — rede de casa. |
+| `GET` | `/health` | Health check pro **Uptime Kuma**: `MediaPath` montado, ffmpeg presente e **nenhuma pasta/disco em suspeita**. `503` com `Degraded` quando uma pasta de 1º nível tem itens no catálogo mas nenhum arquivo no disco (HD de backup caído — o scan mantém os itens por precaução, ver `/api/status` › `montagens`). |
+| `GET` | `/health/vivo` | O mesmo, **mas disco caído não derruba** (`200` `Degraded`): é o que o `healthcheck` do `docker-compose.yml` usa, pra um disco fora nunca marcar o contêiner como `unhealthy` nem reiniciar nada. |
 
 ---
 
@@ -516,6 +535,10 @@ pra evoluir bancos já existentes. Roda a cada inicialização.
 libera geral só se você precisar servir as telas de outro host. Foi feito pra viver **só na LAN**,
 atrás do roteador de casa. Não exponha a porta 8080 direto na internet — se precisar de acesso
 remoto, use uma VPN (Tailscale, WireGuard) ou um proxy reverso com autenticação na frente.
+
+Só as rotas que **mexem no servidor** têm um trinco opcional: com `AdminToken` definido, o scan manual e `/api/admin/*`
+exigem `X-Admin-Token`. É pra evitar que um aparelho qualquer da rede dispare scan ou recarregue nomes — não é
+autenticação de verdade (o token trafega em HTTP puro dentro da LAN), e o player, a TV e o catálogo continuam abertos.
 
 ---
 

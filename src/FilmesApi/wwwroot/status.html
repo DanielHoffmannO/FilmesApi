@@ -47,6 +47,12 @@ code{background:#2a2a2a;padding:1px 5px;border-radius:3px;font-size:13px}
 </div>
 
 <div class="card">
+  <h2>Pastas / discos da mídia</h2>
+  <div id="montagens"><span class="muted">—</span></div>
+  <div class="muted" id="montagensInfo" style="margin-top:6px"></div>
+</div>
+
+<div class="card">
   <h2>Cache HLS em disco</h2>
   <div class="row"><span class="k">Uso</span><span class="v" id="cacheUso">—</span></div>
   <div class="bar"><div id="cacheBar" style="width:0"></div></div>
@@ -66,6 +72,7 @@ code{background:#2a2a2a;padding:1px 5px;border-radius:3px;font-size:13px}
 
 <script>
 function mb(b){ return b >= 1073741824 ? (b/1073741824).toFixed(2)+' GB' : (b/1048576).toFixed(0)+' MB'; }
+function esc(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function txt(id,v){ document.getElementById(id).textContent = v; }
 
 async function tick(){
@@ -125,6 +132,13 @@ async function tick(){
   txt('remuxInfo', x.remuxItens + ' arquivo(s) no cache');
   const horas = Math.max(1 / 60, (Date.now() - new Date(x.escritoDesde).getTime()) / 3600000);
   txt('escrito', mb(x.escritoBytes));
+  const mont = d.montagens || [];
+  const caixa = document.getElementById('montagens');
+  caixa.innerHTML = mont.length ? mont.map(m =>
+    '<div class="row"><span class="k">' + esc(m.prefixo) + '</span><span class="v">' + m.itensNoCatalogo + ' no catálogo · ' + m.arquivosNoDisco + ' no disco ' +
+    (m.estado === 'ok' ? '<span class="pill on">ok</span>' : '<span class="pill off">suspeita — disco caído?</span>') + '</span></div>').join('')
+    : '<span class="muted">ainda sem scan desde que o servidor subiu</span>';
+  txt('montagensInfo', d.montagensAtualizadoEm ? 'conferido no último scan (' + new Date(d.montagensAtualizadoEm).toLocaleTimeString() + ')' : '');
   txt('escritoInfo', 'em ' + horas.toFixed(1) + ' h (~' + mb(x.escritoBytes / horas * 24) + ' por dia nesse ritmo) — o cache de HLS/remux é a maior fonte de escrita do servidor');
 
   // rkmpp
