@@ -21,6 +21,10 @@ jobs:
       - name: format
         run: dotnet format FilmesApi.sln --verify-no-changes --severity warn
 
+      # a TV roda o tv.html num navegador antigo: nada acima de ES5 (const/let/=>/template string)
+      - name: tv.html e util.js em ES5
+        run: node tools/verificar-es5.js
+
       - run: dotnet build FilmesApi.sln --no-restore --configuration Release
 
       # o teste de downmix 5.1 -> estéreo gera e sonda mídia de verdade

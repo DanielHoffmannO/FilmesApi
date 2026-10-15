@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace FilmesApi.Services;
 
@@ -33,12 +34,21 @@ public record MediaInfo(
 /// (caminho, mtime, tamanho). Antes o codec de vídeo, a resolução, a faixa de áudio e as
 /// legendas eram 3–4 processos ffprobe espalhados por <see cref="HlsTranscodeService"/> e
 /// <see cref="SubtitleService"/>, sem timeout e re-rodando a cada poll de status.
+/// O cache tem teto e expira por desuso (<see cref="IMemoryCache"/>); e pedidos simultâneos pro
+/// mesmo arquivo com o cache frio dividem UM ffprobe só (abrir um filme dispara
+/// /legendas, /audios e o HLS quase juntos — três processos na placa, à toa).
 /// </summary>
-public class MediaProbeService
+public class MediaProbeService : IDisposable
 {
+    private const int MaxArquivosEmCache = 20_000;
+    private static readonly TimeSpan ExpiraPorDesuso = TimeSpan.FromHours(12);
+
     private readonly string _ffprobe;
     private readonly ILogger<MediaProbeService> _logger;
-    private readonly ConcurrentDictionary<string, (DateTime Mtime, long Tamanho, MediaInfo Info)> _cache = new();
+    private readonly MemoryCache _cache = new(new MemoryCacheOptions { SizeLimit = MaxArquivosEmCache });
+    // Lazy: o valor só roda DEPOIS de entrar no dicionário, então o TryRemove do fim da leitura
+    // nunca corre antes do GetOrAdd e deixa uma entrada eterna.
+    private readonly ConcurrentDictionary<string, Lazy<Task<MediaInfo?>>> _emVoo = new();
 
     public MediaProbeService(FfmpegOptions ffmpeg, ILogger<MediaProbeService> logger)
     {
@@ -46,7 +56,9 @@ public class MediaProbeService
         _logger = logger;
     }
 
-    /// <summary>Metadados do arquivo, ou null se o ffprobe falhou/estourou o timeout.</summary>
+    /// <summary>Metadados do arquivo, ou null se o ffprobe falhou/estourou o timeout.
+    /// <paramref name="ct"/> só cancela a ESPERA de quem chamou: a leitura é compartilhada com
+    /// os outros que pediram o mesmo arquivo, e já tem o seu próprio timeout de 30 s.</summary>
     public async Task<MediaInfo?> InspecionarAsync(string path, CancellationToken ct)
     {
         DateTime mtime;
@@ -54,26 +66,42 @@ public class MediaProbeService
         try { var fi = new FileInfo(path); mtime = fi.LastWriteTimeUtc; tamanho = fi.Length; }
         catch (IOException) { return null; }
 
-        if (_cache.TryGetValue(path, out var c) && c.Mtime == mtime && c.Tamanho == tamanho)
-            return c.Info;
+        // mtime e tamanho na chave: arquivo trocado vira entrada nova, a velha expira sozinha.
+        var chave = $"{path}|{mtime.Ticks}|{tamanho}";
+        if (_cache.TryGetValue(chave, out MediaInfo? guardado)) return guardado;
 
-        var json = await RodarAsync(
-            ["-v", "error", "-show_streams", "-show_format", "-of", "json", path],
-            TimeSpan.FromSeconds(30), path, ct);
-        if (json is null) return null;
+        var leitura = _emVoo.GetOrAdd(chave, k => new Lazy<Task<MediaInfo?>>(() => LerEGuardarAsync(k, path)));
+        return await leitura.Value.WaitAsync(ct);
+    }
 
+    private async Task<MediaInfo?> LerEGuardarAsync(string chave, string path)
+    {
         try
         {
-            var info = Parsear(json);
-            _cache[path] = (mtime, tamanho, info);
-            return info;
+            var json = await RodarAsync(
+                ["-v", "error", "-show_streams", "-show_format", "-of", "json", path],
+                TimeSpan.FromSeconds(30), path, CancellationToken.None);
+            if (json is null) return null;
+
+            try
+            {
+                var info = Parsear(json);
+                _cache.Set(chave, info, new MemoryCacheEntryOptions { Size = 1, SlidingExpiration = ExpiraPorDesuso });
+                return info;
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogWarning(ex, "ffprobe: JSON inesperado para {Path}.", path);
+                return null;
+            }
         }
-        catch (JsonException ex)
+        finally
         {
-            _logger.LogWarning(ex, "ffprobe: JSON inesperado para {Path}.", path);
-            return null;
+            _emVoo.TryRemove(chave, out _);
         }
     }
+
+    public void Dispose() => _cache.Dispose();
 
     /// <summary><c>internal</c> de propósito: dá pra testar o kill-no-timeout com um processo
     /// fake (<c>sleep</c>) sem precisar de ffprobe de verdade — ver <c>FilmesApi.Tests</c>.</summary>

@@ -5,7 +5,7 @@ namespace FilmesApi.Tests;
 
 public class ClassificacaoCacheTests
 {
-    private static FilmeResponse Filme(int id, string caminho, string titulo = "T", bool assistido = false, double? pos = null) =>
+    private static FilmeResponse Filme(int id, string? caminho, string titulo = "T", bool assistido = false, double? pos = null) =>
         new(id, titulo, null, caminho, assistido, DateTime.UtcNow, pos, null, null, null, null,
             false, false, null, null, null, null, "", "Sem pasta");
 

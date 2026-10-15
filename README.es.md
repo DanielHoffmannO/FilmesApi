@@ -27,7 +27,7 @@ transcodificación bajo demanda y aceleración por hardware (VPU del RK3399/RK35
   fallback automático a `libx264`. El contenido 4K se reduce a 1080p antes de recodificar.
 - **Continuar donde quedaste** — recuerda la posición de cada película y retoma sin salto.
 - **Próximo episodio** — al terminar un episodio, ofrece el siguiente con cuenta regresiva.
-- **Subtítulos embebidos** — extrae las pistas de texto a WebVTT y las sirve como `<track>`.
+- **Subtítulos embebidos y externos** — extrae las pistas de texto a WebVTT y las sirve como `<track>`; un `.srt` suelto junto al video o en una carpeta `Legendas/` también entra.
 - **Pantalla para smart TV vieja** (`tv.html`) — catálogo standalone que navegás con el control
   de la propia TV, ES5 puro. Reproduce HLS cuando la TV lo soporta (MediaSource o HLS nativo del
   `<video>`); en una TV sin ninguno de los dos, igual arregla el audio incompatible vía `/remux`
@@ -116,8 +116,12 @@ de un pipe en vivo sin `Content-Length`. Solo cae al original crudo si el **vide
 incompatible.
 
 - **Pista de audio:** elige automáticamente portugués, luego la pista por defecto, luego la primera.
-- **Subtítulos:** no se muxean en el HLS. Las pistas de texto (SRT/ASS/mov_text) se extraen a
-  WebVTT bajo demanda y se sirven como `<track>`. Los subtítulos bitmap (PGS/VobSub) no se pueden convertir.
+- **Subtítulos:** no se muxean en el HLS. Las pistas de texto (SRT/ASS/mov_text), embebidas o
+  externas, se extraen a WebVTT bajo demanda y se sirven como `<track>`. Los archivos externos
+  (`.srt .vtt .ass .ssa`) junto al video o en una subcarpeta `Legendas/`/`Subs/` se asocian por
+  nombre, marcador de episodio (`S01E02`) o sufijo de idioma (`Pelicula.pt-BR.srt`), en UTF-8 o
+  Windows-1252; la lista sale con el portugués primero. En la TV el subtítulo se dibuja sobre el
+  video. Los subtítulos bitmap (PGS/VobSub) no se pueden convertir.
 - **Protecciones:** detector de bloqueo (mata un ffmpeg colgado tras 8 min), cancelación de
   huérfanos (aborta un transcode que nadie mira tras `HlsOrphanTimeoutSeconds`), gobernador
   térmico opcional (retiene nuevos transcodes mientras la placa está muy caliente).
