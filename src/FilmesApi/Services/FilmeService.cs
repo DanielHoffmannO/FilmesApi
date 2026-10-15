@@ -128,7 +128,8 @@ public class FilmeService
     {
         var arquivoPath = await _db.Filmes.AsNoTracking()
             .Where(f => f.Id == id).Select(f => f.ArquivoPath).FirstOrDefaultAsync();
-        return arquivoPath is null ? null : ObterCaminhoAbsoluto(arquivoPath);
+        // ignorado (nomes.json) some do catálogo até a próxima varredura apagar a linha: não tocar nem pré-aquecer
+        return arquivoPath is null || MediaNomeParser.Ignorado(arquivoPath) ? null : ObterCaminhoAbsoluto(arquivoPath);
     }
 
     public async Task<bool> MarcarAssistidoAsync(int id)
@@ -259,8 +260,6 @@ public class FilmeService
         _montagens.Atualizar(EstadoMontagens.Classificar(itens, arquivosPorPrefixo, removiveis));
     }
 
-    /// <summary>Pasta de 1º nível do caminho relativo (<c>extra/Séries/x.mkv</c> → <c>extra</c>); vazio
-    /// pra arquivo direto na raiz. Cada uma pode ser um disco/montagem diferente.</summary>
     /// <summary>Quais prefixos (pasta de 1º nível; "" = raiz) podem ter os órfãos REMOVIDOS do catálogo.
     /// Prefixo com arquivo no disco: sempre. Prefixo sem NENHUM arquivo no disco é ambíguo — pasta apagada
     /// de propósito ou disco que caiu — e só é liberado quando nenhum sinal de queda aparece:
@@ -296,6 +295,8 @@ public class FilmeService
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return true; }
     }
 
+    /// <summary>Pasta de 1º nível do caminho relativo (<c>extra/Séries/x.mkv</c> → <c>extra</c>); vazio
+    /// pra arquivo direto na raiz. Cada uma pode ser um disco/montagem diferente.</summary>
     internal static string PrefixoDe(string relativo)
     {
         var barra = relativo.IndexOf('/');
