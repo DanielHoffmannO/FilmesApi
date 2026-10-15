@@ -17,9 +17,11 @@ namespace FilmesApi.Services;
 /// <param name="Episodio">Número do episódio.</param>
 /// <param name="Rotulo">Como mostrar na lista: "S03E08" / "T1 Ep05" / "Ep 12 · título" / o título.</param>
 /// <param name="Pasta">Pasta pai ("Sem pasta" na raiz de /media) — pro agrupamento "filme + extras".</param>
+/// <param name="TituloEpisodio">Título do episódio que o nome do arquivo traz depois do marcador
+/// ("O Apagador" em <c>... - S01E05 - O Apagador.mp4</c>), sem ruído de release nem site; null quando não tem.</param>
 public record ClassificacaoMidia(
     bool EhEpisodio, bool EhExtra, string? Serie, string? SerieChave,
-    int? Temporada, int? Episodio, string Rotulo, string Pasta);
+    int? Temporada, int? Episodio, string Rotulo, string Pasta, string? TituloEpisodio = null);
 
 /// <summary>
 /// Fonte única da classificação série/filme/episódio. Antes essa lógica existia em
@@ -341,7 +343,7 @@ public static partial class MediaNomeParser
     // grafia diferente. Lista pequena e explícita, cresce sob demanda quando aparecer outro
     // caso assim na prática; as chaves aqui já estão no formato pós-normalização (minúsculo,
     // sem acento).
-    private static readonly Dictionary<string, string> ApelidosSerie = new()
+    private static readonly Dictionary<string, string> ApelidosPadrao = new()
     {
         ["the vampire diaries"] = "diarios de um vampiro",
         ["t v d"] = "diarios de um vampiro",
@@ -362,7 +364,7 @@ public static partial class MediaNomeParser
     // Imaginação"), tudo maiúsculo ("FUTURAMA"), sem hífen. Só muda o que a tela mostra -- o
     // agrupamento continua pela chave, e nenhuma pasta no disco é renomeada (quebraria torrent).
     // Vale pra série e pra franquia (a chave de franquia vem sem o prefixo "franquia:").
-    private static readonly Dictionary<string, string> NomesExibicao = new()
+    private static readonly Dictionary<string, string> NomesPadrao = new()
     {
         ["alem da imaginacao"] = "Além da Imaginação",
         // Episódios [1x01] Shatterday, Chameleon, Kentucky Rye...: o revival de 1985, outra série
@@ -377,8 +379,51 @@ public static partial class MediaNomeParser
         ["hora de aventura"] = "Hora de Aventura",
     };
 
+    // O que vale agora: o padrão embutido acima + o que o /data/nomes.json somar/sobrescrever (ver
+    // NomesPersonalizadosService). Trocado por inteiro (referência volátil) — leitura nunca vê
+    // dicionário pela metade.
+    private static volatile Dictionary<string, string> _apelidos = ApelidosPadrao;
+    private static volatile Dictionary<string, string> _nomes = NomesPadrao;
+    private static int _versaoNomes;
+
+    /// <summary>Muda a cada troca de <c>nomes.json</c> — quem guarda classificação já calculada
+    /// (<see cref="ClassificacaoCache"/>) usa isso pra saber que tem que refazer.</summary>
+    internal static int VersaoNomes => Volatile.Read(ref _versaoNomes);
+
+    /// <summary>Padrão embutido + entradas do arquivo. As chaves (dos dois dicionários) e os valores de
+    /// <paramref name="apelidos"/> (chaves canônicas) entram normalizados — acento/maiúscula/espaço
+    /// não importam pra quem edita o arquivo; os valores de <paramref name="nomes"/> ficam como escritos.
+    /// Entrada do arquivo com a mesma chave de uma padrão a substitui. Pura (não mexe no estado global).</summary>
+    internal static (Dictionary<string, string> Apelidos, Dictionary<string, string> Nomes) Mesclar(
+        IReadOnlyDictionary<string, string>? apelidos, IReadOnlyDictionary<string, string>? nomes)
+    {
+        var a = new Dictionary<string, string>(ApelidosPadrao);
+        foreach (var (k, v) in apelidos ?? new Dictionary<string, string>())
+        {
+            var chave = NormalizarAcentoCase(k);
+            var canonica = NormalizarAcentoCase(v);
+            if (chave.Length > 0 && canonica.Length > 0) a[chave] = canonica;
+        }
+        var n = new Dictionary<string, string>(NomesPadrao);
+        foreach (var (k, v) in nomes ?? new Dictionary<string, string>())
+        {
+            var chave = NormalizarAcentoCase(k);
+            if (chave.Length > 0 && !string.IsNullOrWhiteSpace(v)) n[chave] = v.Trim();
+        }
+        return (a, n);
+    }
+
+    /// <summary>Passa a valer o padrão + o arquivo (null/null = só o padrão).</summary>
+    internal static void DefinirNomesPersonalizados(IReadOnlyDictionary<string, string>? apelidos, IReadOnlyDictionary<string, string>? nomes)
+    {
+        var (a, n) = Mesclar(apelidos, nomes);
+        _apelidos = a;
+        _nomes = n;
+        Interlocked.Increment(ref _versaoNomes);
+    }
+
     public static string NomeExibicao(string? chave, string nomePadrao) =>
-        chave is not null && NomesExibicao.TryGetValue(chave, out var nome) ? nome : nomePadrao;
+        chave is not null && _nomes.TryGetValue(chave, out var nome) ? nome : nomePadrao;
 
     private static string NormalizarAcentoCase(string s)
     {
@@ -390,13 +435,13 @@ public static partial class MediaNomeParser
     /// <summary>Chave de agrupamento tolerante a acento/maiúscula/espaço — mesma série
     /// escrita de jeitos ligeiramente diferentes em pastas de fontes diferentes ("Diários de
     /// Um Vampiro" / "Diarios de um vampiro" / "Diários de um Vampiro") cai na mesma chave.
-    /// Também resolve apelidos conhecidos (<see cref="ApelidosSerie"/>). Só serve pra
+    /// Também resolve apelidos conhecidos (<c>ApelidosPadrao</c> + <c>nomes.json</c>). Só serve pra
     /// comparar/agrupar — quem exibe usa <see cref="ChaveSerie"/> sem alterar.</summary>
     public static string? ChaveAgrupamento(string? serie)
     {
         if (string.IsNullOrEmpty(serie)) return serie;
         var chave = NormalizarAcentoCase(serie);
-        return ApelidosSerie.GetValueOrDefault(chave, chave);
+        return _apelidos.GetValueOrDefault(chave, chave);
     }
 
     /// <summary>Título sem o marcador de sequência do fim (ver <see cref="ReSequenciaFranquia"/>),
@@ -468,7 +513,87 @@ public static partial class MediaNomeParser
             Temporada: temp,
             Episodio: ep,
             Rotulo: MontarRotulo(SemExtensao(NomeArquivo(arquivoPath)), temp, ep),
-            Pasta: pasta);
+            Pasta: pasta,
+            TituloEpisodio: TituloDoEpisodio(SemExtensao(NomeArquivo(arquivoPath))));
+    }
+
+    [GeneratedRegex(@"E([0-9]{1,3})", RegexOptions.CultureInvariant)]
+    private static partial Regex ReNumeroE();
+
+    // "-07", "- E02", "-Ep.02" logo depois do marcador: ponta final de uma faixa ("[1x06-07]", "S01E01-02").
+    [GeneratedRegex(@"^\s*[-–]\s*(?:E|Ep\.?)?\s*([0-9]{1,3})(?![0-9])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ReFimFaixa();
+
+    /// <summary>Episódios que UM arquivo cobre: <c>S07E14E15</c>, <c>S01E01-E02</c>, <c>[1x06-07]</c>,
+    /// <c>Episódio 01-02</c> → (temporada, 14, 15). Arquivo normal devolve de = até. Faixa de mais de 6 episódios é
+    /// descartada (é o início de um título tipo "12 Monkeys", não uma faixa). <paramref name="temp"/>/<paramref name="ep"/>
+    /// são os já classificados (<see cref="Classificar"/>) — não reclassifica.</summary>
+    public static (int Temporada, int De, int Ate) FaixaDeEpisodios(string? arquivoPath, int temp, int ep)
+    {
+        var nome = SemExtensao(NomeArquivo(arquivoPath));
+        var ate = ep;
+
+        var m = ReSxxExx().Match(nome);
+        if (m.Success)
+        {
+            foreach (Match n in ReNumeroE().Matches(m.Value)) ate = Math.Max(ate, ParseInt(n.Groups[1].Value));
+            ate = Math.Max(ate, FimDeFaixa(nome, m.Index + m.Length));
+        }
+        else if ((m = ReNxNN().Match(nome)).Success)
+            ate = Math.Max(ate, FimDeFaixa(nome, m.Groups[2].Index + m.Groups[2].Length));
+        else if ((m = ReEpNum().Match(nome)).Success)
+            ate = Math.Max(ate, FimDeFaixa(nome, m.Groups[1].Index + m.Groups[1].Length));
+
+        return (temp, ep, ate > ep && ate - ep <= 6 ? ate : ep);
+    }
+
+    private static int FimDeFaixa(string nome, int pos)
+    {
+        var m = ReFimFaixa().Match(nome[pos..]);
+        return m.Success ? ParseInt(m.Groups[1].Value) : 0;
+    }
+
+    // Domínio de site grudado no FIM do nome ("... - TORRENTMEGAFILMES.TV", "ONDEBAIXA.COM"). Só no
+    // fim: no meio, "Flight.to.Remember" tem ".to" — que é TLD — e não é site nenhum.
+    [GeneratedRegex(@"(?:\s*[-–—]\s*)?\b(?:www\.)?[a-z0-9][a-z0-9-]*\.(?:com|net|org|tv|to|se|la|xyz|info)\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ReDominioNoFim();
+
+    /// <summary>O texto que vem DEPOIS do marcador de episódio no nome do arquivo (sem extensão), pela
+    /// mesma ordem de sinais de <see cref="OrdemEpisodio"/>; null se não há marcador.</summary>
+    private static string? TextoAposMarcador(string nome)
+    {
+        foreach (var re in new[] { ReSxxExx(), ReTempEpi(), ReNxNN(), ReEpNum(), ReEpPrefixo() })
+        {
+            var m = re.Match(nome);
+            if (m.Success) return nome[(m.Index + m.Length)..];
+        }
+        return null;
+    }
+
+    /// <summary>Título do episódio a partir do nome do arquivo: o que sobra depois do marcador
+    /// (<c>S01E05</c>, <c>1x05</c>, <c>Epi 05</c>, <c>05 - </c>) tirando propaganda de site, domínio no fim,
+    /// assinatura de release e tudo da primeira marca de qualidade/codec pra frente
+    /// (<see cref="ReRuido"/>: <c>1080p</c>, <c>x265</c>, <c>DVDRip</c>…). Palavra de título igual a uma dessas
+    /// marcas ("Complete", "Dual") corta o título ali — fica sem título em vez de mostrar lixo.
+    /// Null quando não sobra nada com cara de título.</summary>
+    internal static string? TituloDoEpisodio(string nome)
+    {
+        var resto = TextoAposMarcador(nome);
+        if (resto is null) return null;
+
+        resto = ReAnuncioSite().Replace(resto, " ");
+        resto = ReDominioNoFim().Replace(resto, "");
+        var pareceRelease = resto.Contains('.') || resto.Contains('_');   // "Titulo.Do.Ep-GRUPO"
+        resto = RePontos().Replace(resto, " ");
+        var ruido = ReRuido().Match(resto);
+        if (ruido.Success) resto = resto[..ruido.Index];
+        resto = ReDominioSolto().Replace(resto, " ");
+        if (pareceRelease) resto = ReAssinaturaRelease().Replace(resto.TrimEnd(), "");
+        resto = Regex.Replace(resto, @"[\[\]()]+", " ");
+        resto = Regex.Replace(resto, @"\s+", " ").Trim(' ', '-', '–', '—', '·', ':', '.', '_');
+
+        // sobrou só o ano ("S01E02.2010.1080p") ou quase nada: não é título
+        return resto.Length >= 2 && !Regex.IsMatch(resto, @"^(?:19|20)[0-9]{2}$") ? resto : null;
     }
 
     private static string MontarRotulo(string nome, int temp, int ep)

@@ -74,6 +74,7 @@ main{padding:16px 24px;max-width:1000px;margin:0 auto}
     <button onclick="scanMedia()">📂 Scan Mídia</button>
     <span class="header-links">
       <a href="/status.html" title="Status do servidor">📊</a>
+      <a href="/diagnostico.html" title="Diagnóstico do catálogo">🩺</a>
       <a href="/swagger" title="API">‹/›</a>
     </span>
   </div>
@@ -285,7 +286,7 @@ function rowHtml(f, episodio) {
   let titulo;
   if (episodio) {
     const cod = codigoEpisodio(f) || (f.rotulo || '');
-    const nome = tituloEpisodio(f);
+    const nome = f.tituloEpisodio || tituloEpisodio(f);
     titulo = (cod || nome)
       ? `${cod ? `<span class="rep">${esc(cod)}</span>` : ''}${esc(nome)}`
       : esc(f.titulo);
@@ -527,7 +528,7 @@ async function carregarLegendas(id) {
     tr.src = `${API}/${id}/legenda/${x.idx}`;
     tr.srclang = LANG_BCP[(x.idioma || '').toLowerCase()] || x.idioma || 'und';
     tr.label = x.titulo || x.idioma || `Legenda ${x.idx + 1}`;
-    if (x.forced && (x.idioma === 'por' || x.idioma === 'pob')) tr.default = true;
+    if (x.recomendada || (x.forced && (x.idioma === 'por' || x.idioma === 'pob'))) tr.default = true;
     video.appendChild(tr);
   });
 }
@@ -562,7 +563,7 @@ async function ofereceProximo(id) {
 
   proximoInfo = prox;
   preAquecerProximo(prox.id);
-  document.getElementById('proximoTit').textContent = prox.rotulo + (prox.serie ? ' — ' + prox.serie : '');
+  document.getElementById('proximoTit').textContent = rotuloComTitulo(prox) + (prox.serie ? ' — ' + prox.serie : '');
   els.proximoBox.classList.add('on');
 
   let resta = PROXIMO_COUNTDOWN_S;

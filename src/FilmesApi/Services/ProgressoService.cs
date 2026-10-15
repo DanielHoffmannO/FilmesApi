@@ -36,7 +36,15 @@ public class ProgressoService
 
     private readonly AppDbContext _db;
 
-    public ProgressoService(AppDbContext db) => _db = db;
+    private readonly HlsTranscodeService? _transcode;
+
+    /// <summary>Com <paramref name="transcode"/>, terminar o episódio apaga o cache de HLS/remux dele (ver
+    /// <see cref="HlsTranscodeService.DescartarCaches"/>). Opcional pros testes que só olham o banco.</summary>
+    public ProgressoService(AppDbContext db, HlsTranscodeService? transcode = null)
+    {
+        _db = db;
+        _transcode = transcode;
+    }
 
     /// <summary>Upsert do progresso. Retorna false se o filme não existe.</summary>
     public async Task<bool> SalvarAsync(int filmeId, double posicao, double? duracao)
@@ -114,6 +122,7 @@ public class ProgressoService
         await _db.Filmes.Where(f => f.Id == filmeId)
             .ExecuteUpdateAsync(s => s.SetProperty(f => f.Assistido, true));
         await _db.Progressos.Where(p => p.FilmeId == filmeId).ExecuteDeleteAsync();
+        _transcode?.DescartarCaches(filmeId);   // terminou: o cache (GBs gravados no disco) não vai ser relido
         return true;
     }
 

@@ -51,6 +51,11 @@ code{background:#2a2a2a;padding:1px 5px;border-radius:3px;font-size:13px}
   <div class="row"><span class="k">Uso</span><span class="v" id="cacheUso">—</span></div>
   <div class="bar"><div id="cacheBar" style="width:0"></div></div>
   <div class="muted" id="cacheInfo" style="margin-top:6px"></div>
+  <div class="row" style="margin-top:12px"><span class="k">Remux (arquivos .mp4)</span><span class="v" id="remuxUso">—</span></div>
+  <div class="bar"><div id="remuxBar" style="width:0"></div></div>
+  <div class="muted" id="remuxInfo" style="margin-top:6px"></div>
+  <div class="row" style="margin-top:12px"><span class="k">Escrito nos caches desde que subiu</span><span class="v" id="escrito">—</span></div>
+  <div class="muted" id="escritoInfo" style="margin-top:6px"></div>
 </div>
 
 <div class="card">
@@ -110,6 +115,17 @@ async function tick(){
     txt('cacheUso', mb(x.cacheBytes) + ' (sem teto)');
   }
   txt('cacheInfo', x.cacheItens + ' filme(s) no cache');
+  if (x.remuxMaxBytes > 0) {
+    const pctR = Math.min(100, 100 * x.remuxBytes / x.remuxMaxBytes);
+    txt('remuxUso', mb(x.remuxBytes) + ' / ' + mb(x.remuxMaxBytes) + '  (' + pctR.toFixed(0) + '%)');
+    document.getElementById('remuxBar').style.width = pctR + '%';
+  } else {
+    txt('remuxUso', mb(x.remuxBytes) + ' (sem teto)');
+  }
+  txt('remuxInfo', x.remuxItens + ' arquivo(s) no cache');
+  const horas = Math.max(1 / 60, (Date.now() - new Date(x.escritoDesde).getTime()) / 3600000);
+  txt('escrito', mb(x.escritoBytes));
+  txt('escritoInfo', 'em ' + horas.toFixed(1) + ' h (~' + mb(x.escritoBytes / horas * 24) + ' por dia nesse ritmo) — o cache de HLS/remux é a maior fonte de escrita do servidor');
 
   // rkmpp
   const r = d.rkmpp;

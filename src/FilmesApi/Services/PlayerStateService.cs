@@ -21,6 +21,10 @@ public class PlayerStateService
     private double _seekAbsPos;
     private int _legendaIdx = -1;   // -1 = legenda desligada
     private int _legendaVersion;
+    // true quando QUEM ASSISTE escolheu (celular ou botão da TV), ligando ou desligando — daí a
+    // legenda automática (áudio estrangeiro) não se mete mais até o fim do filme; só um filme novo
+    // (Selecionar) zera. Trocar de dublagem recarrega o MESMO filme, então não zera.
+    private bool _legendaManual;
     // Dublagem: ao contrário da legenda (puramente client-side, troca o <track> ativo), trocar
     // de faixa de áudio precisa regerar o HLS/remux no servidor (ver HlsTranscodeService —
     // o áudio vai dentro dos segments, não dá pra isolar como faixa solta). _audioIdx aqui é
@@ -53,6 +57,7 @@ public class PlayerStateService
                 seekAbsPos = _seekAbsPos,
                 legendaIdx = _legendaIdx,
                 legendaVersion = _legendaVersion,
+                legendaManual = _legendaManual,
                 audioIdx = _audioIdx,
                 audioVersion = _audioVersion,
                 proximoFilmeId = _proximoFilmeId,
@@ -69,7 +74,7 @@ public class PlayerStateService
     {
         lock (_lock)
         {
-            _filmeId = filmeId; _playing = true; _posSegundos = 0; _duracaoSegundos = 0; _legendaIdx = -1;
+            _filmeId = filmeId; _playing = true; _posSegundos = 0; _duracaoSegundos = 0; _legendaIdx = -1; _legendaManual = false;
             _proximoFilmeId = null; _proximoRotulo = null;
         }
     }
@@ -91,7 +96,15 @@ public class PlayerStateService
     /// <summary>Celular escolheu uma faixa de legenda (-1 = desligar). A TV aplica no próximo poll.</summary>
     public void SetLegenda(int idx)
     {
-        lock (_lock) { _legendaVersion++; _legendaIdx = idx; }
+        lock (_lock) { _legendaVersion++; _legendaIdx = idx; _legendaManual = true; }
+    }
+
+    /// <summary>A TV informa a legenda que ela mesma ligou/desligou (botão vermelho ou automática). Só
+    /// atualiza o que o celular mostra: NÃO mexe na versão — senão a TV aplicaria de volta o que acabou de
+    /// fazer, refazendo o download da legenda.</summary>
+    public void RegistrarLegendaDaTv(int idx, bool manual)
+    {
+        lock (_lock) { _legendaIdx = idx; _legendaManual = manual || _legendaManual; }
     }
 
     /// <summary>Celular escolheu uma faixa de áudio ("dublagem"). A TV aplica no próximo poll
@@ -143,7 +156,7 @@ public class PlayerStateService
     {
         lock (_lock)
         {
-            _filmeId = null; _playing = false; _pararVersion++; _posSegundos = 0; _duracaoSegundos = 0; _legendaIdx = -1;
+            _filmeId = null; _playing = false; _pararVersion++; _posSegundos = 0; _duracaoSegundos = 0; _legendaIdx = -1; _legendaManual = false;
             _proximoFilmeId = null; _proximoRotulo = null;
         }
     }

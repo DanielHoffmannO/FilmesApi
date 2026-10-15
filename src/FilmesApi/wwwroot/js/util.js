@@ -19,6 +19,14 @@ function formatarTempo(seg) {
   return h ? (h + 'h ' + m + 'min') : (m + 'min');
 }
 
+// "S01E05 · O Apagador": o rótulo do episódio + o título que o servidor achou no nome do arquivo
+// (campo tituloEpisodio). Sem título, ou com o rótulo já mostrando ele ("Ep 12 · título"), só o rótulo.
+function rotuloComTitulo(f) {
+  var rotulo = f.rotulo || '';
+  var titulo = f.tituloEpisodio;
+  return titulo && rotulo.indexOf(titulo) === -1 ? rotulo + ' · ' + titulo : rotulo;
+}
+
 // GET que nunca lança: erro de rede ou resposta não-2xx viram null (quem chama decide o
 // fallback). Só index.html e controle.html usam — a TV velha não tem fetch e vai de XHR.
 function fetchJsonOuNull(url) {

@@ -10,4 +10,9 @@ public record HlsStatusSnapshot(
     int[] FilmesComFalha,
     long CacheBytes,
     long CacheMaxBytes,
-    int CacheItens);
+    int CacheItens,
+    long RemuxBytes,
+    long RemuxMaxBytes,
+    int RemuxItens,
+    long EscritoBytes,
+    DateTime EscritoDesde);

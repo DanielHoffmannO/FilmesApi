@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FilmesApi — diagnóstico do catálogo</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🩺%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="/css/base.css">
+<style>
+body{padding:20px;max-width:900px;margin:0 auto;font:15px/1.5 system-ui,sans-serif}
+h1{font-size:19px;margin-bottom:4px}
+.sub{color:var(--muted);font-size:13px;margin-bottom:18px}
+.sub a{color:var(--muted)}
+.card{background:var(--bg-3);border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:14px}
+.card h2{font-size:14px;text-transform:uppercase;letter-spacing:.5px;color:#aaa;margin-bottom:4px}
+.card .desc{color:var(--muted);font-size:13px;margin-bottom:10px}
+.card.ok h2::after{content:" ✓";color:var(--ok)}
+.n{display:inline-block;min-width:22px;text-align:center;padding:0 7px;border-radius:10px;background:#2a2a2a;font-size:12px;margin-left:8px;vertical-align:1px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td,th{text-align:left;padding:5px 8px;border-top:1px solid #222;vertical-align:top}
+th{color:#999;font-weight:600;font-size:12px}
+.path{font-family:ui-monospace,monospace;font-size:12px;color:#bbb;word-break:break-all}
+.size{white-space:nowrap;color:#bbb}
+.falta{color:#ffb700;font-weight:600}
+button{background:none;border:1px solid var(--border);color:#ccc;padding:6px 12px;border-radius:6px;cursor:pointer}
+button:hover{border-color:var(--accent);color:#fff}
+#msg{color:var(--muted);padding:30px 0;text-align:center}
+</style>
+</head>
+<body>
+<h1>🩺 Diagnóstico do catálogo</h1>
+<div class="sub"><a href="/">← catálogo</a> · <button onclick="carregar()">atualizar</button> <span id="resumo"></span></div>
+<div id="msg">Analisando o catálogo…</div>
+<div id="conteudo"></div>
+<script src="/js/util.js"></script>
+<script>
+function tamanho(bytes) {
+  if (bytes == null) return '—';
+  return bytes >= 1024 * 1024 * 1024 ? (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB' : Math.round(bytes / 1024 / 1024) + ' MB';
+}
+
+function secao(titulo, descricao, itens, tabela) {
+  const ok = itens.length === 0;
+  return `<div class="card ${ok ? 'ok' : ''}"><h2>${esc(titulo)}<span class="n">${itens.length}</span></h2>
+    <div class="desc">${esc(descricao)}</div>${ok ? '' : tabela(itens)}</div>`;
+}
+
+const arquivo = a => `<span class="path">${esc(a.caminho)}</span> <span class="size">${tamanho(a.bytes)}</span>`;
+
+function render(d) {
+  const html = [
+    secao('Episódios faltando', 'Buracos entre o episódio 1 e o maior número da temporada (arquivo duplo conta como 2).', d.faltando,
+      it => `<table><tr><th>Série</th><th>Temporada</th><th>Faltam</th></tr>${it.map(f =>
+        `<tr><td>${esc(f.serie)}</td><td>T${esc(f.temporada)}</td><td class="falta">${esc(f.resumo)}</td></tr>`).join('')}</table>`),
+    secao('Episódio em 2+ arquivos', 'O mesmo episódio coberto por arquivos diferentes — dá pra apagar o pior.', d.repetidos,
+      it => `<table><tr><th>Episódio</th><th>Arquivos</th></tr>${it.map(r =>
+        `<tr><td>${esc(r.serie)} T${esc(r.temporada)}E${esc(String(r.episodio).padStart(2, '0'))}</td><td>${r.arquivos.map(arquivo).join('<br>')}</td></tr>`).join('')}</table>`),
+    secao('Série com 1 só episódio', 'Pode ser um episódio perdido de uma série que está sob outro nome.', d.serieComUmEpisodio,
+      it => `<table><tr><th>Série</th><th>Episódio</th><th>Arquivo</th></tr>${it.map(u =>
+        `<tr><td>${esc(u.serie)}</td><td>T${esc(u.temporada)}E${esc(String(u.episodio).padStart(2, '0'))}</td><td>${arquivo(u.arquivo)}</td></tr>`).join('')}</table>`),
+    secao('Solto na raiz, parece episódio', 'Está na raiz de /media sem marcador que o parser entenda, mas o nome parece de episódio.', d.soltosQueParecemEpisodio,
+      it => `<table>${it.map(a => `<tr><td>${arquivo(a)}</td></tr>`).join('')}</table>`),
+    secao('Suspeito de propaganda', 'Menos de 60 MB com nome de uploader (1XBET, BLUDV, COMANDOTORRENTS, LAPUMIA), ou "Sample".', d.suspeitosDePropaganda,
+      it => `<table><tr><th>Arquivo</th><th>Motivo</th></tr>${it.map(s => `<tr><td>${arquivo(s.arquivo)}</td><td>${esc(s.motivo)}</td></tr>`).join('')}</table>`),
+  ].join('');
+  document.getElementById('conteudo').innerHTML = html;
+  document.getElementById('resumo').textContent = `${d.totalArquivos} arquivo(s) no catálogo`;
+}
+
+async function carregar() {
+  const msg = document.getElementById('msg');
+  msg.style.display = '';
+  msg.textContent = 'Analisando o catálogo…';
+  const d = await fetchJsonOuNull('/api/filmes/diagnostico');
+  if (!d) { msg.textContent = 'Não consegui carregar o diagnóstico.'; return; }
+  msg.style.display = 'none';
+  render(d);
+}
+carregar();
+</script>
+</body>
+</html>

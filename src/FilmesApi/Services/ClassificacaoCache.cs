@@ -9,11 +9,11 @@ namespace FilmesApi.Services;
 /// depende de id/caminho/título, que quase nunca mudam, então fica guardado e é reaproveitado
 /// enquanto a lista bater EXATAMENTE com a da última vez. Progresso e "assistido" não entram:
 /// vêm sempre frescos do banco e são só aplicados por cima. Sem invalidação manual — qualquer
-/// diferença (scan, renomeio, título do TMDB) recalcula na chamada seguinte.
+/// diferença (scan, renomeio, título do TMDB, troca do nomes.json) recalcula na chamada seguinte.
 /// </summary>
 public class ClassificacaoCache
 {
-    private sealed record Instantaneo(int[] Ids, string?[] Caminhos, string[] Titulos, ClassificacaoMidia[] Resultados);
+    private sealed record Instantaneo(int VersaoNomes, int[] Ids, string?[] Caminhos, string[] Titulos, ClassificacaoMidia[] Resultados);
 
     private volatile Instantaneo? _atual;
 
@@ -28,7 +28,9 @@ public class ClassificacaoCache
             // Sobre o catálogo INTEIRO — a decisão "essa pasta é antologia" depende de quantos
             // irmãos numerados existem (ver MediaNomeParser.ContarNumeradosPorPasta).
             var contagem = MediaNomeParser.ContarNumeradosPorPasta(lista.Select(f => f.ArquivoPath));
+            var versao = MediaNomeParser.VersaoNomes;   // lida ANTES de classificar: se mudar no meio, a próxima chamada refaz
             atual = new Instantaneo(
+                versao,
                 [.. lista.Select(f => f.Id)],
                 [.. lista.Select(f => f.ArquivoPath)],
                 [.. lista.Select(f => f.Titulo)],
@@ -44,7 +46,7 @@ public class ClassificacaoCache
 
     private static bool Confere(Instantaneo guardado, List<FilmeResponse> lista)
     {
-        if (guardado.Ids.Length != lista.Count) return false;
+        if (guardado.VersaoNomes != MediaNomeParser.VersaoNomes || guardado.Ids.Length != lista.Count) return false;
         for (var i = 0; i < lista.Count; i++)
         {
             var f = lista[i];
@@ -64,5 +66,6 @@ public class ClassificacaoCache
         Episodio = c.Episodio,
         Rotulo = c.Rotulo,
         Pasta = c.Pasta,
+        TituloEpisodio = c.TituloEpisodio,
     };
 }

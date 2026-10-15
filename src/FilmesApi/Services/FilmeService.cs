@@ -13,6 +13,7 @@ public class FilmeService
     private readonly ClassificacaoCache _classificacao;
     private readonly ILogger<FilmeService> _logger;
     private readonly string _mediaPath;
+    private readonly TimeSpan _estabilidadeScan;
     private static readonly string[] VideoExtensions = [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm"];
 
     // Dois POST /scan concorrentes leriam "não existe" pro mesmo arquivo e ambos inseririam.
@@ -28,6 +29,9 @@ public class FilmeService
         _classificacao = classificacao;
         _logger = logger;
         _mediaPath = config.GetValue<string>("MediaPath") ?? "/media";
+        // Arquivo novo só entra se o tamanho não mudou entre duas leituras com esta pausa no meio —
+        // download/cópia em andamento (sem sufixo .part) não vira filme quebrado no catálogo. 0 desliga.
+        _estabilidadeScan = TimeSpan.FromSeconds(config.GetValue<double?>("ScanEstabilidadeSegundos") ?? 2);
     }
 
     // Projeção SQL — só as colunas do banco + o ponto de retomada (LEFT JOIN em Progressos).
@@ -39,7 +43,7 @@ public class FilmeService
             f.Progresso != null ? f.Progresso.PosicaoSegundos : (double?)null,
             f.Progresso != null ? f.Progresso.DuracaoSegundos : null,
             f.PosterUrl, f.Sinopse, f.TituloOriginal,
-            false, false, null, null, null, null, "", "Sem pasta");
+            false, false, null, null, null, null, "", "Sem pasta", null);
 
     public async Task<List<FilmeResponse>> ListarAsync()
     {
@@ -71,6 +75,19 @@ public class FilmeService
         }
 
         return CatalogoAgrupador.Montar(todos, continuarCandidatos, tipo, visto, busca);
+    }
+
+    /// <summary>Episódios faltando, repetidos, não reconhecidos e propaganda no catálogo inteiro
+    /// (ver <see cref="DiagnosticoCatalogo"/>). Os tamanhos vêm do disco, só pros arquivos que precisam.</summary>
+    public async Task<DiagnosticoResponse> DiagnosticoAsync()
+    {
+        var catalogo = await ListarAsync();
+        return DiagnosticoCatalogo.Analisar(catalogo, relativo =>
+        {
+            var absoluto = ObterCaminhoAbsoluto(relativo);
+            try { return absoluto is null ? null : new FileInfo(absoluto).Length; }
+            catch (IOException) { return null; }
+        });
     }
 
     /// <summary>Via <see cref="ListarAsync"/> (não uma query própria) de propósito — classificar
@@ -116,6 +133,7 @@ public class FilmeService
         if (filme is null) return false;
         filme.Assistido = !filme.Assistido;
         await _db.SaveChangesAsync();
+        if (filme.Assistido) _transcode.DescartarCaches(id);   // já visto: não deixa GB de cache gravados à toa
         return true;
     }
 
@@ -155,28 +173,34 @@ public class FilmeService
             var noBanco = await _db.Filmes.Where(f => f.ArquivoPath != null).ToListAsync();
             var existentes = noBanco.Select(f => f.ArquivoPath!).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            // Remove órfãos (arquivo sumiu — ex.: pasta reorganizada). Só quando o disco
-            // respondeu com ALGO: se veio vazio, o mount provavelmente caiu — não zerar o catálogo.
-            var removidos = 0;
-            if (noDisco.Count > 0)
+            // Remove órfãos (arquivo sumiu — ex.: pasta reorganizada). Só os de um prefixo (pasta de
+            // 1º nível, ou a raiz) que AINDA tem algum arquivo no disco: prefixo inteiro vazio é
+            // montagem caída (HD de backup em /media/extra que desmontou), não "apague tudo" —
+            // apagaria o catálogo e o progresso de assistido daquele disco.
+            var prefixosVivos = noDisco.Select(PrefixoDe).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var candidatos = noBanco.Where(f => !noDisco.Contains(f.ArquivoPath!)).ToList();
+            foreach (var prefixo in candidatos.Select(f => PrefixoDe(f.ArquivoPath!))
+                         .Where(p => !prefixosVivos.Contains(p)).Distinct(StringComparer.OrdinalIgnoreCase))
+                _logger.LogWarning(
+                    "Scan: nenhum arquivo em '{Prefixo}/' no disco — montagem caída? Itens desse prefixo mantidos no catálogo.",
+                    prefixo.Length == 0 ? "(raiz)" : prefixo);
+
+            var orfaos = candidatos.Where(f => prefixosVivos.Contains(PrefixoDe(f.ArquivoPath!))).ToList();
+            foreach (var orfao in orfaos)
             {
-                var orfaos = noBanco.Where(f => !noDisco.Contains(f.ArquivoPath!)).ToList();
-                foreach (var orfao in orfaos)
-                {
-                    await _db.Progressos.Where(p => p.FilmeId == orfao.Id).ExecuteDeleteAsync();
-                    _db.Filmes.Remove(orfao);
-                    _transcode.LimparCache(orfao.Id);
-                    _legendas.LimparCache(orfao.Id);
-                    _logger.LogInformation("Scan: removendo órfão {Id} ({Path}) — arquivo não está mais no disco.",
-                        orfao.Id, orfao.ArquivoPath);
-                }
-                removidos = orfaos.Count;
+                await _db.Progressos.Where(p => p.FilmeId == orfao.Id).ExecuteDeleteAsync();
+                _db.Filmes.Remove(orfao);
+                _transcode.LimparCache(orfao.Id);
+                _legendas.LimparCache(orfao.Id);
+                _logger.LogInformation("Scan: removendo órfão {Id} ({Path}) — arquivo não está mais no disco.",
+                    orfao.Id, orfao.ArquivoPath);
             }
+            var removidos = orfaos.Count;
 
             var novos = 0;
-            foreach (var relativo in noDisco)
+            var aImportar = await SoArquivosEstaveisAsync(noDisco.Where(r => !existentes.Contains(r)).ToList());
+            foreach (var relativo in aImportar)
             {
-                if (existentes.Contains(relativo)) continue;
                 var (titulo, ano) = DeduzirTitulo(relativo);
                 _db.Filmes.Add(new Filme { Titulo = titulo, AnoLancamento = ano, ArquivoPath = relativo });
                 novos++;
@@ -204,6 +228,39 @@ public class FilmeService
         {
             _scanLock.Release();
         }
+    }
+
+    /// <summary>Pasta de 1º nível do caminho relativo (<c>extra/Séries/x.mkv</c> → <c>extra</c>); vazio
+    /// pra arquivo direto na raiz. Cada uma pode ser um disco/montagem diferente.</summary>
+    internal static string PrefixoDe(string relativo)
+    {
+        var barra = relativo.IndexOf('/');
+        return barra < 0 ? "" : relativo[..barra];
+    }
+
+    /// <summary>Tira os arquivos cujo tamanho mudou durante a pausa de <c>ScanEstabilidadeSegundos</c>
+    /// (ainda sendo baixados/copiados). Eles entram no próximo scan, já completos.</summary>
+    private async Task<List<string>> SoArquivosEstaveisAsync(List<string> candidatos)
+    {
+        if (candidatos.Count == 0 || _estabilidadeScan <= TimeSpan.Zero) return candidatos;
+
+        long Tamanho(string relativo)
+        {
+            try { return new FileInfo(Path.Combine(_mediaPath, relativo)).Length; }
+            catch (IOException) { return -1; }
+        }
+
+        var antes = candidatos.ToDictionary(c => c, Tamanho);
+        await Task.Delay(_estabilidadeScan);
+
+        var estaveis = new List<string>(candidatos.Count);
+        foreach (var c in candidatos)
+        {
+            var depois = Tamanho(c);
+            if (depois >= 0 && depois == antes[c]) estaveis.Add(c);
+            else _logger.LogInformation("Scan: '{Arquivo}' ainda está sendo escrito (ou sumiu) — fica pro próximo scan.", c);
+        }
+        return estaveis;
     }
 
     /// <summary>
