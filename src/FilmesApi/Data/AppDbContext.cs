@@ -19,9 +19,6 @@ public class AppDbContext : DbContext
             e.Property(f => f.TituloOriginal).HasMaxLength(300);
             e.Property(f => f.PosterUrl).HasMaxLength(500);
             e.Property(f => f.Sinopse).HasMaxLength(2000);
-            // Um ArquivoPath = no máximo um Filme, pra scan repetido nunca duplicar.
-            // (No SQLite vários NULL são permitidos num índice único — entradas manuais sem
-            // arquivo não colidem.)
             e.HasIndex(f => f.ArquivoPath).IsUnique();
         });
 

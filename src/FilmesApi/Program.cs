@@ -21,6 +21,7 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
 
 builder.Services.AddSingleton(FfmpegOptions.From(builder.Configuration));
 builder.Services.AddSingleton<MediaProbeService>();
+builder.Services.AddSingleton<ClassificacaoCache>();
 builder.Services.AddScoped<FilmeService>();
 builder.Services.AddScoped<ProgressoService>();
 builder.Services.AddSingleton<RkmppCapabilityService>();
