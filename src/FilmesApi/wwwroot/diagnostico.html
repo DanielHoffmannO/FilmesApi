@@ -61,8 +61,8 @@ async function copiar(botao, texto) {
       if (!ok) throw new Error('copy falhou');
     }
     botao.textContent = 'copiado ✓';
+    setTimeout(() => { botao.textContent = 'copiar p/ ignorar'; }, 2500);
   } catch { botao.textContent = 'não deu — copie: ' + texto; }
-  setTimeout(() => { botao.textContent = 'copiar p/ ignorar'; }, 2500);
 }
 
 function render(d) {

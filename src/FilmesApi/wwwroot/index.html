@@ -699,11 +699,11 @@ function salvarProgresso() {
 
 // AdminToken (opcional no servidor): se o scan voltar 401, pede o token uma vez e guarda neste navegador.
 async function postarScan() {
-  const headers = () => { const t = localStorage.getItem('adminToken'); return t ? { 'X-Admin-Token': t } : {}; };
+  const headers = () => { try { const t = localStorage.getItem('adminToken'); return t ? { 'X-Admin-Token': t } : {}; } catch { return {}; } };
   let res = await fetch(`${API}/scan`, { method: 'POST', headers: headers() });
   if (res.status === 401) {
     const token = prompt('O servidor pede um token de administrador pro scan:');
-    if (token) { localStorage.setItem('adminToken', token); res = await fetch(`${API}/scan`, { method: 'POST', headers: headers() }); }
+    if (token) { try { localStorage.setItem('adminToken', token); } catch { /* storage bloqueado: vale só desta vez */ } res = await fetch(`${API}/scan`, { method: 'POST', headers: headers() }); }
   }
   return res;
 }
