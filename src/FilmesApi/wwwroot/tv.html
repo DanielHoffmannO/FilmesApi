@@ -1155,6 +1155,8 @@ video { width: 100%; height: auto; background: #000; }
     // Voltar (varia por fabricante: 8, 27, 461, 10009, 166)
     if (k === 8 || k === 27 || k === 461 || k === 10009 || k === 166) {
       if (playerAtivo) { fecharPlayer(); if (e.preventDefault) e.preventDefault(); return false; }
+      // Na lista, dentro do app Tizen, Voltar fecha o app (o navegador faria history.back()).
+      try { if (window.tizen && tizen.application) { tizen.application.getCurrentApplication().exit(); return false; } } catch (err) {}
       return true;
     }
 
@@ -1232,7 +1234,26 @@ video { width: 100%; height: auto; background: #000; }
     if (t && t.tagName === 'A') { ativar(t); return false; }
   };
 
+  // Quando a pagina roda dentro do app Tizen (pasta tizen/ do repo) ha `window.tizen`: registra as
+  // teclas coloridas/midia, que o app nao recebe por padrao, e deixa o Voltar da lista fechar o app.
+  // Fora do app (navegador da TV) nada disso existe e a funcao so loga o ambiente.
+  function integrarTizen() {
+    var ua = (navigator.userAgent || '');
+    logDiag('ambiente: ' + ua + ' | tizen=' + !!window.tizen + ' webapis=' + !!window.webapis +
+      ' avplay=' + !!(window.webapis && window.webapis.avplay));
+    try {
+      if (window.tizen && tizen.tvinputdevice) {
+        var teclas = ['ColorF0Red', 'ColorF1Green', 'ColorF2Yellow', 'ColorF3Blue',
+          'MediaPlayPause', 'MediaPlay', 'MediaPause', 'MediaStop', 'MediaFastForward', 'MediaRewind'];
+        for (var i = 0; i < teclas.length; i++) {
+          try { tizen.tvinputdevice.registerKey(teclas[i]); } catch (e) {}
+        }
+      }
+    } catch (e) {}
+  }
+
   configurarProgresso();
+  integrarTizen();
   load();
   pollRemoto();
 })();

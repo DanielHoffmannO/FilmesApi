@@ -112,6 +112,21 @@ app.MapPost("/api/diag/log", (DiagLogRequest req, ILoggerFactory lf) =>
     return Results.NoContent();
 });
 
+// TV Samsung antiga (Orsay): Menu Develop > IP Setting > Start App Sync baixa estes dois. O
+// endereço do app vem do que a própria TV usou pra chegar aqui (Host), sem IP gravado em arquivo.
+app.MapGet("/widgetlist.xml", (HttpContext ctx, IWebHostEnvironment env) =>
+{
+    var baseUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}";
+    var (_, tamanho) = OrsayWidget.Gerar(Path.Combine(env.WebRootPath, "orsay-widget"), baseUrl);
+    return Results.Content(OrsayWidget.ListaXml(baseUrl, tamanho), "application/xml");
+});
+app.MapGet(OrsayWidget.CaminhoZip, (HttpContext ctx, IWebHostEnvironment env) =>
+{
+    var baseUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}";
+    var (zip, _) = OrsayWidget.Gerar(Path.Combine(env.WebRootPath, "orsay-widget"), baseUrl);
+    return Results.File(zip, "application/zip");
+});
+
 app.MapFallbackToFile("index.html");
 
 app.Run();

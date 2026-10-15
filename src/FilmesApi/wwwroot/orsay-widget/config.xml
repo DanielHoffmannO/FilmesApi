@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<widget>
+	<ThumbIcon>icon/thumb_106x87.png</ThumbIcon>
+	<BigThumbIcon>icon/bigthumb_115x95.png</BigThumbIcon>
+	<ListIcon>icon/list_85x69.png</ListIcon>
+	<BigListIcon>icon/biglist_95x78.png</BigListIcon>
+
+	<category>etc</category>
+	<autoUpdate>y</autoUpdate>
+	<ver>1.000</ver>
+
+	<fullwidget>y</fullwidget>
+	<srcctl>y</srcctl>
+	<ticker>n</ticker>
+	<childlock>n</childlock>
+	<audiomute>n</audiomute>
+	<videomute>n</videomute>
+	<dcont>y</dcont>
+	<movie>y</movie>
+
+	<widgetname>Filmes</widgetname>
+	<description>Filmes e series do servidor de casa</description>
+
+	<mouse>n</mouse>
+
+	<width>1920</width>
+	<height>1080</height>
+
+	<author>
+		<name>FilmesApi</name>
+		<email>none@example.com</email>
+		<link>http://localhost</link>
+		<organization>FilmesApi</organization>
+	</author>
+</widget>
