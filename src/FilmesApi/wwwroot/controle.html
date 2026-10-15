@@ -72,9 +72,9 @@ main{padding:16px 24px;max-width:640px;margin:0 auto}
     <button onclick="remoteAceitarProximo()">▶ Assistir agora</button>
   </div>
   <div class="remote-l2">
-    <button onclick="remoteSeek(-SEEK_STEP_S)">« 10s</button>
+    <button onclick="remoteSeek(-SEEK_STEP_S)">« 30s</button>
     <button onclick="remotePlayPause()" id="remotePlayPauseBtn">⏸</button>
-    <button onclick="remoteSeek(SEEK_STEP_S)">10s »</button>
+    <button onclick="remoteSeek(SEEK_STEP_S)">30s »</button>
     <button onclick="remoteProximoEp()" id="remoteProximoEpBtn" style="display:none">⏭ Próximo ep</button>
     <button onclick="remoteCC()" id="remoteCCBtn" style="display:none">CC</button>
     <button onclick="remoteAudio()" id="remoteAudioBtn" style="display:none">🗣️</button>
@@ -89,7 +89,7 @@ const API = '/api/filmes';
 const PLAYER_API = '/api/player';
 
 // ─── Configuração (valores antes soltos pelo código) ───────────────────────
-const SEEK_STEP_S = 10;      // avanço/retrocesso dos botões «10s / 10s»
+const SEEK_STEP_S = 30;      // avanço/retrocesso dos botões «30s / 30s»
 const POLL_ATIVO_MS = 1000;  // intervalo de poll de /player/state com algo tocando
 const POLL_OCIOSO_MS = 3000; // intervalo de poll sem nada tocando (menos urgente)
 
