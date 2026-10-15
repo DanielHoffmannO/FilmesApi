@@ -115,6 +115,21 @@ public static partial class MediaNomeParser
     [GeneratedRegex(@"\bwww\.[a-z0-9-]+\.(?:com|net|org|to|se|la|xyz|info)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ReDominioSolto();
 
+    // O mesmo "WWW.SITE.COM", mas DEPOIS de RePontos já ter trocado os pontos por espaço
+    // ("WWW BLUDV COM") -- no nome da pasta o domínio só chega assim.
+    [GeneratedRegex(@"\bwww\s+[a-z0-9-]+\s+(?:com|net|org|tv|to|se|la|xyz|info)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ReDominioSemPontos();
+
+    // "Trilogia Matrix", "Quadrilogia A Era do Gelo": a palavra da coleção só descreve o pacote,
+    // o nome da obra vem depois. Só no começo, e só as palavras sem risco -- "Saga", "Box" e
+    // "Antologia" podem ser parte do título de verdade ("Saga Crepúsculo"), então ficam.
+    [GeneratedRegex(@"^(?:trilogia|tetralogia|quadrilogia|pentalogia|hexalogia|colecao|coleção|coletanea|coletânea)\s+(?:d[aeo]s?\s+)?", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex RePrefixoColecao();
+
+    // "1999 - 2003": intervalo de anos do pacote. Um ano só ("Filme 2020") não é tocado.
+    [GeneratedRegex(@"\b(?:19|20)[0-9]{2}\s*[-–—]\s*(?:19|20)[0-9]{2}\b", RegexOptions.CultureInvariant)]
+    private static partial Regex ReIntervaloAnos();
+
     // Remove um marcador de sequência solto no FIM do título -- "Homem Aranha 2" -> "Homem
     // Aranha", "Toy Story 3" -> "Toy Story", "Rocky V" -> "Rocky". Começa em 2 de propósito:
     // o primeiro filme de uma franquia quase nunca tem "1" no nome. Romano só até X (10),
@@ -335,10 +350,35 @@ public static partial class MediaNomeParser
         // "Hora da Aventura" (grafia de release, preposição errada) vs "Hora de Aventura"
         // (título oficial BR de Adventure Time) — mesma série, palavra diferente.
         ["hora da aventura"] = "hora de aventura",
+        // "FS.03x01.720p.Dub-TorrentDosFilmesHD": FS = Família Soprano, a T3 de The Sopranos
+        // (T1/T2 vêm em pastas com o nome da série). A chave é a do nome cru da pasta.
+        ["fs 03 720p dub-torrentdosfilmeshd"] = "the sopranos",
         // "Ataque dos Titãs" (pasta de T1-T3 em português, "AoTDublado01x01") vs "Attack on Titan"
         // (releases CR WEB-DL de T3/T4): mesma série, o catálogo mostrava duas.
         ["attack on titan"] = "ataque dos titas",
     };
+
+    // Nome de EXIBIÇÃO quando o mais frequente nas pastas sai feio: sem acento ("Alem da
+    // Imaginação"), tudo maiúsculo ("FUTURAMA"), sem hífen. Só muda o que a tela mostra -- o
+    // agrupamento continua pela chave, e nenhuma pasta no disco é renomeada (quebraria torrent).
+    // Vale pra série e pra franquia (a chave de franquia vem sem o prefixo "franquia:").
+    private static readonly Dictionary<string, string> NomesExibicao = new()
+    {
+        ["alem da imaginacao"] = "Além da Imaginação",
+        // Episódios [1x01] Shatterday, Chameleon, Kentucky Rye...: o revival de 1985, outra série
+        // que a clássica de cima (o título em português é o mesmo, por isso o ano).
+        ["the twilight zone"] = "Além da Imaginação (1985)",
+        ["futurama"] = "Futurama",
+        ["homem aranha"] = "Homem-Aranha",
+        // Títulos oficiais no Brasil (a pasta/arquivo vem com o nome original em inglês):
+        ["the sopranos"] = "Família Soprano",
+        ["severance"] = "Ruptura",
+        ["baby reindeer"] = "Bebê Rena",
+        ["hora de aventura"] = "Hora de Aventura",
+    };
+
+    public static string NomeExibicao(string? chave, string nomePadrao) =>
+        chave is not null && NomesExibicao.TryGetValue(chave, out var nome) ? nome : nomePadrao;
 
     private static string NormalizarAcentoCase(string s)
     {
@@ -396,6 +436,9 @@ public static partial class MediaNomeParser
         nome = ReAnuncioSite().Replace(nome, " ");
         nome = ReDominioSolto().Replace(nome, " ");
         nome = ReRuido().Replace(nome, " ");
+        nome = ReDominioSemPontos().Replace(nome, " ");
+        nome = RePrefixoColecao().Replace(nome.TrimStart(), "");
+        nome = ReIntervaloAnos().Replace(nome, " ");
         if (pareceRelease) nome = ReAssinaturaRelease().Replace(nome, "");
         nome = Regex.Replace(nome, @"[\[\]()]+", " ");
         nome = Regex.Replace(nome, @"\s+", " ").Trim(' ', '-', '–', '—');

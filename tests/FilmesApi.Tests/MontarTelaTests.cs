@@ -101,7 +101,7 @@ public class MontarTelaTests
 
         Assert.Empty(tela.FilmesSoltos);
         var grupo = Assert.Single(tela.PastasFilme);
-        Assert.Equal("Homem Aranha", grupo.Nome);
+        Assert.Equal("Homem-Aranha", grupo.Nome);  // override de exibição (NomeExibicao): a chave segue "homem aranha"
         Assert.Equal(3, grupo.Itens.Count);
         Assert.Equal([1, 2, 3], grupo.Itens.Select(i => i.Id).OrderBy(i => i));
     }
@@ -308,5 +308,20 @@ public class MontarTelaTests
 
         Assert.Empty(tela.FilmesSoltos);
         Assert.Empty(tela.PastasFilme);
+    }
+
+    [Fact]
+    public void Nome_de_exibicao_da_serie_usa_o_override_sem_mexer_na_chave()
+    {
+        var todos = new List<FilmeResponse>
+        {
+            F(1, "FUTURAMA", ehEpisodio: true, serie: "FUTURAMA", serieChave: "futurama", temporada: 1, episodio: 1),
+            F(2, "FUTURAMA", ehEpisodio: true, serie: "FUTURAMA", serieChave: "futurama", temporada: 1, episodio: 2),
+        };
+        var tela = CatalogoAgrupador.Montar(todos, [], "all", "all", null);
+
+        var serie = Assert.Single(tela.Series);
+        Assert.Equal("Futurama", serie.Nome);
+        Assert.Equal("futurama", serie.Chave);
     }
 }

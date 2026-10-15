@@ -392,6 +392,47 @@ public class MediaNomeParserTests
         Assert.Equal("DDUV", MediaNomeParser.ChaveSerie("DDUVT08EP13.mp4"));
     }
 
+    // ─── Nomes de exibição: coleção, intervalo de anos, site solto ───────
+
+    [Theory]
+    [InlineData("Trilogia Matrix 1999 - 2003 [1080p] WWW.BLUDV.COM", "Matrix")]
+    [InlineData("Quadrilogia A Era do Gelo 2002 - 2012 [1080p] WWW.BLUDV.COM", "A Era do Gelo")]
+    [InlineData("extra/Trilogia O Senhor dos Anéis 2001-2003 1080p", "O Senhor dos Anéis")]
+    [InlineData("Coleção Toy Story", "Toy Story")]
+    [InlineData("Saga Crepúsculo", "Saga Crepúsculo")]     // "Saga" pode ser título de verdade: não corta
+    [InlineData("Trilogia", "Trilogia")]                    // só a palavra: não sobra nome nenhum
+    [InlineData("Filme (2020)", "Filme 2020")]              // ano único não é intervalo: fica
+    [InlineData("Matrix Reloaded 2003 [1080p] WWW.BLUDV.COM", "Matrix Reloaded 2003")]
+    public void NomePastaExibicao_limpa_colecao_intervalo_de_anos_e_site(string pasta, string esperado) =>
+        Assert.Equal(esperado, MediaNomeParser.NomePastaExibicao(pasta));
+
+    [Theory]
+    [InlineData("alem da imaginacao", "Alem da Imaginação", "Além da Imaginação")]
+    [InlineData("futurama", "FUTURAMA", "Futurama")]
+    [InlineData("homem aranha", "Homem Aranha", "Homem-Aranha")]
+    [InlineData("the sopranos", "The Sopranos", "Família Soprano")]
+    [InlineData("severance", "Severance", "Ruptura")]
+    [InlineData("baby reindeer", "Baby Reindeer", "Bebê Rena")]
+    [InlineData("hora de aventura", "Hora da Aventura", "Hora de Aventura")]
+    [InlineData("the twilight zone", "the twilight zone", "Além da Imaginação (1985)")]
+    [InlineData("breaking bad", "Breaking Bad", "Breaking Bad")]   // sem override: devolve o padrão
+    public void NomeExibicao_troca_so_o_que_tem_override(string chave, string padrao, string esperado) =>
+        Assert.Equal(esperado, MediaNomeParser.NomeExibicao(chave, padrao));
+
+    [Fact]
+    public void NomeExibicao_chave_nula_devolve_o_padrao() =>
+        Assert.Equal("X", MediaNomeParser.NomeExibicao(null, "X"));
+
+    // Regressão real: "FS.03x01..." (Família Soprano T3, TorrentDosFilmesHD) aparecia como uma
+    // série à parte chamada "FS 03 720p Dub-TorrentDosFilmesHD", separada de The Sopranos T1/T2.
+    [Fact]
+    public void ChaveAgrupamento_resolve_apelido_da_familia_soprano()
+    {
+        Assert.Equal(
+            MediaNomeParser.ChaveAgrupamento("The Sopranos"),
+            MediaNomeParser.ChaveAgrupamento("FS 03 720p Dub-TorrentDosFilmesHD"));
+    }
+
     // ─── NomePastaExibicao: nome limpo de pasta filme+extras ────────────
 
     [Fact]
@@ -405,8 +446,12 @@ public class MediaNomeParserTests
     [Fact]
     public void NomePastaExibicao_tira_pontos_qualidade_e_assinatura_de_release()
     {
-        Assert.Equal("TRILOGIA Homem-Aranha",
+        // pontos, tag de qualidade e assinatura de release somem; a palavra da coleção
+        // ("TRILOGIA") também (ver RePrefixoColecao), então sobra só o nome da obra.
+        Assert.Equal("Homem-Aranha",
             MediaNomeParser.NomePastaExibicao("extra/TRILOGIA.Homem-Aranha.1080p-RICKSZ"));
+        Assert.Equal("Homem-Aranha 2",
+            MediaNomeParser.NomePastaExibicao("extra/Homem-Aranha.2.1080p-RICKSZ"));
     }
 
     // Regressão real: propaganda de site dentro de colchete ("[ACESSE COMANDOTORRENTS.COM]")
