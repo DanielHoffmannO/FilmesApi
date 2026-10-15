@@ -335,6 +335,9 @@ public static partial class MediaNomeParser
         // "Hora da Aventura" (grafia de release, preposição errada) vs "Hora de Aventura"
         // (título oficial BR de Adventure Time) — mesma série, palavra diferente.
         ["hora da aventura"] = "hora de aventura",
+        // "Ataque dos Titãs" (pasta de T1-T3 em português, "AoTDublado01x01") vs "Attack on Titan"
+        // (releases CR WEB-DL de T3/T4): mesma série, o catálogo mostrava duas.
+        ["attack on titan"] = "ataque dos titas",
     };
 
     private static string NormalizarAcentoCase(string s)

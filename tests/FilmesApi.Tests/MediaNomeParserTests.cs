@@ -247,6 +247,28 @@ public class MediaNomeParserTests
             MediaNomeParser.ChaveAgrupamento("Hora da Aventura"));
     }
 
+    // Regressão real: "Ataque dos Titãs" (T1-T3, pasta em português) e as releases
+    // "Attack.on.Titan.S03/S04..." (CR WEB-DL) apareciam como duas séries no catálogo.
+    [Fact]
+    public void ChaveAgrupamento_resolve_apelido_ataque_dos_titas()
+    {
+        Assert.Equal(
+            MediaNomeParser.ChaveAgrupamento("Ataque dos Titãs"),
+            MediaNomeParser.ChaveAgrupamento("Attack on Titan"));
+    }
+
+    [Fact]
+    public void Release_attack_on_titan_cai_na_mesma_serie_da_pasta_em_portugues()
+    {
+        var c1 = MediaNomeParser.Classificar(
+            "extra/Attack.on.Titan.S04.1080p.CR.WEB-DL.AAC2.0.H.264.DUAL-SiGLA/Attack.on.Titan.S04E01.The.Other.Side.of.the.Sea.1080p.CR.WEB-DL.AAC2.0.H.264.DUAL-SiGLA.mkv",
+            "The Other Side of the Sea");
+        var c2 = MediaNomeParser.Classificar("Ataque dos Titãs/AoTDublado03x18.mkv", "AoTDublado03x18");
+        Assert.Equal(c1.SerieChave, c2.SerieChave);
+        Assert.Equal(4, c1.Temporada);
+        Assert.Equal(3, c2.Temporada);
+    }
+
     // ─── ChaveAgrupamento: tolerância a acento/maiúscula na chave de agrupar ────────────
 
     [Theory]
