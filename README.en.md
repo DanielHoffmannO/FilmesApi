@@ -28,7 +28,7 @@ on-demand transcoding and hardware acceleration (RK3399/RK3588 VPU) when availab
   board doesn't overheat.
 - **Resume playback** — remembers each movie's position and resumes without a jump.
 - **Next episode** — at the end of an episode, offers the next one with a countdown.
-- **Embedded subtitles** — extracts text tracks to WebVTT and serves them as `<track>` (native CC menu).
+- **Embedded and external subtitles** — extracts text tracks to WebVTT and serves them as `<track>` (native CC menu); a loose `.srt` next to the video or in a `Legendas/` folder is picked up too.
 - **Old smart TV screen** (`tv.html`) — standalone catalog you navigate with the TV's own remote,
   pure ES5. Plays HLS when the TV supports it (MediaSource or native `<video>` HLS); on a TV
   with neither, still fixes incompatible audio via `/remux` before falling back to the raw file.
@@ -117,8 +117,11 @@ pipe with no `Content-Length`. Falls back to the raw original only if the video 
 incompatible.
 
 - **Audio track:** auto-picks Portuguese, then the default track, then the first.
-- **Subtitles:** not muxed into HLS. Text tracks (SRT/ASS/mov_text) are extracted to WebVTT
-  on demand and served as `<track>`. Bitmap subs (PGS/VobSub) can't be converted.
+- **Subtitles:** not muxed into HLS. Text tracks (SRT/ASS/mov_text), embedded or external, are
+  extracted to WebVTT on demand and served as `<track>`. External files (`.srt .vtt .ass .ssa`)
+  next to the video or in a `Legendas/`/`Subs/` subfolder match by name, episode marker
+  (`S01E02`) or language suffix (`Movie.pt-BR.srt`), UTF-8 or Windows-1252; the list is sorted
+  Portuguese-first. On the TV the subtitle is drawn over the video. Bitmap subs (PGS/VobSub) can't be converted.
 - **Protections:** stall detector (kills a stuck ffmpeg after 8 min), orphan cancellation
   (aborts a transcode nobody is watching after `HlsOrphanTimeoutSeconds`), optional thermal
   governor (holds new transcodes while the board is too hot).

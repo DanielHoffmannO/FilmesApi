@@ -28,7 +28,7 @@ transcodificação sob demanda e aceleração por hardware (VPU do RK3399/RK3588
   pra não fritar a placa.
 - **Continuar de onde parou** — guarda a posição de cada filme e retoma sem pulo.
 - **Próximo episódio** — no fim de um episódio, oferece o próximo da série com contagem regressiva.
-- **Legendas embutidas** — extrai as faixas de texto pra WebVTT e serve como `<track>` (menu CC nativo).
+- **Legendas embutidas e externas** — extrai as faixas de texto pra WebVTT e serve como `<track>` (menu CC nativo); `.srt` solto ao lado do vídeo ou numa pasta `Legendas/` também entra.
 - **Tela pra smart TV antiga** (`tv.html`) — catálogo navegável pelo controle da própria TV, em
   ES5 puro. Toca HLS quando a TV suporta (MediaSource ou HLS nativo do `<video>`); numa TV sem
   nenhum dos dois, ainda arruma o áudio incompatível via `/remux` antes de cair pro arquivo cru.
@@ -131,6 +131,22 @@ filtrados como extras.
 
 Extensões reconhecidas: `.mp4 .mkv .avi .mov .wmv .flv .webm`
 
+### Legendas
+
+Além das faixas embutidas no arquivo, entram as legendas **externas** (`.srt .vtt .ass .ssa`) que
+estiverem ao lado do vídeo ou numa subpasta com nome de legenda (`Legendas`, `Subs`, `eng_subs`…,
+um nível só):
+
+- Casam pelo nome do vídeo, ignorando acento e pontuação (`23 -Hawaii.srt` casa com `23 - Hawaii.mp4`),
+  pelo mesmo marcador de episódio (`S01E02`, `1x02`) ou com sufixo de idioma (`Filme.pt-BR.srt`).
+  Se o vídeo é o único da pasta, uma legenda de nome diferente também vale.
+- O idioma vem do sufixo do nome ou da subpasta (`por`, `eng`, `spa`…); sem isso a legenda fica sem idioma.
+- Texto em UTF-8 ou Windows-1252 (comum em release brasileiro) é lido sem estragar os acentos.
+- Links simbólicos e arquivos vazios são ignorados.
+- A lista sai ordenada pra quem quer português: português completo, português SDH/CC, sem idioma,
+  outro idioma, forçada, bitmap. O botão de legenda (celular e TV) pega a primeira. Se o áudio tocado
+  não é em português, a melhor legenda já é extraída pro cache em segundo plano ao abrir o filme.
+
 ### Agrupando franquias e coleções
 
 - **Franquia por título** — filmes em sequência (`Homem-Aranha`, `Homem-Aranha 2`,
@@ -197,8 +213,10 @@ _default_, senão a primeira. (Rip dual-áudio costuma vir com a faixa errada co
 Sempre reencodada pra **AAC estéreo** (`-ac 2`): AAC 5.1/7.1 sem `channel_layout` reconhecido
 é rejeitado _em silêncio_ pelo decoder do Chrome (MSE/hls.js) — o vídeo não toca e não há erro.
 
-**Legendas:** não são muxadas no HLS. As faixas de **texto** (SRT/ASS/mov_text) são extraídas
-sob demanda pra WebVTT (`/api/filmes/{id}/legenda/{idx}`) e servidas como `<track>`. Legenda
+**Legendas:** não são muxadas no HLS. As faixas de **texto** (SRT/ASS/mov_text), embutidas ou em
+arquivo externo, são extraídas sob demanda pra WebVTT (`/api/filmes/{id}/legenda/{idx}`) e servidas
+como `<track>`; as externas numeram depois das embutidas. Na TV a legenda é desenhada por cima do
+vídeo (muitas TVs não renderizam `<track>`) e, se o vídeo entrar em tela cheia nativa, vira `<track>` nativo. Legenda
 **bitmap** (PGS/VobSub) não dá pra converter em texto — fica listada como `convertivel: false`.
 
 **Proteções:**
@@ -353,7 +371,7 @@ filmes ainda sem metadados (roda ~30s depois do boot e reprocessa a cada scan).
 | `GET` | `/api/filmes/{id}/original` | Sempre o arquivo original, sem transcodificar (VLC etc.). |
 | `GET` | `/api/filmes/{id}/hls/playlist.m3u8` | Manifesto HLS (dispara/reusa o transcode). `202` enquanto prepara, `409` se o arquivo já é compatível direto (use `/stream`), `500` se o transcode falhou. |
 | `GET` | `/api/filmes/{id}/hls/{seg}.ts` | Segmentos HLS. |
-| `GET` | `/api/filmes/{id}/legendas` | Faixas de legenda embutidas. |
+| `GET` | `/api/filmes/{id}/legendas` | Faixas de legenda (embutidas + externas), a melhor primeiro. O `idx` identifica a faixa em `/legenda/{idx}` e não muda com a ordem da lista. |
 | `GET` | `/api/filmes/{id}/legenda/{idx}` | Uma faixa de texto convertida pra WebVTT. |
 | `GET` | `/api/filmes/{id}/audios` | Faixas de áudio embutidas ("dublagens"). `{idx, codec, idioma, default, atual}` — `idx` é o índice global do ffprobe (bate com o `-map` do ffmpeg). |
 | `POST` | `/api/filmes/{id}/audio` | `{idx}` — troca a faixa de áudio preferida. Cancela um job de HLS/remux em andamento e invalida o cache pra regerar com a faixa nova (o áudio vai dentro dos segments/arquivo, não dá pra trocar sem reprocessar). |
@@ -382,7 +400,7 @@ Estado único em memória (`PlayerStateService`) — pensado pra uma casa com um
 | Método | Rota | Descrição |
 |---|---|---|
 | `GET` | `/api/status` | Temperatura, fila de transcode, cache, estado da VPU (consumido pela `status.html`). |
-| `POST` | `/api/diag/log` | `{msg}` — o `tv.html` manda erro de JS/hls.js/`<video>` pra cá (cai no log do servidor). TV não tem console acessível; sem isso não dava pra depurar o que acontecia na tela dela. |
+| `POST` | `/api/diag/log` | `{msg}` (cortada em 500 caracteres) — o `tv.html` manda erro de JS/hls.js/`<video>` pra cá (cai no log do servidor). TV não tem console acessível; sem isso não dava pra depurar o que acontecia na tela dela. |
 | `GET` | `/health` | Health check (usado pelo `healthcheck` do `docker-compose.yml`): checa se `MediaPath` está montado e se o binário do ffmpeg existe. |
 
 ---

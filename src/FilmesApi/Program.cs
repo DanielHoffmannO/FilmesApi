@@ -109,7 +109,9 @@ app.MapHealthChecks("/health");
 // é só pra depuração pontual.
 app.MapPost("/api/diag/log", (DiagLogRequest req, ILoggerFactory lf) =>
 {
-    lf.CreateLogger("TvDiag").LogWarning("[tv.html] {Msg}", req.Msg);
+    // Sem autenticação (rede de casa): limita o tamanho pra um cliente bugado não inundar o log.
+    var msg = req.Msg ?? "";
+    lf.CreateLogger("TvDiag").LogWarning("[tv.html] {Msg}", msg.Length > 500 ? msg[..500] : msg);
     return Results.NoContent();
 });
 
