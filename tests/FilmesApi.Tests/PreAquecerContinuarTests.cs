@@ -19,21 +19,12 @@ public class PreAquecerContinuarTests : IDisposable
         Directory.Delete(_bin, recursive: true);
     }
 
-    private string Script(string nome, string corpo)
-    {
-        var caminho = Path.Combine(_bin, nome);
-        File.WriteAllText(caminho, "#!/bin/sh\n" + corpo + "\n");
-        if (!OperatingSystem.IsWindows())
-            File.SetUnixFileMode(caminho, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-        return caminho;
-    }
-
-    private string FfprobeComAudio(string codec) => Script($"ffprobe-{codec}.sh", $$$"""
+    private string FfprobeComAudio(string codec) => TestesComuns.ScriptFalso(_bin, $"ffprobe-{codec}.sh", $$$"""
         echo '{"streams":[{"index":0,"codec_type":"video","codec_name":"h264","width":1280,"height":720},{"index":1,"codec_type":"audio","codec_name":"{{{codec}}}","channels":6,"tags":{"language":"eng"}}],"format":{"duration":"3600.0"}}'
         """);
 
     /// <summary>ffmpeg falso: demora <paramref name="segundos"/> e grava 2 MB no último argumento (o arquivo de saída).</summary>
-    private string FfmpegFalso(double segundos) => Script($"ffmpeg-{segundos}.sh", $"""
+    private string FfmpegFalso(double segundos) => TestesComuns.ScriptFalso(_bin, $"ffmpeg-{segundos}.sh", $"""
         for a; do ultimo="$a"; done
         sleep {segundos.ToString(System.Globalization.CultureInfo.InvariantCulture)}
         head -c 2097152 /dev/zero > "$ultimo"

@@ -65,7 +65,7 @@ public class NomesPersonalizadosService(IConfiguration config, ILogger<NomesPers
                 MediaNomeParser.DefinirNomesPersonalizados(arquivo);
                 _temPersonalizado = true;
                 logger.LogInformation("nomes.json aplicado: {Apelidos} apelido(s), {Nomes} nome(s) de exibição, {Ignorar} padrão(ões) em ignorar, {Tipos} tipo(s).",
-                    arquivo.Apelidos.Count, arquivo.Nomes.Count, arquivo.Ignorar.Count, arquivo.Tipos.Count);
+                    arquivo.Contagem.Apelidos, arquivo.Contagem.Nomes, arquivo.Contagem.Ignorar, arquivo.Contagem.Tipos);
                 return (Resultado.Aplicado, arquivo);
             }
             catch (Exception ex) when (ex is JsonException or FormatException or IOException or UnauthorizedAccessException)
@@ -145,4 +145,9 @@ public sealed record NomesArquivo(
 {
     public const string TipoFilme = "filme";
     public static NomesArquivo Vazio => new([], [], [], []);
+
+    /// <summary>Quantas entradas de cada tipo vieram do arquivo (pro log e pro <c>POST /api/admin/recarregar-nomes</c>).</summary>
+    public ContagemNomes Contagem => new(Apelidos.Count, Nomes.Count, Ignorar.Count, Tipos.Count);
 }
+
+public record ContagemNomes(int Apelidos, int Nomes, int Ignorar, int Tipos);

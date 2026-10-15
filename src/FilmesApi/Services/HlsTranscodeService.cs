@@ -253,7 +253,7 @@ public class HlsTranscodeService
 
             // Ficou na fila (slot/temperatura) e quem pediu já foi embora: nem começa. (Pré-aquecimento não tem quem
             // peça: ele mesmo confere de novo se ainda vale a pena começar.)
-            if (_remuxQuente.ContainsKey(filmeId) ? CederPreAquecimento() : SemInteresse(filmeId)) { RemuxOrfao(filmeId); return; }
+            if (DeveAbortarRemux(filmeId)) { RemuxOrfao(filmeId); return; }
 
             var info = await _probe.InspecionarAsync(origem, CancellationToken.None)
                 ?? throw new InvalidOperationException("probe falhou");
@@ -270,7 +270,7 @@ public class HlsTranscodeService
             // a assistir não pode remuxar o arquivo inteiro de graça.
             bool Travou()
             {
-                var abortar = _remuxQuente.ContainsKey(filmeId) ? CederPreAquecimento() : SemInteresse(filmeId);
+                var abortar = DeveAbortarRemux(filmeId);
                 if (abortar) orfao = true;
                 return abortar;
             }
@@ -280,8 +280,7 @@ public class HlsTranscodeService
             if (orfao)
             {
                 RemuxOrfao(filmeId);
-                _escrita.ContarArquivo(tmp);
-                try { if (File.Exists(tmp)) File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+                DescartarTmp(tmp);
                 return;
             }
             if (exit != 0) throw new InvalidOperationException($"ffmpeg exit {exit}: {stderr}");
@@ -295,15 +294,13 @@ public class HlsTranscodeService
             // Shutdown do host OU troca manual de dublagem (DefinirPreferenciaAudio) — não
             // marca _remuxFalhas: fica retentável na próxima vez que alguém pedir /remux-status.
             _logger.LogInformation("Remux do filme {Id} interrompido.", filmeId);
-            _escrita.ContarArquivo(tmp);
-            try { if (File.Exists(tmp)) File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            DescartarTmp(tmp);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Falha ao remuxar filme {Id}.", filmeId);
             _remuxFalhas[filmeId] = DateTime.UtcNow;
-            _escrita.ContarArquivo(tmp);
-            try { if (File.Exists(tmp)) File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            DescartarTmp(tmp);
         }
         finally
         {
@@ -321,6 +318,19 @@ public class HlsTranscodeService
         Interlocked.Increment(ref _esperandoSlot);
         try { await _slotEncoder.WaitAsync(ct); }
         finally { Interlocked.Decrement(ref _esperandoSlot); }
+    }
+
+    /// <summary>A mesma pergunta nos dois pontos do remux (antes de começar e a cada ~2 s com o ffmpeg rodando): pré-aquecimento
+    /// cede se alguém precisa do encoder ou a placa esquentou; remux pedido de verdade aborta se ninguém olha mais.</summary>
+    private bool DeveAbortarRemux(int filmeId) => _remuxQuente.ContainsKey(filmeId) ? CederPreAquecimento() : SemInteresse(filmeId);
+
+    /// <summary>Joga fora o remux parcial (cancelado, órfão ou falho), contando o que já foi gravado.</summary>
+    private void DescartarTmp(string tmp)
+    {
+        _escrita.ContarArquivo(tmp);
+        try { if (File.Exists(tmp)) File.Delete(tmp); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     private bool CederPreAquecimento() => PoliticaPreAquecimento.DeveCeder(Volatile.Read(ref _esperandoSlot), _thermal.EstaThrottling);
@@ -900,18 +910,11 @@ public class HlsTranscodeService
 
     private (long Bytes, int Itens) MedirCacheRemux()
     {
-        long total = 0;
-        var itens = 0;
         try
         {
-            if (Directory.Exists(_remuxCachePath))
-                foreach (var arquivo in Directory.EnumerateFiles(_remuxCachePath))
-                {
-                    try { total += new FileInfo(arquivo).Length; } catch (IOException) { continue; }
-                    if (arquivo.EndsWith(".mp4", StringComparison.Ordinal)) itens++;
-                }
+            var itens = Directory.Exists(_remuxCachePath) ? Directory.EnumerateFiles(_remuxCachePath, "*.mp4").Count() : 0;
+            return (EscritaDeCache.TamanhoDaPasta(_remuxCachePath), itens);
         }
-        catch (IOException) { }
-        return (total, itens);
+        catch (IOException) { return (0, 0); }
     }
 }
