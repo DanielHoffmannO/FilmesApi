@@ -10,6 +10,7 @@ public class FilmeService
     private readonly HlsTranscodeService _transcode;
     private readonly SubtitleService _legendas;
     private readonly ProgressoService _progresso;
+    private readonly ClassificacaoCache _classificacao;
     private readonly ILogger<FilmeService> _logger;
     private readonly string _mediaPath;
     private static readonly string[] VideoExtensions = [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm"];
@@ -18,19 +19,20 @@ public class FilmeService
     private static readonly SemaphoreSlim _scanLock = new(1, 1);
 
     public FilmeService(AppDbContext db, HlsTranscodeService transcode, SubtitleService legendas,
-        ProgressoService progresso, IConfiguration config, ILogger<FilmeService> logger)
+        ProgressoService progresso, ClassificacaoCache classificacao, IConfiguration config, ILogger<FilmeService> logger)
     {
         _db = db;
         _transcode = transcode;
         _legendas = legendas;
         _progresso = progresso;
+        _classificacao = classificacao;
         _logger = logger;
         _mediaPath = config.GetValue<string>("MediaPath") ?? "/media";
     }
 
     // Projeção SQL — só as colunas do banco + o ponto de retomada (LEFT JOIN em Progressos).
     // Todos os args explícitos: expression tree não aceita construtor com args opcionais.
-    // Os campos de classificação vêm depois, em memória (ComClassificacao) — regex não roda em SQL.
+    // Os campos de classificação vêm depois, em memória (ClassificacaoCache) — regex não roda em SQL.
     private static readonly System.Linq.Expressions.Expression<Func<Filme, FilmeResponse>> ToResponse =
         f => new FilmeResponse(
             f.Id, f.Titulo, f.AnoLancamento, f.ArquivoPath, f.Assistido, f.DataAdicionado,
@@ -39,32 +41,12 @@ public class FilmeService
             f.PosterUrl, f.Sinopse, f.TituloOriginal,
             false, false, null, null, null, null, "", "Sem pasta");
 
-    /// <summary>Preenche série/episódio/rótulo a partir do caminho do arquivo.
-    /// <paramref name="contagemNumeradosPorPasta"/> — ver <see cref="MediaNomeParser.ContarNumeradosPorPasta"/>,
-    /// calculado uma vez sobre o catálogo inteiro por quem chama em lote (<see cref="ListarAsync"/>).</summary>
-    public static FilmeResponse ComClassificacao(FilmeResponse f, IReadOnlyDictionary<string, int>? contagemNumeradosPorPasta = null)
-    {
-        var c = MediaNomeParser.Classificar(f.ArquivoPath, f.Titulo, contagemNumeradosPorPasta);
-        return f with
-        {
-            EhEpisodio = c.EhEpisodio,
-            EhExtra = c.EhExtra,
-            Serie = c.Serie,
-            SerieChave = c.SerieChave,
-            Temporada = c.Temporada,
-            Episodio = c.Episodio,
-            Rotulo = c.Rotulo,
-            Pasta = c.Pasta,
-        };
-    }
-
     public async Task<List<FilmeResponse>> ListarAsync()
     {
         var lista = await _db.Filmes.AsNoTracking()
             .OrderByDescending(f => f.DataAdicionado).Select(ToResponse).ToListAsync();
 
-        var contagem = MediaNomeParser.ContarNumeradosPorPasta(lista.Select(f => f.ArquivoPath));
-        return lista.Select(f => ComClassificacao(f, contagem)).ToList();
+        return _classificacao.Classificar(lista);
     }
 
     /// <summary>Monta a tela pronta pra desenhar — orquestra o que <see cref="CatalogoAgrupador.Montar"/>

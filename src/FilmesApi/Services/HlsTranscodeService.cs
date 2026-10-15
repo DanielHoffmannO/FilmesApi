@@ -116,7 +116,7 @@ public class HlsTranscodeService
     public string DiretorioCache(int filmeId) => Path.Combine(_cachePath, filmeId.ToString());
     public string CaminhoPlaylist(int filmeId) => Path.Combine(DiretorioCache(filmeId), "playlist.m3u8");
 
-    private static readonly Regex SegmentoValido = new(@"^seg_\d{5}\.ts$", RegexOptions.Compiled);
+    private static readonly Regex SegmentoValido = new(@"^seg_[0-9]{5}\.ts\z", RegexOptions.Compiled);
 
     /// <summary>Caminho de um segment HLS já gerado, ou null se o nome não é um segment
     /// legítimo (<c>seg_00001.ts</c> — barra path traversal) ou o arquivo não existe.
