@@ -15,20 +15,23 @@ public class ReproducaoController : ControllerBase
     private readonly SubtitleService _legendas;
     private readonly RkmppCapabilityService _rkmpp;
     private readonly ThermalService _thermal;
+    private readonly EstadoMontagens _montagens;
 
     public ReproducaoController(
         FilmeService service, HlsTranscodeService transcode, SubtitleService legendas,
-        RkmppCapabilityService rkmpp, ThermalService thermal)
+        RkmppCapabilityService rkmpp, ThermalService thermal, EstadoMontagens montagens)
     {
         _service = service;
         _transcode = transcode;
         _legendas = legendas;
         _rkmpp = rkmpp;
         _thermal = thermal;
+        _montagens = montagens;
     }
 
     /// <summary>Diagnóstico de runtime pro dono do servidor: temperatura da placa, fila de
-    /// transcode, uso do cache, estado da VPU. Consumido por <c>wwwroot/status.html</c>.</summary>
+    /// transcode, uso do cache, estado da VPU, e por pasta/disco de 1º nível se o catálogo bate com o que
+    /// está no disco (<c>montagens</c>, do último scan). Consumido por <c>wwwroot/status.html</c>.</summary>
     [HttpGet("/api/status")]
     public IActionResult Status() => Ok(new
     {
@@ -41,6 +44,8 @@ public class ReproducaoController : ControllerBase
             temperaturaC = _thermal.TemperaturaC(),
             throttlingAgora = _thermal.EstaThrottling,
         },
+        montagens = _montagens.Montagens,
+        montagensAtualizadoEm = _montagens.AtualizadoEm,
     });
 
     /// <summary>Keepalive do player: "ainda tem alguém assistindo este filme". Sem isso, o

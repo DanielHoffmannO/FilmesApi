@@ -16,7 +16,7 @@ public class NomesPersonalizadosTests : IDisposable
 
     public void Dispose()
     {
-        MediaNomeParser.DefinirNomesPersonalizados(null, null);
+        MediaNomeParser.DefinirNomesPersonalizados(null);
         Directory.Delete(_dir, recursive: true);
     }
 
@@ -29,20 +29,22 @@ public class NomesPersonalizadosTests : IDisposable
     [Fact]
     public void Le_apelidos_e_nomes()
     {
-        var (a, n) = NomesPersonalizadosService.Ler("""
+        var arq = NomesPersonalizadosService.Ler("""
             { "apelidos": { "attack on titan": "ataque dos titas" }, "nomes": { "ataque dos titas": "Ataque dos Titãs" }, "outra": 1 }
             """);
 
-        Assert.Equal("ataque dos titas", a["attack on titan"]);
-        Assert.Equal("Ataque dos Titãs", n["ataque dos titas"]);
+        Assert.Equal("ataque dos titas", arq.Apelidos["attack on titan"]);
+        Assert.Equal("Ataque dos Titãs", arq.Nomes["ataque dos titas"]);
     }
 
     [Fact]
     public void Secoes_ausentes_valem_como_vazias()
     {
-        var (a, n) = NomesPersonalizadosService.Ler("{}");
-        Assert.Empty(a);
-        Assert.Empty(n);
+        var arq = NomesPersonalizadosService.Ler("{}");
+        Assert.Empty(arq.Apelidos);
+        Assert.Empty(arq.Nomes);
+        Assert.Empty(arq.Ignorar);
+        Assert.Empty(arq.Tipos);
     }
 
     [Theory]
@@ -123,7 +125,9 @@ public class NomesPersonalizadosTests : IDisposable
 
         var r = Servico().Recarregar();
 
-        Assert.Equal((NomesPersonalizadosService.Resultado.Aplicado, 1, 1), r);
+        Assert.Equal(NomesPersonalizadosService.Resultado.Aplicado, r.Resultado);
+        Assert.Single(r.Arquivo.Apelidos);
+        Assert.Single(r.Arquivo.Nomes);
         Assert.Equal("zz canonica teste", MediaNomeParser.ChaveAgrupamento("zz serie teste"));
         Assert.Equal("ZZ Série Teste Bonita", MediaNomeParser.NomeExibicao("zz canonica teste", "feio"));
         Assert.Equal("diarios de um vampiro", MediaNomeParser.ChaveAgrupamento("DDUV"));   // padrão intacto

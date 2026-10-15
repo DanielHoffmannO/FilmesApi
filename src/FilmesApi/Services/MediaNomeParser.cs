@@ -384,6 +384,8 @@ public static partial class MediaNomeParser
     // dicionário pela metade.
     private static volatile Dictionary<string, string> _apelidos = ApelidosPadrao;
     private static volatile Dictionary<string, string> _nomes = NomesPadrao;
+    private static volatile Regex[] _ignorar = [];
+    private static volatile HashSet<string> _forcarFilme = [];
     private static int _versaoNomes;
 
     /// <summary>Muda a cada troca de <c>nomes.json</c> — quem guarda classificação já calculada
@@ -413,14 +415,25 @@ public static partial class MediaNomeParser
         return (a, n);
     }
 
-    /// <summary>Passa a valer o padrão + o arquivo (null/null = só o padrão).</summary>
-    internal static void DefinirNomesPersonalizados(IReadOnlyDictionary<string, string>? apelidos, IReadOnlyDictionary<string, string>? nomes)
+    /// <summary>Passa a valer o padrão + o arquivo (null = só o padrão, sem ignorar nem tipos).</summary>
+    internal static void DefinirNomesPersonalizados(NomesArquivo? arquivo)
     {
-        var (a, n) = Mesclar(apelidos, nomes);
+        var (a, n) = Mesclar(arquivo?.Apelidos, arquivo?.Nomes);
         _apelidos = a;
         _nomes = n;
+        _ignorar = (arquivo?.Ignorar ?? []).Where(g => !string.IsNullOrWhiteSpace(g)).Select(g => GlobCaminho.ParaRegex(g.Trim())).ToArray();
+        _forcarFilme = (arquivo?.Tipos ?? new Dictionary<string, string>())
+            .Where(kv => kv.Value == NomesArquivo.TipoFilme)
+            .Select(kv => NormalizarAcentoCase(kv.Key))
+            .Where(k => k.Length > 0)
+            .ToHashSet();
         Interlocked.Increment(ref _versaoNomes);
     }
+
+    /// <summary>O caminho relativo bate com algum padrão de <c>ignorar</c> do <c>nomes.json</c>? Aí o arquivo some
+    /// do catálogo, do scan e do diagnóstico (mas continua no disco).</summary>
+    public static bool Ignorado(string? caminhoRelativo) =>
+        caminhoRelativo is not null && Array.Exists(_ignorar, r => r.IsMatch(caminhoRelativo));
 
     public static string NomeExibicao(string? chave, string nomePadrao) =>
         chave is not null && _nomes.TryGetValue(chave, out var nome) ? nome : nomePadrao;
@@ -509,6 +522,10 @@ public static partial class MediaNomeParser
             return new ClassificacaoMidia(false, EhExtra(arquivoPath), null, null, null, null, titulo, pasta);
 
         var serie = ChaveSerie(arquivoPath);
+        // "tipos": a pessoa já disse que essa "série" é filme (um SxxExx falso no nome enganou o parser)
+        if (_forcarFilme.Contains(ChaveAgrupamento(serie) ?? ""))
+            return new ClassificacaoMidia(false, EhExtra(arquivoPath), null, null, null, null, titulo, pasta);
+
         return new ClassificacaoMidia(
             EhEpisodio: true,
             EhExtra: EhExtra(arquivoPath),

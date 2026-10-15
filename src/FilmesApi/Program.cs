@@ -1,6 +1,7 @@
 using System.Reflection;
 using FilmesApi.Data;
 using FilmesApi.Services;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.OpenApi;
@@ -22,6 +23,7 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
 builder.Services.AddSingleton(FfmpegOptions.From(builder.Configuration));
 builder.Services.AddSingleton<MediaProbeService>();
 builder.Services.AddSingleton<ClassificacaoCache>();
+builder.Services.AddSingleton<EstadoMontagens>();
 builder.Services.AddScoped<FilmeService>();
 builder.Services.AddScoped<ProgressoService>();
 builder.Services.AddSingleton<RkmppCapabilityService>();
@@ -30,6 +32,7 @@ builder.Services.AddSingleton<HlsTranscodeService>();
 builder.Services.AddSingleton<SubtitleService>();
 builder.Services.AddSingleton<PlayerStateService>();
 builder.Services.AddHostedService<ScanPeriodicoService>();
+builder.Services.AddHostedService<PreAquecerContinuarService>();
 builder.Services.AddSingleton<NomesPersonalizadosService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<NomesPersonalizadosService>());
 builder.Services.AddHttpClient();
@@ -63,7 +66,8 @@ builder.Services.AddHealthChecks()
     {
         var ff = builder.Configuration.GetValue<string>("FfmpegPath") ?? "ffmpeg";
         return !Path.IsPathRooted(ff) || File.Exists(ff) ? HealthCheckResult.Healthy() : HealthCheckResult.Unhealthy($"ffmpeg '{ff}' não existe");
-    });
+    })
+    .AddCheck<MontagensHealthCheck>("montagens");
 
 // CORS: as páginas são same-origin. Só libera geral se AllowAnyOrigin=true (caso alguém sirva
 // as telas de outro host); por padrão, sem CORS.
@@ -92,6 +96,21 @@ if (app.Configuration.GetValue<bool>("AllowAnyOrigin")) app.UseCors();
 // (compartilhados entre as 3) são nossos e mudam junto — sem no-cache aqui, TV agressiva em
 // cache pode continuar rodando um util.js/base.css velho mesmo depois de um F5 na página.
 // vendor/hls.min.js é biblioteca de terceiro vendorizada, não muda sozinha: cache normal está bem.
+// AdminToken (opcional): exige X-Admin-Token em /api/admin/* e no scan manual. Vazio = aberto, como sempre foi.
+var adminToken = app.Configuration.GetValue<string>("AdminToken");
+if (!string.IsNullOrEmpty(adminToken))
+    app.Use(async (ctx, next) =>
+    {
+        if (TokenAdmin.Protegida(ctx.Request.Method, ctx.Request.Path)
+            && !TokenAdmin.Autorizado(adminToken, ctx.Request.Headers[TokenAdmin.Header].FirstOrDefault()))
+        {
+            ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await ctx.Response.WriteAsJsonAsync(new { mensagem = $"token de administrador ausente ou errado (header {TokenAdmin.Header})." });
+            return;
+        }
+        await next();
+    });
+
 app.UseStaticFiles(new StaticFileOptions
 {
     OnPrepareResponse = ctx =>
@@ -105,7 +124,19 @@ app.UseStaticFiles(new StaticFileOptions
 app.UseSwagger();
 app.UseSwaggerUI(c => c.RoutePrefix = "swagger");
 app.MapControllers();
-app.MapHealthChecks("/health");
+// /health: o que o Uptime Kuma olha — disco/pasta caída ("Degraded") vira 503 pra avisar. /health/vivo é o do
+// healthcheck do Docker: só 503 se o app estiver mesmo quebrado, então "montagem caída" nunca marca o contêiner
+// como unhealthy (e nada reinicia por causa disso).
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    ResultStatusCodes =
+    {
+        [HealthStatus.Healthy] = StatusCodes.Status200OK,
+        [HealthStatus.Degraded] = StatusCodes.Status503ServiceUnavailable,
+        [HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable,
+    },
+});
+app.MapHealthChecks("/health/vivo");
 
 // Diagnostico client-side: tv.html nao tem console acessivel (TV sem devtools) — manda
 // erro de JS/hls.js/<video> pra cá, cai direto no docker logs. Sem persistir em banco:
@@ -121,10 +152,17 @@ app.MapPost("/api/diag/log", (DiagLogRequest req, ILoggerFactory lf) =>
 // Relê o nomes.json (apelidos de série/nomes de exibição) na hora, sem esperar os 15 s do relógio.
 app.MapPost("/api/admin/recarregar-nomes", (NomesPersonalizadosService nomes) =>
 {
-    var (resultado, apelidos, nomesLidos) = nomes.Recarregar();
+    var (resultado, arquivo) = nomes.Recarregar();
     return resultado == NomesPersonalizadosService.Resultado.Invalido
         ? Results.BadRequest(new { mensagem = "nomes.json inválido — veja o log do servidor; os nomes anteriores continuam valendo.", caminho = nomes.Caminho })
-        : Results.Ok(new { resultado = resultado.ToString().ToLowerInvariant(), apelidos, nomes = nomesLidos });
+        : Results.Ok(new
+        {
+            resultado = resultado.ToString().ToLowerInvariant(),
+            apelidos = arquivo.Apelidos.Count,
+            nomes = arquivo.Nomes.Count,
+            ignorar = arquivo.Ignorar.Count,
+            tipos = arquivo.Tipos.Count,
+        });
 });
 
 // TV Samsung antiga (Orsay): Menu Develop > IP Setting > Start App Sync baixa estes dois. O
