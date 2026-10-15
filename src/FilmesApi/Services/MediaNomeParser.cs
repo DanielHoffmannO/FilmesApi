@@ -425,6 +425,10 @@ public static partial class MediaNomeParser
     public static string NomeExibicao(string? chave, string nomePadrao) =>
         chave is not null && _nomes.TryGetValue(chave, out var nome) ? nome : nomePadrao;
 
+    /// <summary>Texto da busca/comparação: minúsculo, sem acento, espaços colapsados — "Família" e
+    /// "familia", "Espiãs" e "espias" ficam iguais.</summary>
+    public static string NormalizarBusca(string s) => NormalizarAcentoCase(s);
+
     private static string NormalizarAcentoCase(string s)
     {
         var sb = new StringBuilder(s.Length);

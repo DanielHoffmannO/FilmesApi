@@ -13,10 +13,10 @@ public class MontarTelaTests
     private static FilmeResponse F(
         int id, string titulo, string pasta = "Sem pasta", bool assistido = false,
         bool ehEpisodio = false, bool ehExtra = false, string? serie = null, string? serieChave = null,
-        int? temporada = null, int? episodio = null) =>
+        int? temporada = null, int? episodio = null, string? tituloEpisodio = null) =>
         new(id, titulo, null, null, assistido, DateTime.UtcNow, null, null,
             EhEpisodio: ehEpisodio, EhExtra: ehExtra, Serie: serie, SerieChave: serieChave,
-            Temporada: temporada, Episodio: episodio, Rotulo: "", Pasta: pasta);
+            Temporada: temporada, Episodio: episodio, Rotulo: "", Pasta: pasta, TituloEpisodio: tituloEpisodio);
 
     [Fact]
     public void Filme_sem_pasta_vira_filme_solto()
@@ -323,5 +323,44 @@ public class MontarTelaTests
         var serie = Assert.Single(tela.Series);
         Assert.Equal("Futurama", serie.Nome);
         Assert.Equal("futurama", serie.Chave);
+    }
+
+    // Regressão: a busca olhava só o texto cru ("The Sopranos"), então "família soprano" — o nome que a
+    // lista passou a mostrar — dava 0 resultados; sem acento ("espias") também não achava "Espiãs".
+    [Theory]
+    [InlineData("família soprano")]
+    [InlineData("FAMILIA SOPRANO")]
+    [InlineData("sopranos")]                       // o nome original continua achando
+    public void Busca_acha_serie_pelo_nome_exibido_sem_depender_de_acento(string busca)
+    {
+        var todos = new List<FilmeResponse>
+        {
+            F(1, "The Sopranos", ehEpisodio: true, serie: "The Sopranos", serieChave: "the sopranos", temporada: 1, episodio: 1),
+            F(2, "Futurama", ehEpisodio: true, serie: "Futurama", serieChave: "futurama", temporada: 1, episodio: 1),
+        };
+        var tela = CatalogoAgrupador.Montar(todos, [], "all", "all", busca);
+
+        var serie = Assert.Single(tela.Series);
+        Assert.Equal("Família Soprano", serie.Nome);
+    }
+
+    [Theory]
+    [InlineData("espias", 2)]
+    [InlineData("espiãs", 2)]
+    [InlineData("apagador", 1)]                    // título do episódio
+    [InlineData("o apagador", 1)]
+    [InlineData("nada disso", 0)]
+    public void Busca_ignora_acento_e_olha_o_titulo_do_episodio(string busca, int esperados)
+    {
+        var todos = new List<FilmeResponse>
+        {
+            F(1, "As 3 Espiãs Demais", ehEpisodio: true, serie: "As 3 Espiãs Demais", serieChave: "as 3 espias demais",
+              temporada: 1, episodio: 5, tituloEpisodio: "O Apagador"),
+            F(2, "As 3 Espiãs Demais", ehEpisodio: true, serie: "As 3 Espiãs Demais", serieChave: "as 3 espias demais",
+              temporada: 1, episodio: 7, tituloEpisodio: "As Fugitivas"),
+        };
+        var tela = CatalogoAgrupador.Montar(todos, [], "all", "all", busca);
+
+        Assert.Equal(esperados, tela.Series.Sum(s => s.Episodios.Count));
     }
 }

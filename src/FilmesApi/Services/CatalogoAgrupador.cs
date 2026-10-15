@@ -14,9 +14,14 @@ public static class CatalogoAgrupador
         List<FilmeResponse> todos, List<FilmeResponse> continuarCandidatos,
         string tipo, string visto, string? busca)
     {
-        var q = string.IsNullOrWhiteSpace(busca) ? null : busca.Trim().ToLowerInvariant();
+        // Sem acento/maiúscula, e procura também no nome que a TELA mostra (Família Soprano, Ruptura,
+        // Além da Imaginação) e no título do episódio — senão quem busca pelo nome em português que
+        // vê na lista não acha nada, porque o título guardado é o original ("The Sopranos").
+        var q = string.IsNullOrWhiteSpace(busca) ? null : MediaNomeParser.NormalizarBusca(busca);
         bool PassaBusca(FilmeResponse f) =>
-            q is null || (f.Titulo + " " + (f.Serie ?? "") + " " + (f.Pasta ?? "")).ToLowerInvariant().Contains(q);
+            q is null || MediaNomeParser.NormalizarBusca(string.Join(' ',
+                f.Titulo, f.TituloEpisodio, f.Serie, MediaNomeParser.NomeExibicao(f.SerieChave, f.Serie ?? ""),
+                f.Pasta, f.Pasta is null ? null : MediaNomeParser.NomePastaExibicao(f.Pasta))).Contains(q);
 
         var continuarAssistindo = tipo == "all" && visto == "all"
             ? continuarCandidatos.Where(PassaBusca).ToList()
