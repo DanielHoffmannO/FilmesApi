@@ -67,7 +67,7 @@ builder.Services.AddHealthChecks()
         var ff = builder.Configuration.GetValue<string>("FfmpegPath") ?? "ffmpeg";
         return !Path.IsPathRooted(ff) || File.Exists(ff) ? HealthCheckResult.Healthy() : HealthCheckResult.Unhealthy($"ffmpeg '{ff}' não existe");
     })
-    .AddCheck<MontagensHealthCheck>("montagens");
+    .AddCheck<MontagensHealthCheck>("montagens", tags: [MontagensHealthCheck.Tag]);
 
 // CORS: as páginas são same-origin. Só libera geral se AllowAnyOrigin=true (caso alguém sirva
 // as telas de outro host); por padrão, sem CORS.
@@ -125,8 +125,8 @@ app.UseSwagger();
 app.UseSwaggerUI(c => c.RoutePrefix = "swagger");
 app.MapControllers();
 // /health: o que o Uptime Kuma olha — disco/pasta caída ("Degraded") vira 503 pra avisar. /health/vivo é o do
-// healthcheck do Docker: só 503 se o app estiver mesmo quebrado, então "montagem caída" nunca marca o contêiner
-// como unhealthy (e nada reinicia por causa disso).
+// healthcheck do Docker: nem roda o check das montagens (tag "montagens"), então disco caído NUNCA o deixa unhealthy
+// (e nada reinicia por causa disso) — só 503 se o app estiver mesmo quebrado.
 app.MapHealthChecks("/health", new HealthCheckOptions
 {
     ResultStatusCodes =
@@ -136,7 +136,7 @@ app.MapHealthChecks("/health", new HealthCheckOptions
         [HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable,
     },
 });
-app.MapHealthChecks("/health/vivo");
+app.MapHealthChecks("/health/vivo", new HealthCheckOptions { Predicate = c => !c.Tags.Contains(MontagensHealthCheck.Tag) });
 
 // Diagnostico client-side: tv.html nao tem console acessivel (TV sem devtools) — manda
 // erro de JS/hls.js/<video> pra cá, cai direto no docker logs. Sem persistir em banco:
@@ -158,10 +158,10 @@ app.MapPost("/api/admin/recarregar-nomes", (NomesPersonalizadosService nomes) =>
         : Results.Ok(new
         {
             resultado = resultado.ToString().ToLowerInvariant(),
-            apelidos = arquivo.Apelidos.Count,
-            nomes = arquivo.Nomes.Count,
-            ignorar = arquivo.Ignorar.Count,
-            tipos = arquivo.Tipos.Count,
+            apelidos = arquivo.Contagem.Apelidos,
+            nomes = arquivo.Contagem.Nomes,
+            ignorar = arquivo.Contagem.Ignorar,
+            tipos = arquivo.Contagem.Tipos,
         });
 });
 

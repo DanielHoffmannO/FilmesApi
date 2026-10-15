@@ -19,15 +19,11 @@ public class MediaProbeCacheTests : IDisposable
         File.WriteAllText(_video, "conteudo");
         _contador = Path.Combine(_dir, "chamadas.txt");
 
-        var script = Path.Combine(_dir, "ffprobe-falso.sh");
-        File.WriteAllText(script, $$$"""
-            #!/bin/sh
+        var script = TestesComuns.ScriptFalso(_dir, "ffprobe-falso.sh", $$$"""
             echo x >> "{{{_contador}}}"
             sleep 0.4
             echo '{"streams":[{"index":0,"codec_type":"video","codec_name":"h264","width":1280,"height":720}],"format":{"duration":"60.0"}}'
             """);
-        if (!OperatingSystem.IsWindows())
-            File.SetUnixFileMode(script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
 
         _probe = new MediaProbeService(new FfmpegOptions("ffmpeg-nao-usado", script), NullLogger<MediaProbeService>.Instance);
     }

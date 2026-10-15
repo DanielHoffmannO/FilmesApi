@@ -51,6 +51,8 @@ public class EstadoMontagens
 /// healthcheck do Docker) segue 200 nesse caso, então nada reinicia por isso.</summary>
 public class MontagensHealthCheck(EstadoMontagens estado) : IHealthCheck
 {
+    public const string Tag = "montagens";
+
     public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
         var suspeitas = estado.Suspeitas;

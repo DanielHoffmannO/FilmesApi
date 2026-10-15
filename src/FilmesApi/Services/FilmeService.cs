@@ -183,7 +183,10 @@ public class FilmeService
             // Remove órfãos (arquivo sumiu — ex.: pasta reorganizada, ou apagada de propósito), exceto quando
             // o sumiço parece montagem caída (ver PrefixosRemoviveis) — apagaria o catálogo e o progresso de
             // assistido do disco que caiu.
-            var prefixosVivos = todosNoDisco.Select(PrefixoDe).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var arquivosPorPrefixo = todosNoDisco
+                .GroupBy(PrefixoDe, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+            var prefixosVivos = arquivosPorPrefixo.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
             var prefixosNoBanco = noBanco.Select(f => PrefixoDe(f.ArquivoPath!)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             var removiveis = PrefixosRemoviveis(prefixosNoBanco, prefixosVivos, todosNoDisco.Count, PastaVaziaOuInacessivel);
             var candidatos = noBanco.Where(f => !noDisco.Contains(f.ArquivoPath!)).ToList();
@@ -230,7 +233,7 @@ public class FilmeService
             }
 
             if (novos > 0 || removidos > 0 || limpos > 0) await _db.SaveChangesAsync();
-            GuardarEstadoDasMontagens(noBanco, orfaos, aImportar, todosNoDisco, removiveis);
+            GuardarEstadoDasMontagens(noBanco, orfaos, aImportar, arquivosPorPrefixo, removiveis);
             return new ScanResultado(novos, removidos, limpos);
         }
         finally
@@ -243,7 +246,7 @@ public class FilmeService
     /// <c>/health</c> — a MESMA decisão do scan (<paramref name="removiveis"/>), sem varrer o disco de novo.</summary>
     private void GuardarEstadoDasMontagens(
         List<Filme> noBanco, List<Filme> removidos, List<string> importados,
-        HashSet<string> todosNoDisco, HashSet<string> removiveis)
+        Dictionary<string, int> arquivosPorPrefixo, HashSet<string> removiveis)
     {
         var idsRemovidos = removidos.Select(o => o.Id).ToHashSet();
         var itens = noBanco
@@ -252,11 +255,8 @@ public class FilmeService
             .Concat(importados.Select(PrefixoDe))
             .GroupBy(p => p, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
-        var arquivos = todosNoDisco
-            .GroupBy(PrefixoDe, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
 
-        _montagens.Atualizar(EstadoMontagens.Classificar(itens, arquivos, removiveis));
+        _montagens.Atualizar(EstadoMontagens.Classificar(itens, arquivosPorPrefixo, removiveis));
     }
 
     /// <summary>Pasta de 1º nível do caminho relativo (<c>extra/Séries/x.mkv</c> → <c>extra</c>); vazio
