@@ -59,6 +59,75 @@ public class ScanTests
         Assert.Equal(2, (await f.CaminhosNoBancoAsync()).Count);
     }
 
+    // Regressão do desenho por prefixo: apagar uma pasta INTEIRA de propósito (um filme, uma temporada)
+    // tirava a pasta dos "prefixos vivos" e os itens dela viravam fantasma pra sempre.
+    [Fact]
+    public async Task Pasta_inteira_apagada_de_proposito_tem_os_orfaos_removidos()
+    {
+        using var f = new ScanFixture();
+        f.Arquivo("solto.mp4");
+        f.Arquivo("Interestelar.2014.1080p.Dublado/Interestelar.2014.mkv");
+        f.Arquivo("Matrix.1999/Matrix.mkv");
+        f.Arquivo("Toy.Story.1995/Toy.Story.mkv");
+        f.Arquivo("extra/The.Sopranos.S01E01.720p.mkv");
+        Assert.Equal(5, (await f.ScanAsync()).Importados);
+
+        Directory.Delete(Path.Combine(f.Media, "Interestelar.2014.1080p.Dublado"), recursive: true);   // pasta some por inteiro
+
+        var r = await f.ScanAsync();
+
+        Assert.Equal(1, r.Removidos);
+        Assert.DoesNotContain(await f.CaminhosNoBancoAsync(), c => c.StartsWith("Interestelar"));
+        Assert.Equal(4, (await f.CaminhosNoBancoAsync()).Count);
+    }
+
+    [Fact]
+    public async Task Disco_principal_caido_quase_tudo_some_junto_e_nada_e_removido()
+    {
+        using var f = new ScanFixture();
+        f.Arquivo("solto.mp4");
+        f.Arquivo("Interestelar.2014.1080p.Dublado/Interestelar.2014.mkv");
+        f.Arquivo("Matrix.1999/Matrix.mkv");
+        f.Arquivo("Toy.Story.1995/Toy.Story.mkv");
+        f.Arquivo("extra/The.Sopranos.S01E01.720p.mkv");     // o HD de backup segue montado
+        await f.ScanAsync();
+
+        // o SSD principal cai: some tudo, menos o que vem do segundo disco
+        File.Delete(Path.Combine(f.Media, "solto.mp4"));
+        foreach (var pasta in new[] { "Interestelar.2014.1080p.Dublado", "Matrix.1999", "Toy.Story.1995" })
+            Directory.Delete(Path.Combine(f.Media, pasta), recursive: true);
+
+        var r = await f.ScanAsync();
+
+        Assert.Equal(0, r.Removidos);
+        Assert.Equal(5, (await f.CaminhosNoBancoAsync()).Count);
+    }
+
+    [Fact]
+    public async Task Pasta_que_existe_mas_esta_vazia_e_ponto_de_montagem_sem_disco()
+    {
+        using var f = new ScanFixture();
+        f.Arquivo("solto.mp4");
+        f.Arquivo("Matrix.1999/Matrix.mkv");
+        f.Arquivo("Toy.Story.1995/Toy.Story.mkv");
+        f.Arquivo("Hora.de.Aventura/S01E01.mkv");
+        f.Arquivo("Pingu/01.avi");
+        f.Arquivo("extra/The.Sopranos.S01E01.720p.mkv");
+        await f.ScanAsync();
+
+        File.Delete(Path.Combine(f.Media, "Hora.de.Aventura", "S01E01.mkv"));   // a pasta fica, vazia
+
+        Assert.Equal(0, (await f.ScanAsync()).Removidos);
+    }
+
+    [Theory]
+    [InlineData(0, false)]    // disco todo vazio: nada é removido
+    public void PrefixosRemoviveis_disco_vazio(int arquivosNoDisco, bool algum)
+    {
+        var r = FilmeService.PrefixosRemoviveis(["", "A"], new HashSet<string>(), arquivosNoDisco, _ => false);
+        Assert.Equal(algum, r.Count > 0);
+    }
+
     [Fact]
     public async Task Disco_inteiro_vazio_continua_sem_apagar_nada()
     {

@@ -173,19 +173,20 @@ public class FilmeService
             var noBanco = await _db.Filmes.Where(f => f.ArquivoPath != null).ToListAsync();
             var existentes = noBanco.Select(f => f.ArquivoPath!).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            // Remove órfãos (arquivo sumiu — ex.: pasta reorganizada). Só os de um prefixo (pasta de
-            // 1º nível, ou a raiz) que AINDA tem algum arquivo no disco: prefixo inteiro vazio é
-            // montagem caída (HD de backup em /media/extra que desmontou), não "apague tudo" —
-            // apagaria o catálogo e o progresso de assistido daquele disco.
+            // Remove órfãos (arquivo sumiu — ex.: pasta reorganizada, ou apagada de propósito), exceto quando
+            // o sumiço parece montagem caída (ver PrefixosRemoviveis) — apagaria o catálogo e o progresso de
+            // assistido do disco que caiu.
             var prefixosVivos = noDisco.Select(PrefixoDe).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var prefixosNoBanco = noBanco.Select(f => PrefixoDe(f.ArquivoPath!)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            var removiveis = PrefixosRemoviveis(prefixosNoBanco, prefixosVivos, noDisco.Count, PastaVaziaOuInacessivel);
             var candidatos = noBanco.Where(f => !noDisco.Contains(f.ArquivoPath!)).ToList();
             foreach (var prefixo in candidatos.Select(f => PrefixoDe(f.ArquivoPath!))
-                         .Where(p => !prefixosVivos.Contains(p)).Distinct(StringComparer.OrdinalIgnoreCase))
+                         .Where(pr => !removiveis.Contains(pr)).Distinct(StringComparer.OrdinalIgnoreCase))
                 _logger.LogWarning(
                     "Scan: nenhum arquivo em '{Prefixo}/' no disco — montagem caída? Itens desse prefixo mantidos no catálogo.",
                     prefixo.Length == 0 ? "(raiz)" : prefixo);
 
-            var orfaos = candidatos.Where(f => prefixosVivos.Contains(PrefixoDe(f.ArquivoPath!))).ToList();
+            var orfaos = candidatos.Where(f => removiveis.Contains(PrefixoDe(f.ArquivoPath!))).ToList();
             foreach (var orfao in orfaos)
             {
                 await _db.Progressos.Where(p => p.FilmeId == orfao.Id).ExecuteDeleteAsync();
@@ -232,6 +233,41 @@ public class FilmeService
 
     /// <summary>Pasta de 1º nível do caminho relativo (<c>extra/Séries/x.mkv</c> → <c>extra</c>); vazio
     /// pra arquivo direto na raiz. Cada uma pode ser um disco/montagem diferente.</summary>
+    /// <summary>Quais prefixos (pasta de 1º nível; "" = raiz) podem ter os órfãos REMOVIDOS do catálogo.
+    /// Prefixo com arquivo no disco: sempre. Prefixo sem NENHUM arquivo no disco é ambíguo — pasta apagada
+    /// de propósito ou disco que caiu — e só é liberado quando nenhum sinal de queda aparece:
+    /// (1) disco todo vazio, nada é removido; (2) a raiz sem arquivo fica protegida; (3) a pasta ainda
+    /// existe mas está vazia = ponto de montagem sem disco (o /media/extra com o HD de backup fora);
+    /// (4) metade ou mais dos prefixos sumiu junto = disco principal caído, não uma limpeza.
+    /// Sobra o caso comum: UMA pasta inteira apagada (o filme/temporada que o dono removeu) — esse
+    /// vai embora do catálogo, senão fica um fantasma que dá 404 pra sempre.</summary>
+    internal static HashSet<string> PrefixosRemoviveis(
+        IReadOnlyCollection<string> prefixosNoBanco, IReadOnlySet<string> prefixosVivos,
+        int arquivosNoDisco, Func<string, bool> pastaVaziaOuInacessivel)
+    {
+        var removiveis = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (arquivosNoDisco == 0) return removiveis;
+
+        var mortos = prefixosNoBanco.Count(p => !prefixosVivos.Contains(p));
+        var emMassa = prefixosNoBanco.Count > 0 && mortos * 2 >= prefixosNoBanco.Count;
+        foreach (var p in prefixosNoBanco)
+        {
+            if (prefixosVivos.Contains(p)) removiveis.Add(p);
+            else if (p.Length > 0 && !emMassa && !pastaVaziaOuInacessivel(p)) removiveis.Add(p);
+        }
+        return removiveis;
+    }
+
+    private bool PastaVaziaOuInacessivel(string prefixo)
+    {
+        try
+        {
+            var dir = Path.Combine(_mediaPath, prefixo);
+            return Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return true; }
+    }
+
     internal static string PrefixoDe(string relativo)
     {
         var barra = relativo.IndexOf('/');
