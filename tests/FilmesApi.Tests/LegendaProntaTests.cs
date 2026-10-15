@@ -206,4 +206,57 @@ public class LegendaProntaTests
         }
         finally { Directory.Delete(pasta, recursive: true); }
     }
+
+    // ─── marcar a recomendada que as telas ligam sozinhas ────────────────────────────
+
+    [Fact]
+    public void Marca_so_a_faixa_escolhida()
+    {
+        var faixas = new List<LegendaInfo> { F(0, "por", "Português"), F(1, "eng", "English"), F(2, "por", "PT SDH") };
+
+        var r = SubtitleService.MarcarRecomendada(faixas, 0);
+
+        Assert.Equal([true, false, false], r.Select(x => x.Recomendada));
+    }
+
+    [Fact]
+    public void Sem_recomendacao_nenhuma_faixa_vem_marcada()
+    {
+        var faixas = new List<LegendaInfo> { F(0, "por", "Português"), F(1, "eng", "English") };
+        Assert.All(SubtitleService.MarcarRecomendada(faixas, null), f => Assert.False(f.Recomendada));
+    }
+
+    [Fact]
+    public void Audio_em_ingles_recomenda_a_melhor_legenda_em_portugues()
+    {
+        // fluxo de ponta a ponta da regra: LegendaParaPreparar decide, MarcarRecomendada expõe
+        var faixas = SubtitleService.OrdenarPorRelevancia(
+            [F(0, "por", "FORÇADA PT-BR"), F(1, "eng", "English"), F(2, "por", "COMPLETA PT-BR")]);
+
+        var r = SubtitleService.MarcarRecomendada(faixas, SubtitleService.LegendaParaPreparar("eng", faixas));
+
+        Assert.Equal([2], r.Where(x => x.Recomendada).Select(x => x.Idx));
+    }
+
+    [Theory]
+    [InlineData("por")]     // áudio em português: ninguém precisa de legenda
+    [InlineData("und")]     // idioma desconhecido: não adivinha
+    [InlineData(null)]
+    public void Audio_em_portugues_ou_desconhecido_nao_recomenda_nada(string? idiomaDoAudio)
+    {
+        var faixas = SubtitleService.OrdenarPorRelevancia([F(0, "por", "Português"), F(1, "eng", "English")]);
+
+        var r = SubtitleService.MarcarRecomendada(faixas, SubtitleService.LegendaParaPreparar(idiomaDoAudio, faixas));
+
+        Assert.All(r, f => Assert.False(f.Recomendada));
+    }
+
+    [Fact]
+    public void Audio_estrangeiro_so_com_legenda_estrangeira_nao_recomenda()
+    {
+        // audio inglês e só existe legenda em inglês/japonês: ligar seria inútil (já entende o áudio)
+        var faixas = SubtitleService.OrdenarPorRelevancia([F(0, "eng", "English"), F(1, "jpn", "日本語")]);
+
+        Assert.Null(SubtitleService.LegendaParaPreparar("eng", faixas));
+    }
 }

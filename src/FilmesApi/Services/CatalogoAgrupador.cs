@@ -57,7 +57,7 @@ public static class CatalogoAgrupador
     /// <summary>Nomes: conta ocorrência de cada Serie "bruto" dentro do grupo -- decide o nome de
     /// exibição pelo MAIS FREQUENTE (não o primeiro visto), senão um apelido/pasta de release
     /// feia com poucos episódios podia "vencer" a exibição de um grupo com centenas de
-    /// episódios só por coincidência de ordem (ver ApelidosSerie).</summary>
+    /// episódios só por coincidência de ordem (ver ApelidosPadrao).</summary>
     private sealed record SerieAcumulada(Dictionary<string, int> Nomes, List<FilmeResponse> Itens);
 
     /// <summary>Primeira passada: cada item filtrado vira episódio de série, item de pasta

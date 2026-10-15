@@ -172,21 +172,21 @@ public class ReproducaoController : ControllerBase
         if (path is null) return ArquivoNaoEncontrado();
 
         var faixas = await _legendas.ListarAsync(path, ct);
-        await DeixarLegendaProntaAsync(id, path, faixas, ct);
-        return Ok(faixas);
+        return Ok(await MarcarRecomendadaAsync(id, path, faixas, ct));
     }
 
-    /// <summary>Só se usa legenda quando o áudio tocado não é em português — nesse caso já deixa
-    /// a melhor legenda extraída no cache em segundo plano (ver
-    /// <see cref="SubtitleService.LegendaParaPreparar"/>). Chamado quando o player abre o filme
-    /// e pede a lista; sem custo quando o áudio é em português.</summary>
-    private async Task DeixarLegendaProntaAsync(int id, string path, List<LegendaInfo> faixas, CancellationToken ct)
+    /// <summary>Só se usa legenda quando o áudio tocado não é em português — nesse caso a melhor legenda
+    /// vira <c>recomendada</c> (as telas ligam sozinhas) e já fica extraída no cache em segundo plano (ver
+    /// <see cref="SubtitleService.LegendaParaPreparar"/>). Chamado quando o player abre o filme e pede a
+    /// lista; sem custo quando o áudio é em português ou de idioma desconhecido.</summary>
+    private async Task<List<LegendaInfo>> MarcarRecomendadaAsync(int id, string path, List<LegendaInfo> faixas, CancellationToken ct)
     {
-        if (faixas.Count == 0) return;
+        if (faixas.Count == 0) return faixas;
         var audios = await _transcode.ListarAudiosAsync(id, path, ct);
         var idioma = audios.FirstOrDefault(a => a.Atual)?.Idioma;
-        if (SubtitleService.LegendaParaPreparar(idioma, faixas) is int idx)
-            _legendas.PrepararEmSegundoPlano(id, path, idx);
+        var idx = SubtitleService.LegendaParaPreparar(idioma, faixas);
+        if (idx is int i) _legendas.PrepararEmSegundoPlano(id, path, i);
+        return SubtitleService.MarcarRecomendada(faixas, idx);
     }
 
     /// <summary>Uma faixa de legenda de texto convertida pra WebVTT. 404 se o índice não

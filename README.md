@@ -58,6 +58,16 @@ e `restart: unless-stopped` — ajuste `devices`/`cpus` e os bind mounts de `vol
 hardware. Veja [Aceleração por hardware](#-aceleração-por-hardware-vpu) e
 [Configuração](#-configuração) pra TMDB, governador térmico, etc.
 
+**TV Samsung antiga (Orsay) — opcional.** O menu Develop da TV (Smart Hub › conta `develop` › IP
+Setting › Start User App Sync) baixa o app de `http://IP/widgetlist.xml`, **sempre na porta 80**; o
+servidor gera a lista e o `.zip` na hora (`/widgetlist.xml`, `/widgets/Filmes.zip`). Como a porta
+80 costuma estar ocupada (nginx, proxy reverso…), ela **não** está no compose principal — só se
+você a tiver livre:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.orsay.yml up -d
+```
+
 ### Local (desenvolvimento)
 
 ```bash
@@ -89,6 +99,12 @@ apelido de grupo, pontuação estranha) — o que importa:
 | `Episódio N` / `Capítulo N` | `Novela Capítulo 01.mkv`, `Anime - Episodio 11.mkv`, `Show Episode 5.mkv` |
 | `Temp N - Epi M` | `Temp 01 - Epi 03.mkv`, `Temp 05p1 - Epi 08.mkv` (formato comum em releases de Hora de Aventura/Apenas um Show) |
 | `TxxEPxxx` colado | `DDUVT08EP13.mkv` |
+
+O **título do episódio** é o que vem depois do marcador no nome do arquivo, sem propaganda de site nem ruído de
+release: `As 3 Espiãs Demais - S01E05 - O Apagador.mp4` aparece como **S01E05 · O Apagador**, e
+`Futurama.S02E01.A.Flight.to.Remember.1080p.DVDRip.x265-N4U - ONDEBAIXA.COM .mkv` como **S02E01 · A Flight to
+Remember**. Sem título no nome (`Breaking.Bad.2011.S04E09.720p.BluRay.x264.mkv`) mostra só o código. Vem no
+campo `tituloEpisodio` de cada item da API.
 
 O **nome da série** é a pasta onde o arquivo está (limpa de propaganda de site e ruído de
 release); se estiver solto na raiz, é o pedaço do nome antes do marcador. Se a pasta mais
@@ -146,6 +162,11 @@ um nível só):
 - A lista sai ordenada pra quem quer português: português completo, português SDH/CC, sem idioma,
   outro idioma, forçada, bitmap. O botão de legenda (celular e TV) pega a primeira. Se o áudio tocado
   não é em português, a melhor legenda já é extraída pro cache em segundo plano ao abrir o filme.
+- **Liga sozinha com áudio estrangeiro.** Quando o áudio tocado tem idioma conhecido e **não** é português, a
+  melhor legenda em português (ou sem idioma) vem marcada `recomendada: true` em `/legendas` e a TV e o
+  player do PC ligam ela sem ninguém apertar nada. Áudio em português, ou de idioma desconhecido, não liga
+  nada. Se você liga **ou desliga** a legenda de propósito (CC do celular ou o botão da TV), vale até o fim do
+  filme — trocar de dublagem não religa; só um filme novo volta a ser automático.
 
 ### Agrupando franquias e coleções
 
@@ -155,6 +176,27 @@ um nível só):
 - **Coleção por pasta-mãe** — uma pasta-mãe com "Trilogia", "Quadrilogia", "Pentalogia",
   "Hexalogia", "Coleção", "Coletânea", "Antologia", "Saga" ou "Box" no nome agrupa os filmes
   dentro dela do mesmo jeito, mesmo que os títulos internos não sigam um padrão numérico.
+
+### Apelidos e nomes de exibição (`nomes.json`)
+
+Série com nome diferente em cada release (`Attack on Titan` / `Ataque dos Titãs`) ou com nome de
+exibição feio (sem acento, tudo maiúsculo, título original em inglês) se arruma num arquivo — sem
+build nem deploy. Crie `data/nomes.json` (no contêiner, `/data/nomes.json`):
+
+```json
+{
+  "apelidos": { "attack on titan": "ataque dos titas" },
+  "nomes":    { "ataque dos titas": "Ataque dos Titãs" }
+}
+```
+
+- `apelidos`: nome → nome "canônico" — tudo que cai na mesma chave vira **uma série só**.
+- `nomes`: chave → como aparece na tela. Só muda a exibição; nenhuma pasta é renomeada.
+- Acento, maiúscula e espaço nas chaves não importam (`"Attack on Titan"` serve).
+- O padrão embutido no código continua valendo; o arquivo **soma** e, na mesma chave, **sobrescreve**.
+- Vale em até 15 s depois de salvar, ou na hora com `POST /api/admin/recarregar-nomes`. Arquivo
+  inválido não derruba nada: o servidor registra o erro no log e mantém os nomes que já valiam
+  (o `POST` devolve `400`). Apagar o arquivo volta ao padrão.
 
 Nomes de domínio de uploader no começo do arquivo/pasta (ex.: `COMANDO.TO - Nome do Filme.mkv`)
 são removidos tanto do título de exibição quanto do termo usado pra buscar metadados no TMDB.
@@ -193,8 +235,12 @@ Ao pedir um filme, o servidor decide o caminho:
    - entrada acima de 1080p é **reduzida pra 1080p** antes de recodificar (`HlsMaxAlturaReencode`);
    - segmentos de 6s, playlist do tipo `event` — o play começa assim que o **primeiro segmento** existe.
 
-O resultado fica em **cache permanente por filme** (`/data/hls/{id}/`), com despejo LRU quando
-passa de `HlsCacheMaxGB`. Só **1 transcodificação por vez** por padrão (`MaxConcurrentTranscodeJobs`).
+O resultado fica em **cache por filme** (`{CachePath}/hls/{id}/`), com despejo LRU quando passa de
+`HlsCacheMaxGB`. **Quando o episódio termina ou é marcado como assistido, o cache de HLS e de remux
+dele é apagado** na hora: já visto quase nunca volta, e esse cache é a maior fonte de escrita em disco do
+servidor (rever o episódio depois só custa um transcode novo). O quanto foi gravado desde que o servidor
+subiu aparece em `/api/status` e na página de status. Só **1 transcodificação por vez** por padrão
+(`MaxConcurrentTranscodeJobs`).
 
 **`/remux` — não confundir com o remux stream-copy do passo 2 acima (esse é interno ao pipeline
 HLS).** Pra TV sem HLS nenhum (nem MediaSource nem `<video>` nativo): quando o **vídeo** já é
@@ -289,10 +335,14 @@ usam `__` (ex.: `ConnectionStrings__Default`).
 | Chave | Padrão | Descrição |
 |---|---|---|
 | `MediaPath` | `/media` | Pasta com os vídeos (varredura recursiva). |
+| `NomesPath` | `/data/nomes.json` | Apelidos de série e nomes de exibição editáveis — ver [Apelidos e nomes de exibição](#apelidos-e-nomes-de-exibição-nomesjson). |
+| `ScanIntervaloMinutos` | `10` | Scan automático da pasta de mídia (mesmo do botão **Scan Mídia**), pra download novo aparecer sozinho. `0` desliga. Varrer acorda HD externo em repouso — num backup que deveria dormir, aumente ou desligue. |
+| `ScanEstabilidadeSegundos` | `2` | Arquivo novo só entra se o tamanho não mudou durante esta pausa (download/cópia em andamento fica pro próximo scan). `0` desliga. |
 | `ConnectionStrings__Default` | `Data Source=/data/filmes.db` | Banco SQLite. |
-| `HlsCachePath` | `/data/hls` | Cache dos segmentos HLS. |
-| `RemuxCachePath` | `/data/remux` | Cache dos `.mp4` do `/remux` (áudio arrumado pra TV sem HLS). |
-| `SubtitleCachePath` | `/data/subs` | Cache das legendas `.vtt` extraídas. |
+| `CachePath` | `/data` | **Raiz dos caches em disco** (HLS em `{raiz}/hls`, remux em `{raiz}/remux`, legendas em `{raiz}/subs`). Aponte pro SSD de mídia pra tirar a escrita pesada do disco do sistema: monte o SSD no contêiner (ex.: `- /mnt/ssd/cache:/cache`) e use `CachePath=/cache`. |
+| `HlsCachePath` | `{CachePath}/hls` | Cache dos segmentos HLS (ganha da raiz). |
+| `RemuxCachePath` | `{CachePath}/remux` | Cache dos `.mp4` do `/remux` (áudio arrumado pra TV sem HLS). |
+| `SubtitleCachePath` | `{CachePath}/subs` | Cache das legendas `.vtt` extraídas. |
 | `FfmpegPath` / `FfprobePath` | `ffmpeg` / `ffprobe` | Binários (o Docker aponta pro jellyfin-ffmpeg). |
 | `AllowAnyOrigin` | `false` | Libera CORS geral (`AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()`). Só necessário se as telas forem servidas de outro host. |
 
@@ -347,7 +397,8 @@ filmes ainda sem metadados (roda ~30s depois do boot e reprocessa a cada scan).
 | `GET` | `/api/filmes/tela?tipo=&visto=&busca=` | Catálogo já filtrado/agrupado (filme solto, pasta filme+extras, série, franquia) — é isto que `index.html`/`tv.html`/`controle.html` consomem pra montar a tela. |
 | `GET` | `/api/filmes/{id}` | Detalhes de um filme. |
 | `PUT` | `/api/filmes/{id}/assistido` | Alterna "assistido". |
-| `POST` | `/api/filmes/scan` | Importa vídeos novos da pasta e remove órfãos. `{importados, removidos}`. |
+| `GET` | `/api/filmes/diagnostico` | O que o catálogo tem de estranho: **episódios faltando** (buraco entre o 1 e o maior número da temporada; arquivo duplo conta como 2), **episódio em 2+ arquivos** (com o tamanho de cada), **série com 1 só episódio**, **arquivo solto na raiz que parece episódio** e **vídeo suspeito de propaganda** (< 60 MB com nome de uploader — 1XBET, BLUDV, COMANDOTORRENTS, LAPUMIA — ou "Sample"). A página `/diagnostico.html` desenha isso (🩺 no cabeçalho do catálogo). |
+| `POST` | `/api/filmes/scan` | Importa vídeos novos da pasta e remove órfãos — só de pastas de 1º nível que ainda têm algum arquivo (pasta inteira vazia = montagem caída, nada é apagado). Arquivo ainda crescendo fica pro próximo scan. `{importados, removidos, titulosLimpos}`. Também roda sozinho a cada `ScanIntervaloMinutos`. |
 | `GET` | `/api/filmes/{id}/proximo` | Próximo episódio da série. `204` se não há. |
 
 ### Reprodução / progresso
@@ -371,7 +422,7 @@ filmes ainda sem metadados (roda ~30s depois do boot e reprocessa a cada scan).
 | `GET` | `/api/filmes/{id}/original` | Sempre o arquivo original, sem transcodificar (VLC etc.). |
 | `GET` | `/api/filmes/{id}/hls/playlist.m3u8` | Manifesto HLS (dispara/reusa o transcode). `202` enquanto prepara, `409` se o arquivo já é compatível direto (use `/stream`), `500` se o transcode falhou. |
 | `GET` | `/api/filmes/{id}/hls/{seg}.ts` | Segmentos HLS. |
-| `GET` | `/api/filmes/{id}/legendas` | Faixas de legenda (embutidas + externas), a melhor primeiro. O `idx` identifica a faixa em `/legenda/{idx}` e não muda com a ordem da lista. |
+| `GET` | `/api/filmes/{id}/legendas` | Faixas de legenda (embutidas + externas), a melhor primeiro; `recomendada: true` na que as telas ligam sozinhas (áudio estrangeiro). O `idx` identifica a faixa em `/legenda/{idx}` e não muda com a ordem da lista. |
 | `GET` | `/api/filmes/{id}/legenda/{idx}` | Uma faixa de texto convertida pra WebVTT. |
 | `GET` | `/api/filmes/{id}/audios` | Faixas de áudio embutidas ("dublagens"). `{idx, codec, idioma, default, atual}` — `idx` é o índice global do ffprobe (bate com o `-map` do ffmpeg). |
 | `POST` | `/api/filmes/{id}/audio` | `{idx}` — troca a faixa de áudio preferida. Cancela um job de HLS/remux em andamento e invalida o cache pra regerar com a faixa nova (o áudio vai dentro dos segments/arquivo, não dá pra trocar sem reprocessar). |
@@ -388,7 +439,8 @@ Estado único em memória (`PlayerStateService`) — pensado pra uma casa com um
 | `POST` | `/api/player/seek` | `{delta}` segundos, relativo à posição atual. |
 | `POST` | `/api/player/seek-abs` | `{pos}` segundos, posição absoluta (arrastar a barra). |
 | `POST` | `/api/player/volume` | `{valor}` de 0 a 1. |
-| `POST` | `/api/player/legenda` | `{idx}` da faixa (-1 desliga). |
+| `POST` | `/api/player/legenda` | `{idx}` da faixa (-1 desliga). Conta como escolha manual (a legenda automática não se mete mais até o fim do filme). |
+| `POST` | `/api/player/legenda-tv` | A própria TV avisa `{idx, manual}` da legenda que ligou/desligou (automática ou botão), pro celular mostrar o estado certo. Não gera comando de volta. |
 | `POST` | `/api/player/audio` | `{idx}` — celular escolheu uma faixa de áudio ("dublagem"); a TV aplica no próximo poll chamando `/api/filmes/{id}/audio` e recarregando o vídeo na posição atual. |
 | `POST` | `/api/player/posicao` | A própria TV reporta `{pos, dur}` a cada ~2s, pro celular desenhar o progresso. |
 | `POST` | `/api/player/parar` | Fecha o player na TV. |
@@ -399,8 +451,9 @@ Estado único em memória (`PlayerStateService`) — pensado pra uma casa com um
 
 | Método | Rota | Descrição |
 |---|---|---|
-| `GET` | `/api/status` | Temperatura, fila de transcode, cache, estado da VPU (consumido pela `status.html`). |
+| `GET` | `/api/status` | Temperatura, fila de transcode, tamanho dos caches de HLS e de remux, **total gravado nos caches desde que o servidor subiu** (inclusive o que já foi apagado), estado da VPU (consumido pela `status.html`). |
 | `POST` | `/api/diag/log` | `{msg}` (cortada em 500 caracteres) — o `tv.html` manda erro de JS/hls.js/`<video>` pra cá (cai no log do servidor). TV não tem console acessível; sem isso não dava pra depurar o que acontecia na tela dela. |
+| `POST` | `/api/admin/recarregar-nomes` | Relê o `nomes.json` agora. `{resultado: aplicado/semarquivo, apelidos, nomes}`; `400` se o arquivo está inválido (os nomes anteriores continuam valendo). Sem autenticação — rede de casa. |
 | `GET` | `/health` | Health check (usado pelo `healthcheck` do `docker-compose.yml`): checa se `MediaPath` está montado e se o binário do ffmpeg existe. |
 
 ---

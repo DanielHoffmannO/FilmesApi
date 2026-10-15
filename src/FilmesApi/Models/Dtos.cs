@@ -9,7 +9,8 @@ public record FilmeResponse(
     double? PosicaoSegundos, double? DuracaoSegundos,
     string? PosterUrl = null, string? Sinopse = null, string? TituloOriginal = null,
     bool EhEpisodio = false, bool EhExtra = false, string? Serie = null, string? SerieChave = null,
-    int? Temporada = null, int? Episodio = null, string Rotulo = "", string Pasta = "Sem pasta");
+    int? Temporada = null, int? Episodio = null, string Rotulo = "", string Pasta = "Sem pasta",
+    string? TituloEpisodio = null);
 
 public record ScanResultado(int Importados, int Removidos, int TitulosLimpos = 0);
 
@@ -50,9 +51,12 @@ public record TelaCatalogoResponse(
 
 /// <summary>Uma faixa de legenda embutida. <c>Idx</c> é o índice relativo (0,1,2… na ordem
 /// do ffprobe) usado no endpoint <c>/legenda/{idx}</c>. <c>Convertivel</c> = é texto e dá
-/// pra servir como WebVTT (bitmap tipo PGS não dá).</summary>
+/// pra servir como WebVTT (bitmap tipo PGS não dá). <c>Recomendada</c> = a que as telas ligam
+/// sozinhas: o áudio tocado tem idioma conhecido e NÃO é português, e esta é a melhor legenda em
+/// português (ou sem idioma) — no máximo uma por filme.</summary>
 public record LegendaInfo(
-    int Idx, string Codec, string? Idioma, string? Titulo, bool Forced, bool Default, bool Convertivel);
+    int Idx, string Codec, string? Idioma, string? Titulo, bool Forced, bool Default, bool Convertivel,
+    bool Recomendada = false);
 
 /// <summary>Uma faixa de áudio embutida ("dublagem"). <c>Idx</c> é o índice GLOBAL do
 /// ffprobe (o mesmo usado em <c>-map 0:Idx</c> pelo HLS/remux) — ao contrário de

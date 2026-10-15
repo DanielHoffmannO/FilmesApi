@@ -29,6 +29,9 @@ builder.Services.AddSingleton<ThermalService>();
 builder.Services.AddSingleton<HlsTranscodeService>();
 builder.Services.AddSingleton<SubtitleService>();
 builder.Services.AddSingleton<PlayerStateService>();
+builder.Services.AddHostedService<ScanPeriodicoService>();
+builder.Services.AddSingleton<NomesPersonalizadosService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<NomesPersonalizadosService>());
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<TmdbService>();
 builder.Services.AddHostedService<MetadataService>();
@@ -113,6 +116,15 @@ app.MapPost("/api/diag/log", (DiagLogRequest req, ILoggerFactory lf) =>
     var msg = req.Msg ?? "";
     lf.CreateLogger("TvDiag").LogWarning("[tv.html] {Msg}", msg.Length > 500 ? msg[..500] : msg);
     return Results.NoContent();
+});
+
+// Relê o nomes.json (apelidos de série/nomes de exibição) na hora, sem esperar os 15 s do relógio.
+app.MapPost("/api/admin/recarregar-nomes", (NomesPersonalizadosService nomes) =>
+{
+    var (resultado, apelidos, nomesLidos) = nomes.Recarregar();
+    return resultado == NomesPersonalizadosService.Resultado.Invalido
+        ? Results.BadRequest(new { mensagem = "nomes.json inválido — veja o log do servidor; os nomes anteriores continuam valendo.", caminho = nomes.Caminho })
+        : Results.Ok(new { resultado = resultado.ToString().ToLowerInvariant(), apelidos, nomes = nomesLidos });
 });
 
 // TV Samsung antiga (Orsay): Menu Develop > IP Setting > Start App Sync baixa estes dois. O

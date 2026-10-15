@@ -70,6 +70,15 @@ public class PlayerController : ControllerBase
         return Ok(_state.Snapshot());
     }
 
+    /// <summary>A TV avisa a legenda que ela mesma ligou/desligou (vermelho ou automática), pro celular
+    /// mostrar o estado certo. Não gera comando de volta pra TV.</summary>
+    [HttpPost("legenda-tv")]
+    public IActionResult LegendaDaTv([FromBody] LegendaTvRequest req)
+    {
+        _state.RegistrarLegendaDaTv(req.Idx, req.Manual);
+        return NoContent();
+    }
+
     /// <summary>Celular escolheu a faixa de áudio ("dublagem") da TV.</summary>
     [HttpPost("audio")]
     public IActionResult SetAudio([FromBody] AudioTrackRequest req)

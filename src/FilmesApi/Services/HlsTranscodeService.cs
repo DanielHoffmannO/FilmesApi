@@ -80,14 +80,15 @@ public class HlsTranscodeService
 
     /// <summary>(bytes, itens, quando) do cache HLS em disco — varrido no máx. a cada 20 s
     /// (a página de status é refresh manual, não vale o I/O). Ver <see cref="ObterSnapshot"/>.</summary>
-    private (long Bytes, int Itens, DateTime Quando) _cacheStats = (0, 0, DateTime.MinValue);
+    private (long HlsBytes, int HlsItens, long RemuxBytes, int RemuxItens, DateTime Quando) _cacheStats = (0, 0, 0, 0, DateTime.MinValue);
+    private readonly EscritaDeCache _escrita = new();
 
     public HlsTranscodeService(FfmpegOptions ffmpeg, IConfiguration config, RkmppCapabilityService rkmpp,
         ThermalService thermal, MediaProbeService probe, ILogger<HlsTranscodeService> logger,
         IHostApplicationLifetime lifetime)
     {
         _pararToken = lifetime.ApplicationStopping;
-        _cachePath = config.GetValue<string>("HlsCachePath") ?? "/data/hls";
+        _cachePath = CachesDeDisco.Hls(config);
         _ffmpegPath = ffmpeg.Ffmpeg;
         _maxJobs = config.GetValue<int?>("MaxConcurrentTranscodeJobs") ?? 1;
         _jobTimeout = TimeSpan.FromHours(config.GetValue<double?>("TranscodeJobTimeoutHours") ?? 6);
@@ -102,7 +103,7 @@ public class HlsTranscodeService
         _orphanTimeout = TimeSpan.FromSeconds(config.GetValue<double?>("HlsOrphanTimeoutSeconds") ?? 90);  // 0 = nunca aborta
         _falhaCooldown = TimeSpan.FromMinutes(config.GetValue<double?>("HlsFalhaCooldownMinutes") ?? 10);
         _slotEncoder = new SemaphoreSlim(_maxJobs, _maxJobs);
-        _remuxCachePath = config.GetValue<string>("RemuxCachePath") ?? "/data/remux";
+        _remuxCachePath = CachesDeDisco.Remux(config);
         var remuxMaxGb = config.GetValue<double?>("RemuxCacheMaxGB") ?? 15;
         _remuxCacheMaxBytes = remuxMaxGb > 0 ? (long)(remuxMaxGb * 1024 * 1024 * 1024) : long.MaxValue;
         _rkmpp = rkmpp;
@@ -267,24 +268,28 @@ public class HlsTranscodeService
             if (orfao)
             {
                 RemuxOrfao(filmeId);
+                _escrita.ContarArquivo(tmp);
                 try { if (File.Exists(tmp)) File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
                 return;
             }
             if (exit != 0) throw new InvalidOperationException($"ffmpeg exit {exit}: {stderr}");
 
             File.Move(tmp, final, overwrite: true);
+            _escrita.ContarArquivo(final);
         }
         catch (OperationCanceledException)
         {
             // Shutdown do host OU troca manual de dublagem (DefinirPreferenciaAudio) — não
             // marca _remuxFalhas: fica retentável na próxima vez que alguém pedir /remux-status.
             _logger.LogInformation("Remux do filme {Id} interrompido.", filmeId);
+            _escrita.ContarArquivo(tmp);
             try { if (File.Exists(tmp)) File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Falha ao remuxar filme {Id}.", filmeId);
             _remuxFalhas[filmeId] = DateTime.UtcNow;
+            _escrita.ContarArquivo(tmp);
             try { if (File.Exists(tmp)) File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
         finally
@@ -405,7 +410,15 @@ public class HlsTranscodeService
     public void DefinirPreferenciaAudio(int filmeId, int audioStreamIndex)
     {
         _preferenciaAudio[filmeId] = audioStreamIndex;
+        DescartarCaches(filmeId);
+    }
 
+    /// <summary>Cancela o job de HLS/remux em andamento do filme (se houver) e apaga o cache pronto dos dois.
+    /// Usado ao trocar de dublagem (precisa regerar) e quando o episódio termina ou é marcado como assistido:
+    /// já visto, quase nunca volta, e cada GB que não fica em cache é um GB a menos gravado no disco (o cache
+    /// de HLS/remux é a maior fonte de escrita do servidor). Rever o episódio depois só custa um transcode novo.</summary>
+    public void DescartarCaches(int filmeId)
+    {
         if (_jobCancelHls.TryGetValue(filmeId, out var ctsHls))
             try { ctsHls.Cancel(); } catch (ObjectDisposedException) { }
         if (_jobCancelRemux.TryGetValue(filmeId, out var ctsRemux))
@@ -670,6 +683,7 @@ public class HlsTranscodeService
             // eviction preferir despejar esse tipo primeiro quando o cache passar do teto.
             if (videoCompativel)
                 try { File.WriteAllText(Path.Combine(dir, MarcadorRemux), ""); } catch (IOException) { }
+            _escrita.ContarPasta(dir);
         }
         catch (OperationCanceledException)
         {
@@ -677,7 +691,7 @@ public class HlsTranscodeService
             // dublagem (DefinirPreferenciaAudio cancela o job em andamento). Não marca
             // _falhas: fica retentável no próximo boot / próxima abertura / próxima tentativa.
             _logger.LogInformation("Transcode do filme {Id} interrompido.", filmeId);
-            try { lock (_decisaoLock) { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); } }
+            try { lock (_decisaoLock) { _escrita.ContarPasta(dir); if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); } }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
         }
@@ -686,6 +700,7 @@ public class HlsTranscodeService
             _logger.LogError(ex, "Falha ao transcodificar filme {Id} para HLS.", filmeId);
             lock (_decisaoLock)
             {
+                _escrita.ContarPasta(dir);
                 if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
                 _falhas[filmeId] = DateTime.UtcNow;
             }
@@ -707,6 +722,7 @@ public class HlsTranscodeService
     {
         lock (_decisaoLock)
         {
+            _escrita.ContarPasta(dir);
             if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
             Directory.CreateDirectory(dir);
         }
@@ -773,25 +789,14 @@ public class HlsTranscodeService
         var jobs = _jobs.Keys.OrderBy(x => x).ToArray();
         var encodando = Math.Max(0, _maxJobs - _slotEncoder.CurrentCount);
 
-        (long Bytes, int Itens, DateTime _) stats;
+        (long HlsBytes, int HlsItens, long RemuxBytes, int RemuxItens, DateTime _) stats;
         lock (_cacheStatsLock)
         {
             if (DateTime.UtcNow - _cacheStats.Quando > TimeSpan.FromSeconds(20))
             {
-                long total = 0;
-                var itens = 0;
-                try
-                {
-                    if (Directory.Exists(_cachePath))
-                        foreach (var dir in Directory.EnumerateDirectories(_cachePath))
-                        {
-                            itens++;
-                            foreach (var arq in Directory.EnumerateFiles(dir))
-                                try { total += new FileInfo(arq).Length; } catch (IOException) { }
-                        }
-                }
-                catch (IOException) { }
-                _cacheStats = (total, itens, DateTime.UtcNow);
+                var (hlsBytes, hlsItens) = MedirCacheHls();
+                var (remuxBytes, remuxItens) = MedirCacheRemux();
+                _cacheStats = (hlsBytes, hlsItens, remuxBytes, remuxItens, DateTime.UtcNow);
             }
             stats = _cacheStats;
         }
@@ -803,8 +808,47 @@ public class HlsTranscodeService
             Falhas: _falhas.Count,
             FilmesEmJob: jobs,
             FilmesComFalha: _falhas.Keys.OrderBy(x => x).ToArray(),
-            CacheBytes: stats.Bytes,
+            CacheBytes: stats.HlsBytes,
             CacheMaxBytes: _cacheMaxBytes == long.MaxValue ? 0 : _cacheMaxBytes,
-            CacheItens: stats.Itens);
+            CacheItens: stats.HlsItens,
+            RemuxBytes: stats.RemuxBytes,
+            RemuxMaxBytes: _remuxCacheMaxBytes == long.MaxValue ? 0 : _remuxCacheMaxBytes,
+            RemuxItens: stats.RemuxItens,
+            EscritoBytes: _escrita.Bytes,
+            EscritoDesde: _escrita.Desde);
+    }
+
+    private (long Bytes, int Itens) MedirCacheHls()
+    {
+        long total = 0;
+        var itens = 0;
+        try
+        {
+            if (Directory.Exists(_cachePath))
+                foreach (var dir in Directory.EnumerateDirectories(_cachePath))
+                {
+                    itens++;
+                    total += EscritaDeCache.TamanhoDaPasta(dir);
+                }
+        }
+        catch (IOException) { }
+        return (total, itens);
+    }
+
+    private (long Bytes, int Itens) MedirCacheRemux()
+    {
+        long total = 0;
+        var itens = 0;
+        try
+        {
+            if (Directory.Exists(_remuxCachePath))
+                foreach (var arquivo in Directory.EnumerateFiles(_remuxCachePath))
+                {
+                    try { total += new FileInfo(arquivo).Length; } catch (IOException) { continue; }
+                    if (arquivo.EndsWith(".mp4", StringComparison.Ordinal)) itens++;
+                }
+        }
+        catch (IOException) { }
+        return (total, itens);
     }
 }

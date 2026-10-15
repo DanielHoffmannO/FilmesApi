@@ -1,0 +1,9 @@
+# OPCIONAL — só pra quem tem a porta 80 livre no host e uma TV Samsung antiga (Orsay).
+# O menu Develop da TV busca o app em http://IP/widgetlist.xml, sempre na porta 80.
+#   docker compose -f docker-compose.yml -f docker-compose.orsay.yml up -d
+# Se algo já usa a porta 80 (ex.: nginx-proxy-manager), NÃO use este arquivo: o contêiner
+# não sobe ("port is already allocated"). Fica fora do compose principal de propósito.
+services:
+  filmes-api:
+    ports:
+      - "80:8080"

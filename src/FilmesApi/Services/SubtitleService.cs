@@ -49,7 +49,7 @@ public class SubtitleService
         _pararToken = lifetime.ApplicationStopping;
         // Cache próprio, longe do churn do HLS (LimparDir a cada fallback de encode, poda por
         // teto, limpeza pós-restart) — senão o .vtt some e é re-extraído toda hora.
-        _cachePath = config.GetValue<string>("SubtitleCachePath") ?? "/data/subs";
+        _cachePath = CachesDeDisco.Legendas(config);
         _logger = logger;
         try { Directory.CreateDirectory(_cachePath); } catch (IOException) { }
     }
@@ -105,6 +105,13 @@ public class SubtitleService
         var melhor = faixasOrdenadas.FirstOrDefault();
         return melhor is not null && Relevancia(melhor) <= 2 ? melhor.Idx : null;
     }
+
+    /// <summary>Marca como <c>Recomendada</c> a faixa <paramref name="idxRecomendado"/> (ver
+    /// <see cref="LegendaParaPreparar"/>); null não marca nenhuma.</summary>
+    internal static List<LegendaInfo> MarcarRecomendada(List<LegendaInfo> faixas, int? idxRecomendado) =>
+        idxRecomendado is null
+            ? faixas
+            : faixas.Select(f => f with { Recomendada = f.Idx == idxRecomendado }).ToList();
 
     /// <summary>Extrai/converte a legenda pro cache sem ninguém esperar. A 1ª extração de uma
     /// legenda embutida num MKV grande lê o arquivo inteiro e passa dos 20 s que a TV espera —

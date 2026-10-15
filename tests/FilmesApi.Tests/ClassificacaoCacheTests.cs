@@ -3,6 +3,7 @@ using FilmesApi.Services;
 
 namespace FilmesApi.Tests;
 
+[Collection("NomesGlobais")]   // conta recálculos: não pode rodar junto de quem troca o nomes.json (versão global)
 public class ClassificacaoCacheTests
 {
     private static FilmeResponse Filme(int id, string? caminho, string titulo = "T", bool assistido = false, double? pos = null) =>

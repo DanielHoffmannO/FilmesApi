@@ -221,4 +221,65 @@ public class PlayerStateServiceTests
         Assert.Equal(antes.seekVersion + 1, depois.seekVersion);
         Assert.Equal(-10.0, depois.seekDelta);
     }
+
+    // ─── legenda automática: "escolha de quem assiste" vale até o fim do filme ───────
+
+    [Fact]
+    public void Filme_novo_comeca_sem_escolha_manual()
+    {
+        dynamic s = new PlayerStateService().Snapshot();
+        Assert.False(s.legendaManual);
+    }
+
+    [Fact]
+    public void Celular_ligando_ou_desligando_conta_como_escolha_manual()
+    {
+        var svc = new PlayerStateService();
+        svc.SetLegenda(-1);   // desligar de propósito também é escolha
+        dynamic s = svc.Snapshot();
+        Assert.True(s.legendaManual);
+        Assert.Equal(1, s.legendaVersion);
+    }
+
+    [Fact]
+    public void Legenda_automatica_da_tv_aparece_pro_celular_sem_virar_comando()
+    {
+        var svc = new PlayerStateService();
+        svc.Selecionar(7);
+
+        svc.RegistrarLegendaDaTv(2, manual: false);
+        dynamic s = svc.Snapshot();
+
+        Assert.Equal(2, s.legendaIdx);
+        Assert.False(s.legendaManual);     // automática: não trava a próxima automática
+        Assert.Equal(0, s.legendaVersion); // não gera comando de volta pra TV (senão ela refaria o download)
+    }
+
+    [Fact]
+    public void Botao_da_tv_e_manual_e_automatica_depois_nao_desfaz_isso()
+    {
+        var svc = new PlayerStateService();
+        svc.RegistrarLegendaDaTv(-1, manual: true);
+        svc.RegistrarLegendaDaTv(3, manual: false);   // uma automática atrasada não apaga a escolha
+
+        dynamic s = svc.Snapshot();
+        Assert.True(s.legendaManual);
+    }
+
+    [Fact]
+    public void Filme_novo_ou_fechar_o_player_zera_a_escolha_manual()
+    {
+        var svc = new PlayerStateService();
+        svc.SetLegenda(-1);
+
+        svc.Selecionar(9);
+        dynamic novo = svc.Snapshot();
+        Assert.False(novo.legendaManual);
+
+        svc.SetLegenda(1);
+        svc.Parar();
+        dynamic fechado = svc.Snapshot();
+        Assert.False(fechado.legendaManual);
+        Assert.Equal(-1, fechado.legendaIdx);
+    }
 }

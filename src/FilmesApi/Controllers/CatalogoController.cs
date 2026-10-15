@@ -21,6 +21,12 @@ public class CatalogoController : ControllerBase
         [FromQuery] string tipo = "all", [FromQuery] string visto = "all", [FromQuery] string? busca = null)
         => Ok(await _service.ObterTelaAsync(tipo, visto, busca));
 
+    /// <summary>O que o catálogo tem de estranho: episódios faltando por série/temporada, episódio em 2+
+    /// arquivos, série com 1 só episódio, arquivo solto que parece episódio e vídeo que parece propaganda de
+    /// uploader. A página <c>/diagnostico.html</c> desenha isso.</summary>
+    [HttpGet("diagnostico")]
+    public async Task<IActionResult> Diagnostico() => Ok(await _service.DiagnosticoAsync());
+
     /// <summary>Um filme (ou episódio) pelo id.</summary>
     [HttpGet("{id:int}")]
     public async Task<IActionResult> Obter(int id)
