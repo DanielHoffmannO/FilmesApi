@@ -47,7 +47,7 @@ public static class CatalogoAgrupador
             .ToList();
 
         var seriesOrdenadas = series
-            .Select(kv => new SerieAgrupada(kv.Key, NomeMaisFrequente(kv.Value.Nomes), kv.Value.Itens))
+            .Select(kv => new SerieAgrupada(kv.Key, MediaNomeParser.NomeExibicao(kv.Key, NomeMaisFrequente(kv.Value.Nomes)), kv.Value.Itens))
             .OrderBy(s => s.Nome, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -140,7 +140,7 @@ public static class CatalogoAgrupador
                 .OrderBy(f => f.AnoLancamento ?? int.MaxValue)
                 .ThenBy(f => f.Titulo, StringComparer.OrdinalIgnoreCase)
                 .ToList();
-            gruposFranquia.Add(new PastaAgrupada("franquia:" + grupo.Key, NomeMaisFrequente(nomesBase), itensOrdenados));
+            gruposFranquia.Add(new PastaAgrupada("franquia:" + grupo.Key, MediaNomeParser.NomeExibicao(grupo.Key, NomeMaisFrequente(nomesBase)), itensOrdenados));
 
             foreach (var c in grupo)
             {
