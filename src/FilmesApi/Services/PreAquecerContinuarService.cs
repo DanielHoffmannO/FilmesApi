@@ -39,10 +39,7 @@ public class PreAquecerContinuarService(IServiceScopeFactory escopos, IConfigura
             var caminho = await escopo.ServiceProvider.GetRequiredService<FilmeService>().ResolverCaminhoAsync(primeiro.Id);
             if (caminho is null) return null;
 
-            // só vale pra quem precisa de remux (vídeo ok, áudio não); o que já toca direto ou vai por HLS não tem o que aquecer
-            if (await transcode.AnalisarCompatibilidadeAsync(caminho, ct) != CompatibilidadeDireta.SoAudioIncompativel) return null;
-
-            return transcode.PreAquecerRemux(primeiro.Id, caminho) ? primeiro.Id : null;
+            return await transcode.PreAquecerSeNecessarioAsync(primeiro.Id, caminho, ct) ? primeiro.Id : null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

@@ -1,5 +1,6 @@
 using FilmesApi.Services;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -30,7 +31,8 @@ public class CaminhosDeCacheTests : IDisposable
             new ThermalService(config, NullLogger<ThermalService>.Instance),
             new MediaProbeService(ffmpeg, NullLogger<MediaProbeService>.Instance),
             NullLogger<HlsTranscodeService>.Instance,
-            new LifetimeFalso());
+            new LifetimeFalso(),
+            new PreferenciasAudioService(new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>()));
     }
 
     public void Dispose() => Directory.Delete(_raiz, recursive: true);

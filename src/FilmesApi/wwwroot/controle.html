@@ -156,11 +156,12 @@ async function render() {
     for (const f of soltos) html += rowHtml(f);
   }
 
+  const audiosDasSeries = t.series.length ? await carregarAudiosDasSeries() : {};
   for (const s of t.series) {
     const aberto = foldersAbertos.has(s.chave);
     html += `<div class="grupo ${aberto ? '' : 'collapsed'}" data-key="${esc(s.chave)}">
       <div class="grupo-hd" onclick="toggleGrupo(this, foldersAbertos)"><span class="caret">${aberto ? '▾' : '▸'}</span>${esc(s.nome)} <span class="count">(${s.episodios.length} ${s.episodios.length === 1 ? 'episódio' : 'episódios'})</span></div>
-      <div class="grupo-body">${s.episodios.map(ep => rowHtml(ep, rotuloComTitulo(ep))).join('')}</div>
+      <div class="grupo-body">${seletorAudioSerieHtml(s.chave, audiosDasSeries[s.chave])}${s.episodios.map(ep => rowHtml(ep, rotuloComTitulo(ep))).join('')}</div>
     </div>`;
   }
 
@@ -181,6 +182,8 @@ function mmss(s) {
 }
 
 async function enviarParaTv(id) {
+  // aquece o remux deste episódio e do seguinte sem esperar: a TV só pede quando carrega o vídeo
+  fetch(`${API}/${id}/pre-aquecer`, { method: 'POST' }).catch(() => {});
   await fetch(`${PLAYER_API}/selecionar/${id}`, { method: 'POST' });
   pollRemote();
 }
@@ -312,6 +315,23 @@ async function remoteAudio() {
   remoteAudios = remoteAudios.map(x => ({ ...x, atual: x.idx === prox.idx }));
   atualizarBotaoAudio();
   pollRemote();
+  oferecerAudioDaSerie(prox.idioma);
+}
+
+// Trocou a dublagem de um episódio: pergunta UMA vez por série (nesta página) se vale pra série toda.
+const serieJaPerguntada = new Set();
+async function oferecerAudioDaSerie(idioma) {
+  const chave = filmeAtualRemoto && filmeAtualRemoto.serieChave;
+  const nome = { por: 'Português', eng: 'Inglês' }[idioma];
+  if (!chave || !nome || serieJaPerguntada.has(chave)) return;
+  const atuais = await carregarAudiosDasSeries();
+  if (atuais[chave] === idioma) return;
+  serieJaPerguntada.add(chave);
+  if (!confirm(`Usar ${nome} em toda a série?`)) return;
+  await fetch(`/api/series/${encodeURIComponent(chave)}/audio`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idioma })
+  });
+  render();
 }
 
 async function pollRemote() {

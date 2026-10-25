@@ -105,12 +105,31 @@ public class ReproducaoController : ControllerBase
     /// áudio→AAC) na primeira chamada; <c>disponivel</c> quando o .mp4 completo já está em
     /// disco. Poll, igual ao /stream-status do HLS.</summary>
     [HttpGet("{id:int}/remux-status")]
-    public async Task<IActionResult> RemuxStatus(int id)
+    public async Task<IActionResult> RemuxStatus(int id, CancellationToken ct)
     {
         var path = await _service.ResolverCaminhoAsync(id);
         if (path is null) return ArquivoNaoEncontrado();
+        await _transcode.DescartarRemuxDeOutraFaixaAsync(id, path, ct);
         var (status, progresso) = _transcode.ObterStatusRemux(id, path);
         return Ok(new { status = status.ToString().ToLowerInvariant(), progresso });
+    }
+
+    /// <summary>O controle abriu este episódio: começa já o remux dele e do seguinte (só se o servidor está ocioso
+    /// e cabe no teto do cache — ver <see cref="PoliticaPreAquecimento"/>). Devolve os ids cujo remux começou.</summary>
+    [HttpPost("{id:int}/pre-aquecer")]
+    public async Task<IActionResult> PreAquecer(int id, CancellationToken ct)
+    {
+        var path = await _service.ResolverCaminhoAsync(id);
+        if (path is null) return ArquivoNaoEncontrado();
+
+        var iniciados = new List<int>();
+        if (await _transcode.PreAquecerSeNecessarioAsync(id, path, ct)) iniciados.Add(id);
+
+        var prox = await _service.ProximoEpisodioAsync(id);
+        var proxPath = prox is null ? null : await _service.ResolverCaminhoAsync(prox.Id);
+        if (prox is not null && proxPath is not null && await _transcode.PreAquecerSeNecessarioAsync(prox.Id, proxPath, ct))
+            iniciados.Add(prox.Id);
+        return Ok(new { iniciados });
     }
 
     /// <summary>Vídeo compatível mas áudio não (EAC3/DTS — comum em rip WEB-DL/HMAX): serve o

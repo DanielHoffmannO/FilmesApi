@@ -222,11 +222,12 @@ async function render() {
   }
 
   if (t.series.length) {
+    const audiosDasSeries = await carregarAudiosDasSeries();
     html += `<div class="secao"><div class="secao-title">📺 Séries <span class="count">(${t.series.length})</span></div><div class="lista">`;
     html += t.series.map(s => {
       const poster = s.episodios.find(f => f.posterUrl);   // um pôster já basta pra série inteira
       const tituloHtml = `${poster ? posterHtml(poster) : ''}${esc(s.nome)} <span class="count">(${s.episodios.length} ${s.episodios.length === 1 ? 'episódio' : 'episódios'})</span>`;
-      return grupo('s:' + s.chave, tituloHtml, s.episodios.map(f => rowHtml(f, true)).join(''));
+      return grupo('s:' + s.chave, tituloHtml, seletorAudioSerieHtml(s.chave, audiosDasSeries[s.chave]) + s.episodios.map(f => rowHtml(f, true)).join(''));
     }).join('');
     html += `</div></div>`;
   }

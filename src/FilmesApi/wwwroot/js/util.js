@@ -46,3 +46,27 @@ function toggleGrupo(el, folderSet) {
   var caret = el.querySelector('.caret');
   if (caret) caret.textContent = aberto ? '▾' : '▸';
 }
+
+// ─── Áudio padrão por série (index.html e controle.html; a TV só obedece o servidor) ───
+
+// { chave: idioma } das séries com idioma definido; {} se o servidor não responder.
+function carregarAudiosDasSeries() {
+  return fetchJsonOuNull('/api/series/audio').then(function (mapa) { return mapa || {}; });
+}
+
+// Seletor "Áudio padrão: Automático / Português / Inglês" pro topo do grupo de uma série.
+function seletorAudioSerieHtml(chave, atual) {
+  var op = function (valor, rotulo) {
+    return '<option value="' + valor + '"' + ((atual || '') === valor ? ' selected' : '') + '>' + rotulo + '</option>';
+  };
+  return '<label class="serie-audio">Áudio padrão: <select data-chave="' + attr(chave) + '" onchange="definirAudioSerie(this)">' +
+    op('', 'Automático') + op('por', 'Português') + op('eng', 'Inglês') + '</select></label>';
+}
+
+// Grava a escolha. Vale pro PRÓXIMO episódio que abrir (não derruba quem está assistindo).
+function definirAudioSerie(select) {
+  return fetch('/api/series/' + encodeURIComponent(select.getAttribute('data-chave')) + '/audio', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ idioma: select.value || null })
+  }).then(function (r) { if (!r.ok) alert('Não consegui salvar o áudio padrão da série.'); });
+}

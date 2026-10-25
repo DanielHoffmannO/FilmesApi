@@ -44,6 +44,9 @@ internal sealed class ScanFixture : IDisposable
         escopo.ServiceProvider.GetRequiredService<AppDbContext>().Database.EnsureCreated();
     }
 
+    public PreferenciasAudioService Prefs => _provider.GetRequiredService<PreferenciasAudioService>();
+    public T Servico<T>() where T : notnull => _provider.GetRequiredService<T>();
+
     public EstadoMontagens Montagens => _provider.GetRequiredService<EstadoMontagens>();
 
     public string CacheHls => Path.Combine(Raiz, "hls");
@@ -86,6 +89,7 @@ internal sealed class ScanFixture : IDisposable
         servicos.AddSingleton<EstadoMontagens>();
         servicos.AddSingleton<RkmppCapabilityService>();
         servicos.AddSingleton<ThermalService>();
+        servicos.AddSingleton<PreferenciasAudioService>();
         servicos.AddSingleton<HlsTranscodeService>();
         servicos.AddSingleton<SubtitleService>();
         servicos.AddScoped<FilmeService>();
