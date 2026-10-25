@@ -66,6 +66,8 @@ public record LegendaInfo(
 public record AudioInfo(int Idx, string? Codec, string? Idioma, bool Default, bool Atual);
 
 public record AudioRequest(int Idx);
+public record SerieAudioRequest(string? Idioma);
+public record SerieAudioResponse(string? Idioma);
 
 public record ProgressoRequest(double Posicao, double? Duracao);
 public record ProgressoResponse(int FilmeId, double PosicaoSegundos, double? DuracaoSegundos, DateTime AtualizadoEm);

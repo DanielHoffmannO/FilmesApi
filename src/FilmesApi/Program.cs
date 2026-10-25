@@ -28,6 +28,7 @@ builder.Services.AddScoped<FilmeService>();
 builder.Services.AddScoped<ProgressoService>();
 builder.Services.AddSingleton<RkmppCapabilityService>();
 builder.Services.AddSingleton<ThermalService>();
+builder.Services.AddSingleton<PreferenciasAudioService>();
 builder.Services.AddSingleton<HlsTranscodeService>();
 builder.Services.AddSingleton<SubtitleService>();
 builder.Services.AddSingleton<PlayerStateService>();

@@ -56,10 +56,8 @@ public class HlsTranscodeService
     /// um lado enquanto o outro ainda está com Task.Delay(ct) pendente.</summary>
     private readonly ConcurrentDictionary<int, CancellationTokenSource> _jobCancelHls = new();
     private readonly ConcurrentDictionary<int, CancellationTokenSource> _jobCancelRemux = new();
-    /// <summary>Preferência manual de faixa de áudio por filme (controle remoto escolheu uma
-    /// "dublagem" diferente da automática) — ver <see cref="DefinirPreferenciaAudio"/> e
-    /// <see cref="EscolhaAudio.Escolher"/>. Em memória só: some num restart, volta pra automática.</summary>
-    private readonly ConcurrentDictionary<int, int> _preferenciaAudio = new();
+    private readonly PreferenciasAudioService _prefs;
+
     /// <summary>filmeId -> quando o transcode falhou. Não é permanente: depois de
     /// <c>HlsFalhaCooldownMinutes</c> a entrada expira e o filme volta a ser tentável
     /// (falha de ffmpeg costuma ser transitória — arquivo meio corrompido, placa quente).</summary>
@@ -92,8 +90,9 @@ public class HlsTranscodeService
 
     public HlsTranscodeService(FfmpegOptions ffmpeg, IConfiguration config, RkmppCapabilityService rkmpp,
         ThermalService thermal, MediaProbeService probe, ILogger<HlsTranscodeService> logger,
-        IHostApplicationLifetime lifetime)
+        IHostApplicationLifetime lifetime, PreferenciasAudioService prefs)
     {
+        _prefs = prefs;
         _pararToken = lifetime.ApplicationStopping;
         _cachePath = CachesDeDisco.Hls(config);
         _ffmpegPath = ffmpeg.Ffmpeg;
@@ -257,8 +256,7 @@ public class HlsTranscodeService
 
             var info = await _probe.InspecionarAsync(origem, CancellationToken.None)
                 ?? throw new InvalidOperationException("probe falhou");
-            var preferencia = _preferenciaAudio.TryGetValue(filmeId, out var pref) ? pref : (int?)null;
-            var audioIdx = EscolhaAudio.Escolher(info.Audios, preferencia);
+            var audioIdx = EscolherAudio(filmeId, info.Audios);
             var audioJaCompativel = EscolhaAudio.JaCompativel(info.Audios.FirstOrDefault(a => a.Index == audioIdx));
 
             var args = FfmpegArgs.Remux(origem, tmp, audioIdx, info.Largura, info.Altura, audioJaCompativel);
@@ -286,6 +284,7 @@ public class HlsTranscodeService
             if (exit != 0) throw new InvalidOperationException($"ffmpeg exit {exit}: {stderr}");
 
             File.Move(tmp, final, overwrite: true);
+            try { File.WriteAllText(CaminhoFaixaDoRemux(final), audioIdx?.ToString() ?? ""); } catch (IOException) { }
             _escrita.ContarArquivo(final);
             LogarVelocidadeDoRemux(filmeId, final, relogio.Elapsed);
         }
@@ -350,6 +349,15 @@ public class HlsTranscodeService
 
     /// <summary>Sem job de HLS/remux, ninguém esperando slot e a placa fora do throttling térmico.</summary>
     public bool Ocioso => _jobs.IsEmpty && _remuxJobs.IsEmpty && Volatile.Read(ref _esperandoSlot) == 0 && !_thermal.EstaThrottling;
+
+    /// <summary>Pré-aquece o remux só de quem precisa dele (vídeo ok, áudio não: o que já toca direto ou vai por HLS não
+    /// tem o que aquecer). Antes, descarta um remux pronto feito com outra faixa de áudio. Devolve true se começou um job.</summary>
+    public async Task<bool> PreAquecerSeNecessarioAsync(int filmeId, string origem, CancellationToken ct)
+    {
+        await DescartarRemuxDeOutraFaixaAsync(filmeId, origem, ct);
+        if (await AnalisarCompatibilidadeAsync(origem, ct) != CompatibilidadeDireta.SoAudioIncompativel) return false;
+        return PreAquecerRemux(filmeId, origem);
+    }
 
     /// <summary>Começa o remux de <paramref name="filmeId"/> SEM ninguém ter pedido (ver <see cref="PoliticaPreAquecimento"/>).
     /// Só com o servidor ocioso e se o arquivo cabe no teto do cache sem expulsar nada. Devolve true se o job começou.</summary>
@@ -432,7 +440,7 @@ public class HlsTranscodeService
         {
             if (total <= alvo) break;
             if (a.Mtime >= corte) continue;  // acessado há pouco, pode estar em uso
-            try { File.Delete(a.Caminho); }
+            try { File.Delete(a.Caminho); File.Delete(CaminhoFaixaDoRemux(a.Caminho)); }
             catch (IOException) { continue; }
             catch (UnauthorizedAccessException) { continue; }
             total -= a.Bytes;
@@ -467,8 +475,7 @@ public class HlsTranscodeService
         var info = await _probe.InspecionarAsync(arquivoAbsoluto, ct);
         if (info is null || info.Audios.Count == 0) return [];
 
-        var preferencia = _preferenciaAudio.TryGetValue(filmeId, out var pref) ? pref : (int?)null;
-        var escolhida = EscolhaAudio.Escolher(info.Audios, preferencia);
+        var escolhida = EscolherAudio(filmeId, info.Audios);
         return info.Audios
             .Select(a => new AudioInfo(a.Index, a.Codec, a.Idioma, a.Default, a.Index == escolhida))
             .ToList();
@@ -482,8 +489,48 @@ public class HlsTranscodeService
     /// vai dentro dos segments/arquivo, não dá pra trocar sem reprocessar.</summary>
     public void DefinirPreferenciaAudio(int filmeId, int audioStreamIndex)
     {
-        _preferenciaAudio[filmeId] = audioStreamIndex;
+        _prefs.DefinirFaixaDoEpisodio(filmeId, audioStreamIndex);
         DescartarCaches(filmeId);
+    }
+
+    /// <summary>A faixa que vale pra este episódio: manual do episódio > idioma da série > regra automática
+    /// (<see cref="EscolhaAudio.Escolher"/>). TUDO que escolhe faixa passa por aqui: HLS, remux, lista de /audios
+    /// e, por consequência, a legenda automática.</summary>
+    private int? EscolherAudio(int filmeId, IReadOnlyList<FaixaAudio> audios)
+    {
+        var (manual, idiomaDaSerie) = _prefs.Resolver(filmeId);
+        return EscolhaAudio.Escolher(audios, manual, idiomaDaSerie);
+    }
+
+    private static string CaminhoFaixaDoRemux(string remux) => remux + ".audio";
+
+    /// <summary>Remux em cache feito com OUTRA faixa de áudio do que a de hoje (a série ganhou um idioma
+    /// padrão depois que o episódio foi remuxado): apaga o .mp4 pra que o próximo pedido o refaça. Só mexe no
+    /// que está parado — remux em andamento, ou sem a anotação da faixa (cache antigo), fica como está.
+    /// Chamado ao abrir o episódio (<c>/remux-status</c>), não quando a preferência muda: quem está
+    /// assistindo não é derrubado, e episódio que ninguém abre não custa nada.</summary>
+    public async Task DescartarRemuxDeOutraFaixaAsync(int filmeId, string origem, CancellationToken ct)
+    {
+        var remux = CaminhoRemux(filmeId);
+        var anotacao = CaminhoFaixaDoRemux(remux);
+        if (!File.Exists(remux) || !File.Exists(anotacao)) return;
+
+        var info = await _probe.InspecionarAsync(origem, ct);
+        if (info is null) return;
+        var atual = EscolherAudio(filmeId, info.Audios);
+        string feitoComFaixa;
+        try { feitoComFaixa = (await File.ReadAllTextAsync(anotacao, ct)).Trim(); }
+        catch (IOException) { return; }
+        if (feitoComFaixa == atual?.ToString()) return;
+
+        lock (_remuxLock)
+        {
+            if (_remuxJobs.ContainsKey(filmeId)) return;
+            try { File.Delete(remux); File.Delete(anotacao); }
+            catch (IOException) { return; }
+            catch (UnauthorizedAccessException) { return; }
+        }
+        _logger.LogInformation("Remux do filme {Id} descartado: foi feito com a faixa {Antes} e o áudio de hoje é {Agora}.", filmeId, feitoComFaixa, atual);
     }
 
     /// <summary>Cancela o job de HLS/remux em andamento do filme (se houver) e apaga o cache pronto dos dois.
@@ -502,6 +549,7 @@ public class HlsTranscodeService
         {
             var caminhoRemux = CaminhoRemux(filmeId);
             if (File.Exists(caminhoRemux)) File.Delete(caminhoRemux);
+            File.Delete(CaminhoFaixaDoRemux(caminhoRemux));
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
@@ -707,8 +755,7 @@ public class HlsTranscodeService
             }
 
             var usarRkmpp = !videoCompativel && await _rkmpp.DisponivelAsync();
-            var preferencia = _preferenciaAudio.TryGetValue(filmeId, out var pref) ? pref : (int?)null;
-            var audioStreamIndex = EscolhaAudio.Escolher(info.Audios, preferencia);
+            var audioStreamIndex = EscolherAudio(filmeId, info.Audios);
             var audioJaCompativel = EscolhaAudio.JaCompativel(info.Audios.FirstOrDefault(a => a.Index == audioStreamIndex));
 
             // Decode por hardware só faz diferença (e só vale o risco) no 4K com downscale —

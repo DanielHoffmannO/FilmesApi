@@ -9,6 +9,8 @@ public class AppDbContext : DbContext
 
     public DbSet<Filme> Filmes => Set<Filme>();
     public DbSet<ProgressoReproducao> Progressos => Set<ProgressoReproducao>();
+    public DbSet<PreferenciaSerie> PreferenciasSerie => Set<PreferenciaSerie>();
+    public DbSet<PreferenciaEpisodio> PreferenciasEpisodio => Set<PreferenciaEpisodio>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -20,6 +22,20 @@ public class AppDbContext : DbContext
             e.Property(f => f.PosterUrl).HasMaxLength(500);
             e.Property(f => f.Sinopse).HasMaxLength(2000);
             e.HasIndex(f => f.ArquivoPath).IsUnique();
+        });
+
+        modelBuilder.Entity<PreferenciaSerie>(e =>
+        {
+            e.ToTable("PreferenciasSerie");
+            e.HasKey(p => p.ChaveSerie);
+            e.Property(p => p.IdiomaAudio).IsRequired();
+        });
+
+        modelBuilder.Entity<PreferenciaEpisodio>(e =>
+        {
+            e.ToTable("PreferenciasEpisodio");
+            e.HasKey(p => p.FilmeId);
+            e.HasOne(p => p.Filme).WithMany().HasForeignKey(p => p.FilmeId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<ProgressoReproducao>(e =>
