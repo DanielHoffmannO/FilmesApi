@@ -92,6 +92,7 @@ internal sealed class ScanFixture : IDisposable
         servicos.AddSingleton<PreferenciasAudioService>();
         servicos.AddSingleton<HlsTranscodeService>();
         servicos.AddSingleton<SubtitleService>();
+        servicos.AddSingleton<LimpezaCacheService>();
         servicos.AddScoped<FilmeService>();
         servicos.AddScoped<ProgressoService>();
         return servicos.BuildServiceProvider();

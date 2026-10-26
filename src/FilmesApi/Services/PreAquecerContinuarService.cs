@@ -39,7 +39,7 @@ public class PreAquecerContinuarService(IServiceScopeFactory escopos, IConfigura
             var caminho = await escopo.ServiceProvider.GetRequiredService<FilmeService>().ResolverCaminhoAsync(primeiro.Id);
             if (caminho is null) return null;
 
-            return await transcode.PreAquecerSeNecessarioAsync(primeiro.Id, caminho, ct) ? primeiro.Id : null;
+            return await transcode.PreAquecerSeNecessarioAsync(primeiro.Id, caminho, jaAssistido: false, ct) ? primeiro.Id : null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

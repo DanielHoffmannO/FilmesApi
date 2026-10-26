@@ -34,6 +34,8 @@ builder.Services.AddSingleton<SubtitleService>();
 builder.Services.AddSingleton<PlayerStateService>();
 builder.Services.AddHostedService<ScanPeriodicoService>();
 builder.Services.AddHostedService<PreAquecerContinuarService>();
+builder.Services.AddSingleton<LimpezaCacheService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<LimpezaCacheService>());
 builder.Services.AddSingleton<NomesPersonalizadosService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<NomesPersonalizadosService>());
 builder.Services.AddHttpClient();
