@@ -138,7 +138,7 @@ public class FilmeService
         if (filme is null) return false;
         filme.Assistido = !filme.Assistido;
         await _db.SaveChangesAsync();
-        if (filme.Assistido) _transcode.DescartarCaches(id);   // já visto: não deixa GB de cache gravados à toa
+        if (filme.Assistido) _transcode.AoVirarAssistido(id);
         return true;
     }
 

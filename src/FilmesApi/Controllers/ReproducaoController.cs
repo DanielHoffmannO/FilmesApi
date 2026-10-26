@@ -17,10 +17,13 @@ public class ReproducaoController : ControllerBase
     private readonly ThermalService _thermal;
     private readonly EstadoMontagens _montagens;
 
+    private readonly LimpezaCacheService _limpeza;
+
     public ReproducaoController(
         FilmeService service, HlsTranscodeService transcode, SubtitleService legendas,
-        RkmppCapabilityService rkmpp, ThermalService thermal, EstadoMontagens montagens)
+        RkmppCapabilityService rkmpp, ThermalService thermal, EstadoMontagens montagens, LimpezaCacheService limpeza)
     {
+        _limpeza = limpeza;
         _service = service;
         _transcode = transcode;
         _legendas = legendas;
@@ -30,10 +33,10 @@ public class ReproducaoController : ControllerBase
     }
 
     /// <summary>Diagnóstico de runtime pro dono do servidor: temperatura da placa, fila de
-    /// transcode, uso do cache, estado da VPU, e por pasta/disco de 1º nível se o catálogo bate com o que
+    /// transcode, uso do cache (e o que ele guarda: assistido, não assistido, órfão, parado), estado da VPU, e por pasta/disco de 1º nível se o catálogo bate com o que
     /// está no disco (<c>montagens</c>, do último scan). Consumido por <c>wwwroot/status.html</c>.</summary>
     [HttpGet("/api/status")]
-    public IActionResult Status() => Ok(new
+    public async Task<IActionResult> Status() => Ok(new
     {
         agora = DateTime.UtcNow,
         transcode = _transcode.ObterSnapshot(),
@@ -44,6 +47,7 @@ public class ReproducaoController : ControllerBase
             temperaturaC = _thermal.TemperaturaC(),
             throttlingAgora = _thermal.EstaThrottling,
         },
+        cache = await _limpeza.InventarioAsync(),
         montagens = _montagens.Montagens,
         montagensAtualizadoEm = _montagens.AtualizadoEm,
     });
@@ -123,11 +127,12 @@ public class ReproducaoController : ControllerBase
         if (path is null) return ArquivoNaoEncontrado();
 
         var iniciados = new List<int>();
-        if (await _transcode.PreAquecerSeNecessarioAsync(id, path, ct)) iniciados.Add(id);
+        var atual = await _service.ObterAsync(id);
+        if (atual is not null && await _transcode.PreAquecerSeNecessarioAsync(id, path, atual.Assistido, ct)) iniciados.Add(id);
 
         var prox = await _service.ProximoEpisodioAsync(id);
         var proxPath = prox is null ? null : await _service.ResolverCaminhoAsync(prox.Id);
-        if (prox is not null && proxPath is not null && await _transcode.PreAquecerSeNecessarioAsync(prox.Id, proxPath, ct))
+        if (prox is not null && proxPath is not null && await _transcode.PreAquecerSeNecessarioAsync(prox.Id, proxPath, prox.Assistido, ct))
             iniciados.Add(prox.Id);
         return Ok(new { iniciados });
     }

@@ -87,7 +87,9 @@ public class ProgressoService
             // Corrida com outro save/concluir do mesmo filme (aba dupla, pagehide + pause).
             // O próximo tick de progresso corrige — melhor engolir do que 500 no player.
             _db.ChangeTracker.Clear();
+            return true;
         }
+        if (decisao == DecisaoSalvarProgresso.DescartarEMarcarAssistido) _transcode?.AoVirarAssistido(filmeId);
         return true;
     }
 
@@ -122,7 +124,7 @@ public class ProgressoService
         await _db.Filmes.Where(f => f.Id == filmeId)
             .ExecuteUpdateAsync(s => s.SetProperty(f => f.Assistido, true));
         await _db.Progressos.Where(p => p.FilmeId == filmeId).ExecuteDeleteAsync();
-        _transcode?.DescartarCaches(filmeId);   // terminou: o cache (GBs gravados no disco) não vai ser relido
+        _transcode?.AoVirarAssistido(filmeId);
         return true;
     }
 

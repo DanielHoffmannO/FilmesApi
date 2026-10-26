@@ -844,7 +844,7 @@ video { width: 100%; height: auto; background: #000; }
       // comecar cedo pra nao ter o "Preparando..." quando o usuario realmente abrir. Seguro
       // nesse momento (fim do atual): o job do episodio que acabou ja deve estar pronto, entao
       // nao compete por CPU/VPU com o que esta tocando de verdade.
-      preAquecerProximo(prox.id, meuToken);
+      if (!prox.assistido) preAquecerProximo(prox.id, meuToken);   // rever: nao enche o cache de quem ja viu
       // Avisa o celular que tem oferta de proximo episodio na tela — sem isso, quem so
       // tem o controle.html na mao nao sabe que apareceu nem consegue confirmar.
       send('POST', PLAYER + '/proximo-oferece', { filmeId: prox.id, rotulo: rotuloComTitulo(prox) });

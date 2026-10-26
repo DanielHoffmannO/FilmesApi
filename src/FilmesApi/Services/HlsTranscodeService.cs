@@ -351,9 +351,10 @@ public class HlsTranscodeService
     public bool Ocioso => _jobs.IsEmpty && _remuxJobs.IsEmpty && Volatile.Read(ref _esperandoSlot) == 0 && !_thermal.EstaThrottling;
 
     /// <summary>Pré-aquece o remux só de quem precisa dele (vídeo ok, áudio não: o que já toca direto ou vai por HLS não
-    /// tem o que aquecer). Antes, descarta um remux pronto feito com outra faixa de áudio. Devolve true se começou um job.</summary>
-    public async Task<bool> PreAquecerSeNecessarioAsync(int filmeId, string origem, CancellationToken ct)
+    /// tem o que aquecer) nem o que já foi assistido. Antes, descarta um remux pronto feito com outra faixa de áudio. Devolve true se começou um job.</summary>
+    public async Task<bool> PreAquecerSeNecessarioAsync(int filmeId, string origem, bool jaAssistido, CancellationToken ct)
     {
+        if (jaAssistido) return false;   // quem revê uma série não enche o cache de episódio que já viu (dar play continua funcionando)
         await DescartarRemuxDeOutraFaixaAsync(filmeId, origem, ct);
         if (await AnalisarCompatibilidadeAsync(origem, ct) != CompatibilidadeDireta.SoAudioIncompativel) return false;
         return PreAquecerRemux(filmeId, origem);
@@ -532,6 +533,33 @@ public class HlsTranscodeService
         }
         _logger.LogInformation("Remux do filme {Id} descartado: foi feito com a faixa {Antes} e o áudio de hoje é {Agora}.", filmeId, feitoComFaixa, atual);
     }
+
+    internal string PastaHls => _cachePath;
+    internal string PastaRemux => _remuxCachePath;
+    internal long TetoHlsBytes => _cacheMaxBytes;
+    internal long TetoRemuxBytes => _remuxCacheMaxBytes;
+
+    /// <summary>Como a <see cref="LimpezaDeCache"/> enxerga este serviço: último interesse, job em andamento e como apagar.</summary>
+    internal GanchosDeCache GanchosDeCache() => new(
+        id => _ultimoAcesso.TryGetValue(id, out var visto) ? visto : null,
+        (id, tipo) => tipo == TipoCache.Hls ? _jobs.ContainsKey(id) : _remuxJobs.ContainsKey(id),
+        (id, tipo) => { if (tipo == TipoCache.Hls) LimparCache(id); else ApagarRemux(id); });
+
+    private void ApagarRemux(int filmeId)
+    {
+        try
+        {
+            File.Delete(CaminhoRemux(filmeId));
+            File.Delete(CaminhoFaixaDoRemux(CaminhoRemux(filmeId)));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* best-effort */ }
+    }
+
+    /// <summary>O ponto único de "o episódio virou assistido": larga o cache dele. Chamado por TODO caminho que
+    /// põe Assistido=true (<c>ConcluirAsync</c>, <c>MarcarAssistidoAsync</c> e o <c>SalvarAsync</c> perto do fim —
+    /// quem sai nos créditos sem disparar <c>ended</c> também passa por aqui). Já visto quase nunca volta, e o cache
+    /// é a maior fonte de escrita no disco; rever só custa um transcode novo.</summary>
+    public void AoVirarAssistido(int filmeId) => DescartarCaches(filmeId);
 
     /// <summary>Cancela o job de HLS/remux em andamento do filme (se houver) e apaga o cache pronto dos dois.
     /// Usado ao trocar de dublagem (precisa regerar) e quando o episódio termina ou é marcado como assistido:
