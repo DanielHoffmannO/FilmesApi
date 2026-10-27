@@ -435,8 +435,8 @@ public class HlsTranscodeService
         var total = arquivos.Sum(a => a.Bytes);
         if (total <= tetoBytes) return despejados;
 
-        var alvo = (long)(tetoBytes * 0.9);
-        var corte = agoraUtc - TimeSpan.FromMinutes(30);
+        var alvo = (long)(tetoBytes * CachesDeDisco.FracaoAlvoAoExpulsar);
+        var corte = agoraUtc - CachesDeDisco.MargemDeUsoNaExpulsao;
         foreach (var a in arquivos)
         {
             if (total <= alvo) break;
@@ -636,8 +636,8 @@ public class HlsTranscodeService
 
             if (total <= _cacheMaxBytes) return;
 
-            var alvo = (long)(_cacheMaxBytes * 0.9);
-            var corte = DateTime.UtcNow - TimeSpan.FromMinutes(30);
+            var alvo = (long)(_cacheMaxBytes * CachesDeDisco.FracaoAlvoAoExpulsar);
+            var corte = DateTime.UtcNow - CachesDeDisco.MargemDeUsoNaExpulsao;
             var candidatos = caches
                 .Where(c => c.Acesso < corte && !_jobs.ContainsKey(c.Id))
                 .OrderByDescending(c => c.Remux)     // remux (duplicata) sai primeiro
@@ -931,7 +931,7 @@ public class HlsTranscodeService
     private readonly object _cacheStatsLock = new();
 
     /// <summary>Retrato do estado do transcode pra página de status (que faz poll a cada ~3 s).
-    /// A varredura de tamanho do cache em disco é feita no máximo a cada 20 s.</summary>
+    /// A varredura de tamanho do cache em disco é feita no máximo a cada <see cref="CachesDeDisco.ValidadeDoRetrato"/>.</summary>
     public Models.HlsStatusSnapshot ObterSnapshot()
     {
         var jobs = _jobs.Keys.OrderBy(x => x).ToArray();
@@ -940,7 +940,7 @@ public class HlsTranscodeService
         (long HlsBytes, int HlsItens, long RemuxBytes, int RemuxItens, DateTime _) stats;
         lock (_cacheStatsLock)
         {
-            if (DateTime.UtcNow - _cacheStats.Quando > TimeSpan.FromSeconds(20))
+            if (DateTime.UtcNow - _cacheStats.Quando > CachesDeDisco.ValidadeDoRetrato)
             {
                 var (hlsBytes, hlsItens) = MedirCacheHls();
                 var (remuxBytes, remuxItens) = MedirCacheRemux();
