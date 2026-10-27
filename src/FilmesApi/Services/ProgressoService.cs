@@ -63,7 +63,7 @@ public class ProgressoService
             case DecisaoSalvarProgresso.DescartarEMarcarAssistido:
                 // Começo do filme ou praticamente no fim: não guarda ponto de retomada.
                 if (filme.Progresso is not null) _db.Progressos.Remove(filme.Progresso);
-                if (decisao == DecisaoSalvarProgresso.DescartarEMarcarAssistido) filme.Assistido = true;
+                if (decisao == DecisaoSalvarProgresso.DescartarEMarcarAssistido) filme.DefinirAssistido(true);
                 break;
             case DecisaoSalvarProgresso.Inserir:
                 _db.Progressos.Add(new ProgressoReproducao
@@ -122,7 +122,7 @@ public class ProgressoService
         // (linha de progresso já apagada). Assim cada operação é um WHERE idempotente —
         // apagar 0 linhas é ok.
         await _db.Filmes.Where(f => f.Id == filmeId)
-            .ExecuteUpdateAsync(s => s.SetProperty(f => f.Assistido, true));
+            .ExecuteUpdateAsync(s => s.SetProperty(f => f.Assistido, true).SetProperty(f => f.AssistidoEm, DateTime.UtcNow));
         await _db.Progressos.Where(p => p.FilmeId == filmeId).ExecuteDeleteAsync();
         _transcode?.AoVirarAssistido(filmeId);
         return true;

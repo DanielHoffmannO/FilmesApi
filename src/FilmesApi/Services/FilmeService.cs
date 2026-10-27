@@ -70,15 +70,30 @@ public class FilmeService
         var continuarCandidatos = new List<FilmeResponse>();
         if (tipo == "all" && visto == "all")
         {
-            var continuarBase = await _progresso.ContinuarAssistindoAsync();
-            var porId = todos.ToDictionary(f => f.Id);
-            continuarCandidatos = continuarBase
-                .Select(c => porId.GetValueOrDefault(c.Id))
-                .OfType<FilmeResponse>()
-                .ToList();
+            continuarCandidatos = await PelaMetadeAsync(todos);
         }
 
         return CatalogoAgrupador.Montar(todos, continuarCandidatos, tipo, visto, busca);
+    }
+
+    /// <summary>O que ficou pela metade (mais recente primeiro), cruzado por id com o catálogo já carregado pra ter o
+    /// <see cref="FilmeResponse"/> cheio.</summary>
+    private async Task<List<FilmeResponse>> PelaMetadeAsync(List<FilmeResponse> todos)
+    {
+        var porId = todos.ToDictionary(f => f.Id);
+        return (await _progresso.ContinuarAssistindoAsync())
+            .Select(c => porId.GetValueOrDefault(c.Id)).OfType<FilmeResponse>().ToList();
+    }
+
+    /// <summary>A fila do controle (ver <see cref="FilaContinuar"/>): o que ficou pela metade e o próximo episódio das séries vistas há pouco.</summary>
+    public async Task<List<ItemFila>> ObterFilaAsync()
+    {
+        var todos = await ListarAsync();
+        var pelaMetade = await PelaMetadeAsync(todos);
+        var corte = DateTime.UtcNow.AddDays(-FilaContinuar.JanelaDias);
+        var vistos = await _db.Filmes.AsNoTracking().Where(f => f.Assistido && f.AssistidoEm >= corte)
+            .ToDictionaryAsync(f => f.Id, f => f.AssistidoEm!.Value);
+        return FilaContinuar.Montar(todos, pelaMetade, vistos, DateTime.UtcNow);
     }
 
     /// <summary>Episódios faltando, repetidos, não reconhecidos e propaganda no catálogo inteiro
@@ -111,12 +126,8 @@ public class FilmeService
         var atual = todos.FirstOrDefault(f => f.Id == id);
         if (atual is null || !atual.EhEpisodio || atual.EhExtra) return null;
 
-        var episodios = todos
-            .Where(f => f.EhEpisodio && !f.EhExtra && f.SerieChave == atual.SerieChave)
-            .OrderBy(f => f.Temporada ?? 0)
-            .ThenBy(f => f.Episodio ?? 0)
-            .ThenBy(f => f.Titulo, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var episodios = todos.Where(f => f.EhEpisodio && !f.EhExtra && f.SerieChave == atual.SerieChave).ToList();
+        CatalogoAgrupador.OrdenarEpisodios(episodios);
 
         var i = episodios.FindIndex(f => f.Id == id);
         return i >= 0 && i + 1 < episodios.Count ? episodios[i + 1] : null;
@@ -136,7 +147,7 @@ public class FilmeService
     {
         var filme = await _db.Filmes.FindAsync(id);
         if (filme is null) return false;
-        filme.Assistido = !filme.Assistido;
+        filme.DefinirAssistido(!filme.Assistido);
         await _db.SaveChangesAsync();
         if (filme.Assistido) _transcode.AoVirarAssistido(id);
         return true;

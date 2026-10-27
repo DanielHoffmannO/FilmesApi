@@ -184,7 +184,7 @@ public static class CatalogoAgrupador
         return candidatos;
     }
 
-    private static void OrdenarEpisodios(List<FilmeResponse> episodios) =>
+    internal static void OrdenarEpisodios(List<FilmeResponse> episodios) =>
         episodios.Sort((a, b) =>
         {
             var c = (a.Temporada ?? 0).CompareTo(b.Temporada ?? 0);

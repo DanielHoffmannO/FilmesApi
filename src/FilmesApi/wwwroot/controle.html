@@ -137,14 +137,20 @@ async function render() {
   const grid = document.getElementById('grid');
   const msg = document.getElementById('msg');
   const params = new URLSearchParams({ tipo: filtroTipo, visto: 'all' });
-  const t = await fetchJsonOuNull(`${API}/tela?${params}`);
+  const [t, fila] = await Promise.all([
+    fetchJsonOuNull(`${API}/tela?${params}`),
+    filtroTipo === 'all' ? fetchJsonOuNull(`${API}/fila`) : null,
+  ]);
 
   if (!t) { msg.style.display = 'block'; msg.textContent = 'Falha ao carregar a lista.'; return; }
 
   let html = '';
-  if (t.continuarAssistindo.length) {
+  if (fila && fila.length) {
     html += '<div class="secao-title">Continuar assistindo</div>';
-    for (const c of t.continuarAssistindo) html += rowHtml(c);
+    for (const i of fila) {
+      // "próximo": o episódio seguinte de uma série vista há pouco — o nome da série vai junto porque a linha está fora do grupo dela
+      html += rowHtml(i.filme, i.motivo === 'proximo' ? 'A seguir · ' + i.filme.serie + ' · ' + rotuloComTitulo(i.filme) : null);
+    }
   }
 
   // Essa tela não distingue "pasta de filme+extras" de filme solto — lista tudo junto,

@@ -1,7 +1,7 @@
 namespace FilmesApi.Services;
 
 /// <summary>
-/// Deixa o remux do "continuar assistindo" número 1 (o que o dono mais abre) pronto antes de ele abrir: a TV sem HLS
+/// Deixa pronto, antes de abrir, o remux dos 3 primeiros da fila do controle (<see cref="FilaContinuar"/>: o que está pela metade ou o próximo episódio): a TV sem HLS
 /// espera o remux inteiro terminar antes de tocar (533 MB ≈ 25 s; um filme de 4,8 GB ≈ 4 min de "Preparando áudio").
 /// Só quando o servidor está ocioso e o arquivo cabe no teto do cache sem expulsar nada (<see cref="PoliticaPreAquecimento"/>);
 /// o job cede o lugar se alguém precisar do encoder. <c>PreAquecerContinuarMinutos</c> (padrão 5; 0 desliga).
@@ -9,6 +9,9 @@ namespace FilmesApi.Services;
 public class PreAquecerContinuarService(IServiceScopeFactory escopos, IConfiguration config, ILogger<PreAquecerContinuarService> logger)
     : BackgroundService
 {
+    /// <summary>Quantos da frente da fila entram no pré-aquecimento (um aquecido por checagem).</summary>
+    private const int Candidatos = 3;
+
     protected override async Task ExecuteAsync(CancellationToken parar)
     {
         var minutos = config.GetValue<double?>("PreAquecerContinuarMinutos") ?? 5;
@@ -33,13 +36,15 @@ public class PreAquecerContinuarService(IServiceScopeFactory escopos, IConfigura
             var transcode = escopo.ServiceProvider.GetRequiredService<HlsTranscodeService>();
             if (!transcode.Ocioso) return null;   // barato: antes de qualquer consulta
 
-            var primeiro = (await escopo.ServiceProvider.GetRequiredService<ProgressoService>().ContinuarAssistindoAsync(limite: 1)).FirstOrDefault();
-            if (primeiro is null) return null;
-
-            var caminho = await escopo.ServiceProvider.GetRequiredService<FilmeService>().ResolverCaminhoAsync(primeiro.Id);
-            if (caminho is null) return null;
-
-            return await transcode.PreAquecerSeNecessarioAsync(primeiro.Id, caminho, jaAssistido: false, ct) ? primeiro.Id : null;
+            var filmes = escopo.ServiceProvider.GetRequiredService<FilmeService>();
+            // um por vez: o que já está pronto (ou não precisa de remux) devolve false e passa a vez ao seguinte da fila
+            foreach (var item in (await filmes.ObterFilaAsync()).Take(Candidatos))
+            {
+                var caminho = await filmes.ResolverCaminhoAsync(item.Filme.Id);
+                if (caminho is not null && await transcode.PreAquecerSeNecessarioAsync(item.Filme.Id, caminho, item.Filme.Assistido, ct))
+                    return item.Filme.Id;
+            }
+            return null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
