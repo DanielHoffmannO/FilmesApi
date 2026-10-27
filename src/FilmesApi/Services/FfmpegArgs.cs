@@ -113,8 +113,8 @@ internal static class FfmpegArgs
             "-hls_flags", "temp_file+independent_segments",
             "-hls_segment_type", "mpegts",
             "-start_number", "0",
-            "-hls_segment_filename", "seg_%05d.ts",
-            "playlist.m3u8",
+            "-hls_segment_filename", NomesDeCache.SegmentoFfmpeg,
+            NomesDeCache.Playlist,
         ]);
         return args;
     }

@@ -24,10 +24,6 @@ public enum CompatibilidadeDireta { Compativel, SoAudioIncompativel, Incompative
 /// </summary>
 public class HlsTranscodeService
 {
-    /// <summary>Nome do marcador que sinaliza "esse cache é só remux stream-copy" — pura
-    /// duplicata do original, sem ganho de compressão, então é o primeiro a ser despejado.</summary>
-    private const string MarcadorRemux = ".remux";
-
     private readonly string _cachePath;
     private readonly string _ffmpegPath;
     private readonly TimeSpan _jobTimeout;
@@ -121,7 +117,7 @@ public class HlsTranscodeService
     }
 
     public string DiretorioCache(int filmeId) => Path.Combine(_cachePath, filmeId.ToString());
-    public string CaminhoPlaylist(int filmeId) => Path.Combine(DiretorioCache(filmeId), "playlist.m3u8");
+    public string CaminhoPlaylist(int filmeId) => Path.Combine(DiretorioCache(filmeId), NomesDeCache.Playlist);
 
     private static readonly Regex SegmentoValido = new(@"^seg_[0-9]{5}\.ts\z", RegexOptions.Compiled);
 
@@ -175,7 +171,7 @@ public class HlsTranscodeService
     }
 
 
-    public string CaminhoRemux(int filmeId) => Path.Combine(_remuxCachePath, $"{filmeId}.mp4");
+    public string CaminhoRemux(int filmeId) => Path.Combine(_remuxCachePath, $"{filmeId}{NomesDeCache.ExtensaoRemux}");
 
     /// <summary>Caminho do .mp4 remuxado se já está completo em disco (e marca o acesso pro
     /// LRU), senão null.</summary>
@@ -224,7 +220,7 @@ public class HlsTranscodeService
     {
         try
         {
-            var tmp = CaminhoRemux(filmeId) + ".tmp";
+            var tmp = CaminhoRemux(filmeId) + NomesDeCache.SufixoTmp;
             if (!File.Exists(tmp)) return 0;
             var origBytes = new FileInfo(origem).Length;
             if (origBytes <= 0) return null;
@@ -237,7 +233,7 @@ public class HlsTranscodeService
     private async Task ExecutarRemuxAsync(int filmeId, string origem, CancellationToken ct)
     {
         var final = CaminhoRemux(filmeId);
-        var tmp = final + ".tmp";
+        var tmp = final + NomesDeCache.SufixoTmp;
         var slotObtido = false;
         var orfao = false;
         try
@@ -421,7 +417,7 @@ public class HlsTranscodeService
         if (!Directory.Exists(pasta)) return despejados;
 
         var arquivos = new List<(string Caminho, string Nome, long Bytes, DateTime Mtime)>();
-        foreach (var caminho in Directory.EnumerateFiles(pasta, "*.mp4"))
+        foreach (var caminho in Directory.EnumerateFiles(pasta, NomesDeCache.PadraoRemux))
         {
             try
             {
@@ -503,7 +499,7 @@ public class HlsTranscodeService
         return EscolhaAudio.Escolher(audios, manual, idiomaDaSerie);
     }
 
-    private static string CaminhoFaixaDoRemux(string remux) => remux + ".audio";
+    private static string CaminhoFaixaDoRemux(string remux) => remux + NomesDeCache.SufixoFaixa;
 
     /// <summary>Remux em cache feito com OUTRA faixa de áudio do que a de hoje (a série ganhou um idioma
     /// padrão depois que o episódio foi remuxado): apaga o .mp4 pra que o próximo pedido o refaça. Só mexe no
@@ -624,14 +620,14 @@ public class HlsTranscodeService
                 {
                     var fi = new FileInfo(arq);
                     bytes += fi.Length;
-                    if (fi.Name == "playlist.m3u8") acesso = fi.LastWriteTimeUtc;
+                    if (fi.Name == NomesDeCache.Playlist) acesso = fi.LastWriteTimeUtc;
                 }
                 // "Acessado" = mtime do playlist OU keepalive recente (_ultimoAcesso). O mtime
                 // para de subir quando o playback vira só fetch de segmento, então sozinho ele
                 // acha que ninguém está assistindo um filme que está tocando.
                 if (_ultimoAcesso.TryGetValue(id, out var ka) && ka > acesso) acesso = ka;
                 total += bytes;
-                caches.Add((id, dir, bytes, acesso, File.Exists(Path.Combine(dir, MarcadorRemux))));
+                caches.Add((id, dir, bytes, acesso, File.Exists(Path.Combine(dir, NomesDeCache.MarcadorRemux))));
             }
 
             if (total <= _cacheMaxBytes) return;
@@ -737,7 +733,7 @@ public class HlsTranscodeService
     {
         try
         {
-            return Directory.Exists(dir) && Directory.EnumerateFiles(dir, "seg_*.ts").Any();
+            return Directory.Exists(dir) && Directory.EnumerateFiles(dir, NomesDeCache.Segmentos).Any();
         }
         catch (DirectoryNotFoundException)
         {
@@ -830,7 +826,7 @@ public class HlsTranscodeService
             // Remux stream-copy = cópia quase idêntica do original (sem ganho). Marca pra
             // eviction preferir despejar esse tipo primeiro quando o cache passar do teto.
             if (videoCompativel)
-                try { File.WriteAllText(Path.Combine(dir, MarcadorRemux), ""); } catch (IOException) { }
+                try { File.WriteAllText(Path.Combine(dir, NomesDeCache.MarcadorRemux), ""); } catch (IOException) { }
             _escrita.ContarPasta(dir);
         }
         catch (OperationCanceledException)
@@ -903,7 +899,7 @@ public class HlsTranscodeService
             }
 
             int n;
-            try { n = Directory.EnumerateFiles(dir, "seg_*.ts").Count(); }
+            try { n = Directory.EnumerateFiles(dir, NomesDeCache.Segmentos).Count(); }
             catch { return false; }
             if (n != ultimaContagem) { ultimaContagem = n; ultimoProgresso = DateTime.UtcNow; return false; }
             if (DateTime.UtcNow - ultimoProgresso <= _stallTimeout) return false;
@@ -987,7 +983,7 @@ public class HlsTranscodeService
     {
         try
         {
-            var itens = Directory.Exists(_remuxCachePath) ? Directory.EnumerateFiles(_remuxCachePath, "*.mp4").Count() : 0;
+            var itens = Directory.Exists(_remuxCachePath) ? Directory.EnumerateFiles(_remuxCachePath, NomesDeCache.PadraoRemux).Count() : 0;
             return (EscritaDeCache.TamanhoDaPasta(_remuxCachePath), itens);
         }
         catch (IOException) { return (0, 0); }
