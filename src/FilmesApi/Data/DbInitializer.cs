@@ -78,6 +78,7 @@ public static class DbInitializer
             ("PosterUrl", """ALTER TABLE "Filmes" ADD COLUMN "PosterUrl" TEXT NULL;"""),
             ("Sinopse", """ALTER TABLE "Filmes" ADD COLUMN "Sinopse" TEXT NULL;"""),
             ("MetadadosEm", """ALTER TABLE "Filmes" ADD COLUMN "MetadadosEm" TEXT NULL;"""),
+            ("AssistidoEm", """ALTER TABLE "Filmes" ADD COLUMN "AssistidoEm" TEXT NULL;"""),
         })
             if (!colunasFilmes.Contains(nome)) db.Database.ExecuteSqlRaw(ddl);
     }

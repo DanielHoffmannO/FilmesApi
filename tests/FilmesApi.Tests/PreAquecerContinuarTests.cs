@@ -84,6 +84,43 @@ public class PreAquecerContinuarTests : IDisposable
     }
 
     [Fact]
+    public async Task Sem_nada_pela_metade_aquece_o_proximo_episodio_da_serie_que_acabou_de_terminar()
+    {
+        var (f, _, servico) = await Cenario(comProgresso: false);
+        f.Arquivo("Series/Show/Show.S01E01.mkv", new string('a', 4096));
+        f.Arquivo("Series/Show/Show.S01E02.mkv", new string('b', 4096));
+        await f.ScanAsync();
+        var ep1 = await f.IdDeAsync("Series/Show/Show.S01E01.mkv");
+        var ep2 = await f.IdDeAsync("Series/Show/Show.S01E02.mkv");
+        await f.NoEscopoAsync(async sp => await sp.GetRequiredService<ProgressoService>().ConcluirAsync(ep1));
+
+        Assert.Equal(ep2, await servico.ExecutarUmaVezAsync());
+
+        await Espera(() => File.Exists(Path.Combine(f.CacheRemux, $"{ep2}.mp4")));
+        Assert.True(File.Exists(Path.Combine(f.CacheRemux, $"{ep2}.mp4")));
+    }
+
+    [Fact]
+    public async Task Terminado_o_primeiro_da_fila_aquece_o_segundo_na_checagem_seguinte()
+    {
+        var (f, idA, servico) = await Cenario();
+        f.Arquivo("Filmes/Alien.1979.mkv", new string('y', 4096));
+        await f.ScanAsync();
+        var idB = await f.IdDeAsync("Filmes/Alien.1979.mkv");
+        await f.NoEscopoAsync(async sp => await sp.GetRequiredService<ProgressoService>().SalvarAsync(idB, 200, 3600));
+        var transcode = await f.NoEscopoAsync(sp => Task.FromResult(sp.GetRequiredService<HlsTranscodeService>()));
+
+        var primeiro = await servico.ExecutarUmaVezAsync();
+        await Espera(() => transcode.Ocioso);
+        var segundo = await servico.ExecutarUmaVezAsync();
+
+        Assert.NotNull(primeiro);
+        Assert.NotNull(segundo);
+        Assert.NotEqual(primeiro, segundo);
+        Assert.Equal(new[] { idA, idB }.Order(), new[] { primeiro!.Value, segundo!.Value }.Order());
+    }
+
+    [Fact]
     public async Task Loga_mb_segundos_e_mb_por_segundo_ao_fim_do_remux()
     {
         var (f, id, servico) = await Cenario();

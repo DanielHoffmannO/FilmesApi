@@ -11,6 +11,18 @@ public class Filme
     public string? ArquivoPath { get; set; }
 
     public bool Assistido { get; set; }
+
+    /// <summary>Quando virou assistido (alimenta "o próximo episódio" da fila do controle). Null em quem já
+    /// estava assistido antes da coluna existir e em quem foi desmarcado.</summary>
+    public DateTime? AssistidoEm { get; set; }
+
+    /// <summary>Marca/desmarca já carimbando <see cref="AssistidoEm"/> — use no lugar de mexer nos dois campos (o <c>ExecuteUpdate</c> do
+    /// <c>ConcluirAsync</c> não passa por aqui e seta os dois por conta própria).</summary>
+    public void DefinirAssistido(bool assistido)
+    {
+        Assistido = assistido;
+        AssistidoEm = assistido ? DateTime.UtcNow : null;
+    }
     public DateTime DataAdicionado { get; set; } = DateTime.UtcNow;
 
     // ─── Metadados do TMDB (preenchidos em background quando TmdbApiKey está configurada) ───

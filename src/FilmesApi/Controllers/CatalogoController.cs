@@ -21,6 +21,11 @@ public class CatalogoController : ControllerBase
         [FromQuery] string tipo = "all", [FromQuery] string visto = "all", [FromQuery] string? busca = null)
         => Ok(await _service.ObterTelaAsync(tipo, visto, busca));
 
+    /// <summary>O que assistir agora: o que ficou pela metade e o próximo episódio das séries vistas nos últimos 14 dias.
+    /// Cada item traz <c>motivo</c> ("continuar" ou "proximo"). É o topo do controle.</summary>
+    [HttpGet("fila")]
+    public async Task<IActionResult> Fila() => Ok(await _service.ObterFilaAsync());
+
     /// <summary>O que o catálogo tem de estranho: episódios faltando por série/temporada, episódio em 2+
     /// arquivos, série com 1 só episódio, arquivo solto que parece episódio e vídeo que parece propaganda de
     /// uploader. A página <c>/diagnostico.html</c> desenha isso.</summary>
