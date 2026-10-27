@@ -10,6 +10,15 @@ internal static class CachesDeDisco
     public static string Remux(IConfiguration config) => Resolver(config, "RemuxCachePath", "remux");
     public static string Legendas(IConfiguration config) => Resolver(config, "SubtitleCachePath", "subs");
 
+    /// <summary>Quem foi acessado há menos que isso pode estar em uso: a expulsão por teto não toca.</summary>
+    public static readonly TimeSpan MargemDeUsoNaExpulsao = TimeSpan.FromMinutes(30);
+
+    /// <summary>Estourou o teto: expulsa até sobrar esta fração dele (folga pra não expulsar de novo no próximo job).</summary>
+    public const double FracaoAlvoAoExpulsar = 0.9;
+
+    /// <summary>Quanto tempo um retrato do tamanho do cache serve (a página de status faz poll a cada ~3 s e varrer o disco é caro).</summary>
+    public static readonly TimeSpan ValidadeDoRetrato = TimeSpan.FromSeconds(20);
+
     private static string Resolver(IConfiguration config, string chaveEspecifica, string subpasta) =>
         config.GetValue<string>(chaveEspecifica) is { Length: > 0 } especifico
             ? especifico

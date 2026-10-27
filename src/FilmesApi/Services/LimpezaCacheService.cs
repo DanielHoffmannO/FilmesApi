@@ -50,11 +50,11 @@ public class LimpezaCacheService(IServiceScopeFactory escopos, HlsTranscodeServi
         }
     }
 
-    /// <summary>O que o cache guarda por categoria. Refeito no máximo a cada 20 s (a página de status faz poll).</summary>
+    /// <summary>O que o cache guarda por categoria. Refeito no máximo a cada <see cref="CachesDeDisco.ValidadeDoRetrato"/> (a página de status faz poll).</summary>
     public async Task<InventarioCache> InventarioAsync()
     {
         lock (_trava)
-            if (_inventario.Inventario is { } pronto && DateTime.UtcNow - _inventario.Quando < TimeSpan.FromSeconds(20)) return pronto;
+            if (_inventario.Inventario is { } pronto && DateTime.UtcNow - _inventario.Quando < CachesDeDisco.ValidadeDoRetrato) return pronto;
 
         var assistidos = await AssistidosAsync();
         var novo = LimpezaDeCache.Inventariar(transcode.PastaHls, transcode.PastaRemux, assistidos, DateTime.UtcNow,
