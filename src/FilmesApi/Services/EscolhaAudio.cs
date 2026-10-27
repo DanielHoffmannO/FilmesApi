@@ -50,7 +50,7 @@ internal static class EscolhaAudio
         if (NormalizarIdioma(idiomaDaSerie) is string idiomaSerie
             && audios.FirstOrDefault(a => NormalizarIdioma(a.Idioma) == idiomaSerie) is { } daSerie)
             return daSerie.Index;
-        return audios.Where(a => a.Idioma is not null && IdiomasAudioPreferidos.Contains(a.Idioma))
+        return audios.Where(a => EhPortugues(a.Idioma))
                 .Select(a => (int?)a.Index).FirstOrDefault()
             ?? audios.Where(a => a.Default).Select(a => (int?)a.Index).FirstOrDefault()
             ?? audios[0].Index;
