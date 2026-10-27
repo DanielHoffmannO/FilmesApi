@@ -13,6 +13,18 @@ public class EscolherStreamAudioTests
     private static FaixaAudio Ingles(int index, bool def = false) => new(index, "aac", "eng", def, Canais: 2);
     private static FaixaAudio Portugues(int index, bool def = false) => new(index, "aac", "por", def, Canais: 2);
 
+    [Theory]
+    [InlineData("por")]
+    [InlineData("POR")]
+    [InlineData("pt")]
+    [InlineData("pob")]
+    public void Portugues_e_reconhecido_em_qualquer_caixa_tanto_no_EhPortugues_quanto_na_escolha(string idioma)
+    {
+        Assert.True(EscolhaAudio.EhPortugues(idioma));
+        var audios = new[] { Ingles(1, def: true), new FaixaAudio(2, "aac", idioma, false, 2) };
+        Assert.Equal(2, EscolhaAudio.Escolher(audios));
+    }
+
     [Fact]
     public void Sem_audio_devolve_null()
     {
