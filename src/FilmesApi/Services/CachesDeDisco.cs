@@ -25,6 +25,24 @@ internal static class CachesDeDisco
             : Path.Combine(config.GetValue<string>("CachePath") is { Length: > 0 } raiz ? raiz : "/data", subpasta);
 }
 
+/// <summary>Os nomes de arquivo que o formato dos caches fixa (em disco, já em produção: não mudam sem compatibilidade).
+/// HLS: <c>hls/{id}/playlist.m3u8</c> + <c>seg_*.ts</c>. Remux: <c>remux/{id}.mp4</c>, <c>{id}.mp4.tmp</c> durante o job e
+/// <c>{id}.mp4.audio</c> com o índice da faixa usada.</summary>
+internal static class NomesDeCache
+{
+    public const string Playlist = "playlist.m3u8";
+    public const string Segmentos = "seg_*.ts";
+    public const string SegmentoFfmpeg = "seg_%05d.ts";
+    public const string ExtensaoRemux = ".mp4";
+    public const string PadraoRemux = "*" + ExtensaoRemux;
+    public const string SufixoTmp = ".tmp";
+    public const string SufixoFaixa = ".audio";
+
+    /// <summary>Marcador que sinaliza "esse cache de HLS é só remux stream-copy" — pura duplicata do original, sem ganho de
+    /// compressão, então é o primeiro a ser despejado.</summary>
+    public const string MarcadorRemux = ".remux";
+}
+
 /// <summary>Quanto o servidor escreveu nos caches de HLS/remux desde que subiu (inclusive o que já foi
 /// apagado: tentativa abortada, reencode de fallback, episódio descartado depois de assistido) — pra ver se a
 /// gravação em disco está saindo do controle. Contagem aproximada, pelo tamanho dos arquivos na hora em que o

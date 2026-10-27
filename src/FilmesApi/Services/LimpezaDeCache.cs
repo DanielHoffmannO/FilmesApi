@@ -72,7 +72,7 @@ internal static class LimpezaDeCache
             {
                 var info = new DirectoryInfo(dir);
                 if (info.LinkTarget is not null || !int.TryParse(info.Name, out var id)) continue;
-                var playlist = Path.Combine(dir, "playlist.m3u8");
+                var playlist = Path.Combine(dir, NomesDeCache.Playlist);
                 var mtime = File.Exists(playlist) ? File.GetLastWriteTimeUtc(playlist) : info.LastWriteTimeUtc;
                 var acesso = ComAcessoRecente(mtime, id, ultimoAcesso);
                 if (!Directory.EnumerateFileSystemEntries(dir).Any()) sobras.Add(new SobraCache(dir, id, TipoCache.Hls, 0, acesso, EhPasta: true));
@@ -95,10 +95,10 @@ internal static class LimpezaDeCache
                 var id = IdDoNome(nome);
                 if (id is null) continue;
                 var acesso = ComAcessoRecente(fi.LastWriteTimeUtc, id.Value, ultimoAcesso);
-                if (nome.EndsWith(".mp4", StringComparison.Ordinal))
+                if (nome.EndsWith(NomesDeCache.ExtensaoRemux, StringComparison.Ordinal))
                     entradas.Add(new EntradaCache(id.Value, TipoCache.Remux, arquivo, fi.Length, acesso));
-                else if (nome.EndsWith(".mp4.tmp", StringComparison.Ordinal)
-                    || (nome.EndsWith(".mp4.audio", StringComparison.Ordinal) && !File.Exists(arquivo[..^".audio".Length])))
+                else if (nome.EndsWith(NomesDeCache.ExtensaoRemux + NomesDeCache.SufixoTmp, StringComparison.Ordinal)
+                    || (nome.EndsWith(NomesDeCache.ExtensaoRemux + NomesDeCache.SufixoFaixa, StringComparison.Ordinal) && !File.Exists(arquivo[..^NomesDeCache.SufixoFaixa.Length])))
                     sobras.Add(new SobraCache(arquivo, id.Value, TipoCache.Remux, fi.Length, acesso, EhPasta: false));
             }
             catch (IOException) { /* sumiu durante a listagem */ }
