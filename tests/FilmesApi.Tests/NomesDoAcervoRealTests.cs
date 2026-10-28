@@ -57,4 +57,12 @@ public class NomesDoAcervoRealTests
         Assert.Equal((8, 13), (c.Temporada, c.Episodio));
         Assert.Equal("diarios de um vampiro", c.SerieChave);
     }
+
+    [Fact]
+    public void Diarios_de_Um_Vampiro_tem_nome_de_exibicao_fixo_mesmo_quando_a_pasta_mais_comum_e_T_V_D()
+    {
+        // "T V D" / "DDUV" são o nome cru das pastas; a tela mostra o título em português
+        Assert.Equal("Diários de Um Vampiro", MediaNomeParser.NomeExibicao("diarios de um vampiro", "T V D"));
+        Assert.Equal("Diários de Um Vampiro", MediaNomeParser.NomeExibicao("diarios de um vampiro", "DDUV"));
+    }
 }

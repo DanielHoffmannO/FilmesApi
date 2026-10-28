@@ -63,6 +63,8 @@ public static partial class MediaNomeParser
         ["severance"] = "Ruptura",
         ["baby reindeer"] = "Bebê Rena",
         ["hora de aventura"] = "Hora de Aventura",
+        // O nome cru das pastas (T V D, DDUV, The Vampire Diaries) é o que ganharia na contagem de "mais frequente" e vazaria pra tela.
+        ["diarios de um vampiro"] = "Diários de Um Vampiro",
     };
 
     // O que vale agora: o padrão embutido acima + o que o /data/nomes.json somar/sobrescrever (ver
