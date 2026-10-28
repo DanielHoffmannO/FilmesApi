@@ -251,11 +251,25 @@ subiu aparece em `/api/status` e na página de status. Só **1 transcodificaçã
 (`MaxConcurrentTranscodeJobs`).
 
 **Pré-aquecimento do remux.** O remux de um episódio de ~500 MB leva ~25 s e o de um filme de ~5 GB uns 4 min com a
-TV mostrando "Preparando áudio". Por isso o servidor deixa pronto, antes de você abrir, o remux do **primeiro item do
-"continuar assistindo"** (o que mais se abre) — mas só com o servidor **ocioso** (nenhum job, ninguém esperando o
+TV mostrando "Preparando áudio". Por isso o servidor deixa pronto, antes de você abrir, o remux dos **3 primeiros da fila
+do controle** (o que está pela metade e o próximo episódio das séries vistas nos últimos 14 dias — o que mais se abre) —
+um por conferência, nunca de episódio já assistido, mas só com o servidor **ocioso** (nenhum job, ninguém esperando o
 encoder, placa fora do limite térmico) e **se couber no teto do cache sem expulsar nada**. Esse job não precisa de
 ninguém olhando e **cede o lugar** na hora se outro pedido precisar do encoder ou a placa esquentar. Todo remux loga, ao
 terminar, `MB em N s (X MB/s)` — dá pra ver nos logs se o disco ou a térmica pioraram.
+
+**Fila do controle.** `GET /api/filmes/fila` devolve `[{filme, motivo}]`: primeiro o que ficou **pela metade**
+(`motivo: "continuar"`), depois o **próximo episódio** (`"proximo"`) de cada série terminada nos últimos 14 dias. Quem vê em
+sequência continua no episódio seguinte; quem já pulou episódios (buraco antes do último visto) vai ao mais novo ainda não
+visto. A data vem da coluna `Filmes.AssistidoEm` (preenchida quando algo vira assistido; vazia no histórico antigo, que por
+isso só entra na fila depois do próximo episódio terminado).
+
+**Limpeza do cache.** Tudo que vira assistido (fim do vídeo, "marcar assistido", ou perto do fim no `salvarProgresso`)
+passa por um ponto só, `AoVirarAssistido`, que cancela o job e apaga o HLS e o remux do episódio. Uma varredura periódica
+(`LimpezaCacheMinutos`) pega o que escapou: assistido parado além da carência, cache órfão (filme que não existe mais),
+sobras (`*.tmp`, `*.audio` sem `.mp4`, pasta de HLS vazia) e, só no HLS, não assistido parado além de `HlsValidadeDias`. Além
+disso continua valendo o teto por LRU (`HlsCacheMaxGB`/`RemuxCacheMaxGB`). O bloco `cache` do `/api/status` mostra, por tipo,
+quanto há de assistido, não assistido, órfão e parado há mais de 7 dias.
 
 **`/remux` — não confundir com o remux stream-copy do passo 2 acima (esse é interno ao pipeline
 HLS).** Pra TV sem HLS nenhum (nem MediaSource nem `<video>` nativo): quando o **vídeo** já é
@@ -375,8 +389,12 @@ usam `__` (ex.: `ConnectionStrings__Default`).
 | `ForceSoftwareEncoder` | `false` | Ignora a VPU e usa sempre `libx264`. |
 | `HlsRkmppDecodeHw` | `false` | Tenta decode por hardware no caminho 4K (experimental — ver acima). |
 | `RemuxCacheMaxGB` | `15` | Teto do cache de `/remux`; acima disso, despejo LRU. `0` = ilimitado. |
-| `PreAquecerContinuarMinutos` | `5` | De quanto em quanto tempo o servidor confere o "continuar assistindo" nº 1 e, se ele precisa de remux, **já deixa o remux pronto** (ver abaixo). `0` desliga. |
+| `PreAquecerContinuarMinutos` | `5` | De quanto em quanto tempo o servidor confere os **3 primeiros da fila do controle** (`/api/filmes/fila`) e, se um precisa de remux, **já deixa o remux pronto**, um por conferência (ver abaixo). `0` desliga. |
 | `PreAquecerAtrasoInicialSegundos` | `60` | Espera depois de subir antes da 1ª conferência. |
+| `LimpezaCacheMinutos` | `60` | De quanto em quanto tempo a **limpeza dos caches** varre o HLS e o remux (a 1ª roda `LimpezaCacheAtrasoInicialSegundos` depois de subir). `0` desliga. Ver "Limpeza do cache" abaixo. |
+| `LimpezaCacheCarenciaMinutos` | `120` | Um episódio assistido só tem o cache apagado depois de ficar parado por este tempo (e nunca com job em andamento ou acesso nos últimos 5 min). |
+| `LimpezaCacheAtrasoInicialSegundos` | `120` | Espera depois de subir antes da 1ª limpeza. |
+| `HlsValidadeDias` | `14` | **Só no HLS** de quem **não** foi assistido: parado há mais que isso, o cache sai (é regenerável). O remux de não assistido nunca expira por idade — o dono prepara séries de propósito. |
 | `HlsFalhaCooldownMinutes` | `10` | Depois de uma tentativa de `/remux` que falhou, espera este tempo antes de tentar de novo (em vez de martelar o ffmpeg a cada request). |
 
 ### Governador térmico (opt-in)
@@ -413,6 +431,7 @@ filmes ainda sem metadados (roda ~30s depois do boot e reprocessa a cada scan).
 | Método | Rota | Descrição |
 |---|---|---|
 | `GET` | `/api/filmes/tela?tipo=&visto=&busca=` | Catálogo já filtrado/agrupado (filme solto, pasta filme+extras, série, franquia) — é isto que `index.html`/`tv.html`/`controle.html` consomem pra montar a tela. |
+| `GET` | `/api/filmes/fila` | Fila do controle: o que ficou pela metade e o próximo episódio das séries vistas nos últimos 14 dias (`[{filme, motivo}]`). |
 | `GET` | `/api/filmes/{id}` | Detalhes de um filme. |
 | `PUT` | `/api/filmes/{id}/assistido` | Alterna "assistido". |
 | `GET` | `/api/filmes/diagnostico` | O que o catálogo tem de estranho: **episódios faltando** (buraco entre o 1 e o maior número da temporada; arquivo duplo conta como 2), **episódio em 2+ arquivos** (com o tamanho de cada), **série com 1 só episódio**, **arquivo solto na raiz que parece episódio** e **vídeo suspeito de propaganda** (< 60 MB com nome de uploader — 1XBET, BLUDV, COMANDOTORRENTS, LAPUMIA — ou "Sample"). A página `/diagnostico.html` desenha isso (🩺 no cabeçalho do catálogo). |
@@ -469,7 +488,7 @@ Estado único em memória (`PlayerStateService`) — pensado pra uma casa com um
 
 | Método | Rota | Descrição |
 |---|---|---|
-| `GET` | `/api/status` | Temperatura, fila de transcode, tamanho dos caches de HLS e de remux, **total gravado nos caches desde que o servidor subiu** (inclusive o que já foi apagado), estado da VPU e, por pasta/disco de 1º nível, `montagens: [{prefixo, itensNoCatalogo, arquivosNoDisco, estado: ok\|suspeita}]` do último scan (consumido pela `status.html`). |
+| `GET` | `/api/status` | Temperatura, fila de transcode, tamanho dos caches de HLS e de remux, **total gravado nos caches desde que o servidor subiu** (inclusive o que já foi apagado), estado da VPU, o bloco `cache` (`{remux, hls}` com itens/bytes de assistido, não assistido, órfão, parado há mais de 7 dias e o teto) e, por pasta/disco de 1º nível, `montagens: [{prefixo, itensNoCatalogo, arquivosNoDisco, estado: ok\|suspeita}]` do último scan (consumido pela `status.html`). |
 | `POST` | `/api/diag/log` | `{msg}` (cortada em 500 caracteres) — o `tv.html` manda erro de JS/hls.js/`<video>` pra cá (cai no log do servidor). TV não tem console acessível; sem isso não dava pra depurar o que acontecia na tela dela. |
 | `POST` | `/api/admin/recarregar-nomes` | Relê o `nomes.json` agora. `{resultado: aplicado/semarquivo, apelidos, nomes, ignorar, tipos}`; `400` se o arquivo está inválido (os nomes anteriores continuam valendo). Sem autenticação — rede de casa. |
 | `GET` | `/health` | Health check pro **Uptime Kuma**: `MediaPath` montado, ffmpeg presente e **nenhuma pasta/disco em suspeita**. `503` com `Degraded` quando uma pasta de 1º nível tem itens no catálogo mas nenhum arquivo no disco (HD de backup caído — o scan mantém os itens por precaução, ver `/api/status` › `montagens`). |

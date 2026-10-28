@@ -182,7 +182,24 @@ use `__`.
 **Transcoding:** `MaxConcurrentTranscodeJobs` (`1`), `HlsMaxAlturaReencode` (`1080`, `0`
 disables downscale), `HlsCacheMaxGB` (`20`), `HlsOrphanTimeoutSeconds` (`90`, `0` never
 aborts), `HlsStallTimeoutMinutes` (`8`), `ForceSoftwareEncoder` (`false`), `HlsRkmppDecodeHw`
-(`false`), `RemuxCachePath` (`/data/remux`), `RemuxCacheMaxGB` (`15`).
+(`false`), `RemuxCachePath` (`/data/remux`), `RemuxCacheMaxGB` (`15`), `HlsFalhaCooldownMinutes` (`10`),
+`TranscodeJobTimeoutHours` (`6`).
+
+**Cache cleanup:** `LimpezaCacheMinutos` (`60`, `0` = off; how often the sweep runs),
+`LimpezaCacheCarenciaMinutos` (`120`; a watched episode's cache is deleted after sitting idle this long),
+`LimpezaCacheAtrasoInicialSegundos` (`120`), `HlsValidadeDias` (`14`; HLS of *unwatched* items idle longer than this is deleted —
+remux of unwatched items never expires by age). Anything that becomes "watched" goes through a single funnel that cancels the job
+and deletes its HLS/remux; the sweep catches leftovers (orphans, `*.tmp`, `*.audio` without `.mp4`, empty HLS folders).
+`GET /api/status` has a `cache` block with watched / unwatched / orphan / idle-over-7-days bytes per cache.
+
+**Warm-up and queue:** `PreAquecerContinuarMinutos` (`5`, `0` = off) pre-builds the remux of the first 3 items of the remote's
+queue, one per check, never for watched episodes; `PreAquecerAtrasoInicialSegundos` (`60`). `GET /api/filmes/fila` returns
+`[{filme, motivo}]`: what is half-watched (`continuar`) and the next episode (`proximo`) of series finished in the last 14 days (if
+you skip episodes it jumps to the newest unwatched one). Dates come from `Filmes.AssistidoEm`, empty for old history.
+
+**Misc:** `ScanIntervaloMinutos` (`10`), `ScanEstabilidadeSegundos` (`2`), `AdminToken` (optional, `X-Admin-Token` on
+`/api/admin/*` and manual scan), `AllowAnyOrigin` (`false`), `NomesPath` (`/data/nomes.json`), `ThermalRoot`
+(`/sys/class/thermal`).
 
 **Thermal governor (opt-in):** `ThermalPauseCelsius` (`0` = off), `ThermalResumeCelsius`
 (`pause − 8`), `ThermalMaxWaitMinutes` (`5`).

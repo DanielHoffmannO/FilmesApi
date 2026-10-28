@@ -183,7 +183,24 @@ anidadas usan `__`.
 **Transcodificación:** `MaxConcurrentTranscodeJobs` (`1`), `HlsMaxAlturaReencode` (`1080`,
 `0` desactiva el downscale), `HlsCacheMaxGB` (`20`), `HlsOrphanTimeoutSeconds` (`90`, `0`
 nunca aborta), `HlsStallTimeoutMinutes` (`8`), `ForceSoftwareEncoder` (`false`),
-`HlsRkmppDecodeHw` (`false`), `RemuxCachePath` (`/data/remux`), `RemuxCacheMaxGB` (`15`).
+`HlsRkmppDecodeHw` (`false`), `RemuxCachePath` (`/data/remux`), `RemuxCacheMaxGB` (`15`), `HlsFalhaCooldownMinutes` (`10`),
+`TranscodeJobTimeoutHours` (`6`).
+
+**Limpieza de caché:** `LimpezaCacheMinutos` (`60`, `0` = apagada; cada cuánto corre el barrido),
+`LimpezaCacheCarenciaMinutos` (`120`; la caché de un episodio visto se borra tras estar parada este tiempo),
+`LimpezaCacheAtrasoInicialSegundos` (`120`), `HlsValidadeDias` (`14`; el HLS de lo *no visto* parado más que esto se borra — el
+remux de lo no visto nunca caduca por edad). Todo lo que pasa a "visto" va por un único embudo que cancela el job y borra su
+HLS/remux; el barrido recoge lo que sobra (huérfanos, `*.tmp`, `*.audio` sin `.mp4`, carpetas HLS vacías).
+`GET /api/status` trae un bloque `cache` con bytes de visto / no visto / huérfano / parado más de 7 días por caché.
+
+**Precalentamiento y cola:** `PreAquecerContinuarMinutos` (`5`, `0` = apagado) deja listo el remux de los 3 primeros de la cola
+del mando, uno por revisión, nunca de episodios vistos; `PreAquecerAtrasoInicialSegundos` (`60`). `GET /api/filmes/fila` devuelve
+`[{filme, motivo}]`: lo que quedó a medias (`continuar`) y el siguiente episodio (`proximo`) de series terminadas en los últimos
+14 días (si saltas episodios va al más nuevo sin ver). Las fechas vienen de `Filmes.AssistidoEm`, vacía en el historial antiguo.
+
+**Varios:** `ScanIntervaloMinutos` (`10`), `ScanEstabilidadeSegundos` (`2`), `AdminToken` (opcional, `X-Admin-Token` en
+`/api/admin/*` y escaneo manual), `AllowAnyOrigin` (`false`), `NomesPath` (`/data/nomes.json`), `ThermalRoot`
+(`/sys/class/thermal`).
 
 **Gobernador térmico (opt-in):** `ThermalPauseCelsius` (`0` = off), `ThermalResumeCelsius`
 (`pausa − 8`), `ThermalMaxWaitMinutes` (`5`).
