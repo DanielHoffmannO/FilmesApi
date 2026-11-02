@@ -94,7 +94,6 @@ const POLL_ATIVO_MS = 1000;  // intervalo de poll de /player/state com algo toca
 const POLL_OCIOSO_MS = 3000; // intervalo de poll sem nada tocando (menos urgente)
 
 let filtroTipo = 'all';         // all | filme | serie
-const foldersAbertos = new Set();  // séries expandidas — fecham por padrão, sobrevive ao re-render
 
 // Elementos consultados em 2+ lugares — pegos uma vez só.
 const els = {
@@ -113,7 +112,7 @@ document.getElementById('filters').addEventListener('click', e => {
   render();
 });
 
-// esc()/toggleGrupo() vêm de /js/util.js.
+// esc() e a sanfona das séries vêm de /js/util.js.
 
 function rowHtml(f, rotulo) {
   const tocando = ultimoEstadoRemoto && ultimoEstadoRemoto.filmeId === f.id;
@@ -164,10 +163,10 @@ async function render() {
 
   const audiosDasSeries = t.series.length ? await carregarAudiosDasSeries() : {};
   for (const s of t.series) {
-    const aberto = foldersAbertos.has(s.chave);
-    html += `<div class="grupo ${aberto ? '' : 'collapsed'}" data-key="${esc(s.chave)}">
-      <div class="grupo-hd" onclick="toggleGrupo(this, foldersAbertos)"><span class="caret">${aberto ? '▾' : '▸'}</span>${esc(s.nome)} <span class="count">(${s.episodios.length} ${s.episodios.length === 1 ? 'episódio' : 'episódios'})</span></div>
-      <div class="grupo-body">${seletorAudioSerieHtml(s.chave, audiosDasSeries[s.chave])}${s.episodios.map(ep => rowHtml(ep, rotuloComTitulo(ep))).join('')}</div>
+    const aberto = serieEstaAberta(s.chave);
+    html += `<div class="grupo ${aberto ? '' : 'collapsed'}" data-serie="${esc(s.chave)}">
+      <div class="grupo-hd" onclick="cliqueSerie(this)"><span class="caret">${aberto ? '▾' : '▸'}</span>${esc(s.nome)} <span class="count">(${contagemEpisodios(s.episodios.length)})</span></div>
+      <div class="grupo-body">${corpoDaSerieHtml(s.episodios, seletorAudioSerieHtml(s.chave, audiosDasSeries[s.chave]), ep => rowHtml(ep, rotuloComTitulo(ep)))}</div>
     </div>`;
   }
 
