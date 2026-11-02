@@ -49,6 +49,7 @@ a.grp {
 }
 a.grp:focus, a.grp.sel { background: #e50914; border-color: #fff; outline: 0; }
 .eps { margin-left: 24px; }
+a.grp.sub { font-size: 26px; margin-top: 12px; }
 .ano { color: #bbb; font-size: 22px; }
 .visto { color: #2ecc40; font-size: 22px; }
 #msg { color: #bbb; margin: 20px 0; }
@@ -362,22 +363,60 @@ video { width: 100%; height: auto; background: #000; }
       for (i = 0; i < t.series.length; i++) {
         var s = t.series[i], seps = '';
         if (i === 0) html += '<h2>Series (' + t.series.length + ')</h2>';
-        for (j = 0; j < s.episodios.length; j++) seps += itemHtml(s.episodios[j], rotuloComTitulo(s.episodios[j]));
-        html += grpHtml('s:' + s.chave,
-          esc(s.nome) + ' (' + s.episodios.length + (s.episodios.length === 1 ? ' episodio)' : ' episodios)'), seps);
+        var grupos = agruparPorTemporada(s.episodios);
+        if (!grupos) {
+          for (j = 0; j < s.episodios.length; j++) seps += itemHtml(s.episodios[j], rotuloComTitulo(s.episodios[j]));
+        } else {
+          for (j = 0; j < grupos.length; j++) {
+            var teps = '';
+            for (var k = 0; k < grupos[j].episodios.length; k++) {
+              teps += itemHtml(grupos[j].episodios[k], rotuloComTitulo(grupos[j].episodios[k]));
+            }
+            seps += grpHtml('t:' + grupos[j].chave,
+              esc(grupos[j].rotulo) + ' (' + contagemEps(grupos[j].episodios.length) + ')', teps, 'sub');
+          }
+        }
+        html += grpHtml('s:' + s.chave, esc(s.nome) + ' (' + contagemEps(s.episodios.length) + ')', seps);
       }
       grid.innerHTML = html;
       buildNav();
     });
   }
 
-  // cabecalho dobravel (.grp) + itens (.eps) — respeita gruposAbertos
-  function grpHtml(chave, label, itensHtml) {
-    var aberto = !!gruposAbertos[chave];
-    return '<a class="grp" href="#" data-g="' + esc(chave) + '" data-label="' + label + '">' +
+  function contagemEps(n) { return n + (n === 1 ? ' episodio' : ' episodios'); }
+
+  // aberto? series e temporadas vem da sanfona (js/util.js: uma de cada por vez); pastas de filme de gruposAbertos
+  function grupoAberto(chave) {
+    var c = chave.substring(2);
+    if (chave.charAt(0) === 's') return serieEstaAberta(c);
+    if (chave.charAt(0) === 't') return temporadaEstaAberta(c);
+    return !!gruposAbertos[chave];
+  }
+
+  // cabecalho dobravel (.grp) + itens (.eps); `sub` = temporada, um nivel mais fundo dentro da serie
+  function grpHtml(chave, label, itensHtml, sub) {
+    var aberto = grupoAberto(chave);
+    return '<a class="grp' + (sub ? ' sub' : '') + '" href="#" data-g="' + esc(chave) + '" data-label="' + label + '">' +
            (aberto ? '▾ ' : '▸ ') + label + '</a>' +
            '<div class="eps" data-g="' + esc(chave) + '" style="display:' + (aberto ? 'block' : 'none') + '">' +
            itensHtml + '</div>';
+  }
+
+  // cabecalhos (.grp) e itens visiveis de `caixa`, descendo so nas .eps abertas (serie -> temporada -> episodios)
+  function coletarNav(caixa) {
+    var nodes = caixa.childNodes;
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      if (n.nodeType !== 1) continue;
+      var c = n.className || '';
+      if (c.indexOf('grp') !== -1 || c.indexOf('item') !== -1) {
+        links.push(n);
+      } else if (c.indexOf('eps') !== -1) {
+        if (n.style.display !== 'none') coletarNav(n);
+      } else if (c.indexOf('movies') !== -1) {
+        coletarNav(n);
+      }
+    }
   }
 
   function buildNav() {
@@ -387,23 +426,7 @@ video { width: 100%; height: auto; background: #000; }
     links = [];
     var i, j;
     for (i = 0; i < bar.length; i++) links.push(bar[i]);
-    var nodes = grid.childNodes;
-    for (i = 0; i < nodes.length; i++) {
-      var n = nodes[i];
-      if (n.nodeType !== 1) continue;
-      var c = n.className || '';
-      if (c.indexOf('grp') !== -1) {
-        links.push(n);
-      } else if (c.indexOf('eps') !== -1) {
-        if (n.style.display !== 'none') {
-          var eps = n.getElementsByClassName('item');
-          for (j = 0; j < eps.length; j++) links.push(eps[j]);
-        }
-      } else if (c.indexOf('movies') !== -1) {
-        var mv = n.getElementsByClassName('item');
-        for (j = 0; j < mv.length; j++) links.push(mv[j]);
-      }
-    }
+    coletarNav(grid);
     if (idx >= links.length) idx = links.length - 1;
     if (idx < 0) idx = 0;
     focar(idx);
@@ -411,17 +434,18 @@ video { width: 100%; height: auto; background: #000; }
 
   function toggleGrp(el) {
     var g = el.getAttribute('data-g');
-    var boxes = els.grid.getElementsByClassName('eps');
-    for (var i = 0; i < boxes.length; i++) {
-      if (boxes[i].getAttribute('data-g') === g) {
-        var aberto = boxes[i].style.display !== 'none';
-        boxes[i].style.display = aberto ? 'none' : 'block';
-        if (aberto) delete gruposAbertos[g]; else gruposAbertos[g] = 1;
-        el.innerHTML = (aberto ? '▸ ' : '▾ ') + el.getAttribute('data-label');
-      }
+    if (g.charAt(0) === 's') alternarSerieAberta(g.substring(2));
+    else if (g.charAt(0) === 't') alternarTemporadaAberta(g.substring(2));
+    else if (gruposAbertos[g]) delete gruposAbertos[g]; else gruposAbertos[g] = 1;
+    // abrir uma serie fecha outra (talvez acima): redesenha o estado de TODOS os cabecalhos/caixas
+    var hds = els.grid.getElementsByTagName('a'), boxes = els.grid.getElementsByClassName('eps'), i;
+    for (i = 0; i < boxes.length; i++) boxes[i].style.display = grupoAberto(boxes[i].getAttribute('data-g')) ? 'block' : 'none';
+    for (i = 0; i < hds.length; i++) {
+      if (hds[i].className.indexOf('grp') === -1) continue;
+      hds[i].innerHTML = (grupoAberto(hds[i].getAttribute('data-g')) ? '▾ ' : '▸ ') + hds[i].getAttribute('data-label');
     }
     buildNav();
-    // mantem o foco no proprio cabecalho — assim o proximo "baixo" entra no 1o episodio
+    // mantem o foco no proprio cabecalho (o indice dele pode ter mudado) — o proximo "baixo" entra no 1o filho
     var n = links.indexOf(el);
     if (n >= 0) focar(n);
   }
