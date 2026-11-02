@@ -33,7 +33,7 @@ function fetchJsonOuNull(url) {
   return fetch(url).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
 }
 
-// Colapsa/expande um <div class="grupo"> (série ou pasta de filme+extras). `folderSet` é o
+// Colapsa/expande um <div class="grupo"> de pasta de filme+extras (a série usa a sanfona abaixo). `folderSet` é o
 // Set (por página) que lembra quais grupos ficam abertos entre renders — index.html e
 // controle.html têm cada um o seu, com o mesmo nome (foldersAbertos), mas passado explícito
 // aqui em vez de global pra não acoplar esta função a uma variável de uma tela específica.
@@ -45,6 +45,111 @@ function toggleGrupo(el, folderSet) {
   else folderSet.delete(grupo.dataset.key);
   var caret = el.querySelector('.caret');
   if (caret) caret.textContent = aberto ? '▾' : '▸';
+}
+
+// ─── Sanfona de séries: série -> temporada -> episódios (index, controle e tv) ───
+// A regra mora aqui; as três telas só desenham. Estado em memória (nada de localStorage):
+// a tela começa com tudo fechado e o estado sobrevive ao re-render da lista.
+
+var sanfona = { serieAberta: null, temporadaAberta: null };
+
+// Abrir uma série fecha a que estava aberta; clicar na aberta fecha (tudo fechado é válido).
+// Trocar ou fechar a série esquece a temporada aberta.
+function alternarSerieAberta(chave) {
+  sanfona.serieAberta = sanfona.serieAberta === chave ? null : chave;
+  sanfona.temporadaAberta = null;
+}
+
+// Dentro da série aberta, uma temporada por vez; clicar na aberta fecha.
+function alternarTemporadaAberta(chave) {
+  sanfona.temporadaAberta = sanfona.temporadaAberta === chave ? null : chave;
+}
+
+function serieEstaAberta(chave) { return sanfona.serieAberta === chave; }
+function temporadaEstaAberta(chave) { return sanfona.temporadaAberta === chave; }
+
+// Episódios (na ordem recebida) -> grupos [{ chave, rotulo, episodios }]: temporadas numeradas
+// em ordem crescente, depois "Especiais" (temporada 0) e "Outros" (sem SxxExx). Devolve null
+// quando só há um grupo — a tela então mostra os episódios direto, sem o nível de temporada.
+function agruparPorTemporada(episodios) {
+  var porNumero = {}, numeradas = [], especiais = null, outros = null;
+  for (var i = 0; i < episodios.length; i++) {
+    var ep = episodios[i], t = ep.temporada, g;
+    if (t == null) {
+      g = outros || (outros = { chave: 'outros', rotulo: 'Outros', episodios: [] });
+    } else if (t === 0) {
+      g = especiais || (especiais = { chave: 'especiais', rotulo: 'Especiais', episodios: [] });
+    } else {
+      g = porNumero[t];
+      if (!g) {
+        g = porNumero[t] = { chave: String(t), numero: t, rotulo: 'Temporada ' + t, episodios: [] };
+        numeradas.push(g);
+      }
+    }
+    g.episodios.push(ep);
+  }
+  numeradas.sort(function (a, b) { return a.numero - b.numero; });
+  var grupos = numeradas;
+  if (especiais) grupos.push(especiais);
+  if (outros) grupos.push(outros);
+  return grupos.length > 1 ? grupos : null;
+}
+
+// "23 episódios" / "1 episódio"
+function contagemEpisodios(n) { return n + (n === 1 ? ' episódio' : ' episódios'); }
+
+// "20/23 vistos" ('' se nenhum foi visto)
+function textoVistos(episodios) {
+  var vistos = 0;
+  for (var i = 0; i < episodios.length; i++) if (episodios[i].assistido) vistos++;
+  return vistos ? vistos + '/' + episodios.length + ' vistos' : '';
+}
+
+// Corpo de uma série (index/controle): seletor de áudio no topo, depois as temporadas
+// (cada uma um .grupo recuado, fechado) ou, com uma só, os episódios direto. `linhaHtml(ep)`
+// devolve a linha do episódio. A linha "Faltam: E01–E08" por temporada entraria aqui, no corpo
+// de cada temporada.
+function corpoDaSerieHtml(episodios, audioHtml, linhaHtml) {
+  var linhas = function (eps) { return eps.map(linhaHtml).join(''); };
+  var grupos = agruparPorTemporada(episodios);
+  if (!grupos) return audioHtml + linhas(episodios);
+  return audioHtml + grupos.map(function (g) {
+    var aberto = temporadaEstaAberta(g.chave), vistos = textoVistos(g.episodios);
+    return '<div class="grupo temporada' + (aberto ? '' : ' collapsed') + '" data-temp="' + attr(g.chave) + '">' +
+      '<div class="grupo-hd" onclick="cliqueTemporada(this)"><span class="caret">' + (aberto ? '▾' : '▸') + '</span>' +
+      esc(g.rotulo) + ' <span class="count">(' + contagemEpisodios(g.episodios.length) + ')</span>' +
+      (vistos ? ' <span class="count">' + vistos + '</span>' : '') + '</div>' +
+      '<div class="grupo-body">' + linhas(g.episodios) + '</div></div>';
+  }).join('');
+}
+
+// Reflete `sanfona` no DOM (classe collapsed + caret) sem refazer a lista — o scroll não pula.
+function aplicarSanfona() {
+  var marca = function (seletor, atributo, estaAberto) {
+    var els = document.querySelectorAll(seletor);
+    for (var i = 0; i < els.length; i++) {
+      var aberto = estaAberto(els[i].getAttribute(atributo));
+      els[i].classList.toggle('collapsed', !aberto);
+      var caret = els[i].querySelector('.caret');
+      if (caret) caret.textContent = aberto ? '▾' : '▸';
+    }
+  };
+  marca('.grupo[data-serie]', 'data-serie', serieEstaAberta);
+  marca('.grupo[data-temp]', 'data-temp', temporadaEstaAberta);
+}
+
+// onclick dos cabeçalhos (index e controle). Abrir uma série pode fechar outra ACIMA e empurrar
+// tudo: corrige o scroll pra o cabeçalho clicado ficar onde o dedo está.
+function cliqueSerie(hd) {
+  var antes = hd.getBoundingClientRect().top;
+  alternarSerieAberta(hd.parentNode.getAttribute('data-serie'));
+  aplicarSanfona();
+  window.scrollBy(0, hd.getBoundingClientRect().top - antes);
+}
+
+function cliqueTemporada(hd) {
+  alternarTemporadaAberta(hd.parentNode.getAttribute('data-temp'));
+  aplicarSanfona();
 }
 
 // ─── Áudio padrão por série (index.html e controle.html; a TV só obedece o servidor) ───
