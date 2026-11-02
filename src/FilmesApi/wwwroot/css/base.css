@@ -41,3 +41,6 @@ h1 { font-size: 20px; font-weight: 600 }
 /* truncamento com reticências — mesma sequência de 3 propriedades que existia repetida
    (rtit acima incluso) em cada tela que precisa de texto de largura variável. */
 .remote .titulo, .remote-proximo span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+/* temporada = o mesmo .grupo um nível mais fundo */
+.grupo.temporada { margin-left: 14px }
+.grupo.temporada > .grupo-hd { font-size: 13px; font-weight: 500 }

@@ -118,7 +118,7 @@ main{padding:16px 24px;max-width:1000px;margin:0 auto}
 const API = '/api/filmes';
 let filtroTipo = 'all';   // all | filme | serie
 let filtroVisto = 'all';  // all | assistido | nao-assistido
-const foldersAbertos = new Set();  // pastas/séries expandidas — sobrevive ao re-render
+const foldersAbertos = new Set();  // pastas de filme expandidas — sobrevive ao re-render
 
 // Elementos consultados em 2+ lugares (funções diferentes) — pegos uma vez só. Os que só
 // aparecem 1x no código (grid, empty, loadbar, etc.) ficam com getElementById direto ali mesmo.
@@ -226,8 +226,12 @@ async function render() {
     html += `<div class="secao"><div class="secao-title">📺 Séries <span class="count">(${t.series.length})</span></div><div class="lista">`;
     html += t.series.map(s => {
       const poster = s.episodios.find(f => f.posterUrl);   // um pôster já basta pra série inteira
-      const tituloHtml = `${poster ? posterHtml(poster) : ''}${esc(s.nome)} <span class="count">(${s.episodios.length} ${s.episodios.length === 1 ? 'episódio' : 'episódios'})</span>`;
-      return grupo('s:' + s.chave, tituloHtml, seletorAudioSerieHtml(s.chave, audiosDasSeries[s.chave]) + s.episodios.map(f => rowHtml(f, true)).join(''));
+      const aberto = serieEstaAberta(s.chave);
+      return `
+      <div class="grupo ${aberto ? '' : 'collapsed'}" data-serie="${attr(s.chave)}">
+        <div class="grupo-hd" onclick="cliqueSerie(this)"><span class="caret">${aberto ? '▾' : '▸'}</span>${poster ? posterHtml(poster) : ''}${esc(s.nome)} <span class="count">(${contagemEpisodios(s.episodios.length)})</span></div>
+        <div class="grupo-body">${corpoDaSerieHtml(s.episodios, seletorAudioSerieHtml(s.chave, audiosDasSeries[s.chave]), f => rowHtml(f, true))}</div>
+      </div>`;
     }).join('');
     html += `</div></div>`;
   }
@@ -235,7 +239,7 @@ async function render() {
   window.scrollTo(0, scrollAntes);
 }
 
-// toggleGrupo(el, folderSet) vem de /js/util.js.
+// toggleGrupo(el, folderSet) (pastas de filme) e a sanfona das séries vêm de /js/util.js.
 
 function pctProgresso(item) {
   if (!item.posicaoSegundos || !item.duracaoSegundos) return 0;
