@@ -177,7 +177,7 @@ video { width: 100%; height: auto; background: #000; }
   var filtroTipo = 'all';   // all | filme | serie
   var links = [];      // itens navegaveis atuais
   var idx = 0;
-  var gruposAbertos = {};  // series/pastas expandidas — sobrevive ao re-render
+  var gruposAbertos = {};  // pastas de filme expandidas (series/temporadas: ver a sanfona em js/util.js) — sobrevive ao re-render
 
   // continuar de onde parou
   var filmeAtual = null;
@@ -330,6 +330,12 @@ video { width: 100%; height: auto; background: #000; }
                '</a>';
       }
 
+      function epsHtml(eps) {
+        var h = '';
+        for (var k = 0; k < eps.length; k++) h += itemHtml(eps[k], rotuloComTitulo(eps[k]));
+        return h;
+      }
+
       var totalFilmes = t.filmesSoltos.length;
       for (i = 0; i < t.pastasFilme.length; i++) totalFilmes += t.pastasFilme[i].itens.length;
 
@@ -365,15 +371,11 @@ video { width: 100%; height: auto; background: #000; }
         if (i === 0) html += '<h2>Series (' + t.series.length + ')</h2>';
         var grupos = agruparPorTemporada(s.episodios);
         if (!grupos) {
-          for (j = 0; j < s.episodios.length; j++) seps += itemHtml(s.episodios[j], rotuloComTitulo(s.episodios[j]));
+          seps = epsHtml(s.episodios);
         } else {
           for (j = 0; j < grupos.length; j++) {
-            var teps = '';
-            for (var k = 0; k < grupos[j].episodios.length; k++) {
-              teps += itemHtml(grupos[j].episodios[k], rotuloComTitulo(grupos[j].episodios[k]));
-            }
             seps += grpHtml('t:' + grupos[j].chave,
-              esc(grupos[j].rotulo) + ' (' + contagemEps(grupos[j].episodios.length) + ')', teps, 'sub');
+              esc(grupos[j].rotulo) + ' (' + contagemEps(grupos[j].episodios.length) + ')', epsHtml(grupos[j].episodios), 'sub');
           }
         }
         html += grpHtml('s:' + s.chave, esc(s.nome) + ' (' + contagemEps(s.episodios.length) + ')', seps);
@@ -411,10 +413,8 @@ video { width: 100%; height: auto; background: #000; }
       var c = n.className || '';
       if (c.indexOf('grp') !== -1 || c.indexOf('item') !== -1) {
         links.push(n);
-      } else if (c.indexOf('eps') !== -1) {
-        if (n.style.display !== 'none') coletarNav(n);
-      } else if (c.indexOf('movies') !== -1) {
-        coletarNav(n);
+      } else if (c.indexOf('eps') !== -1 || c.indexOf('movies') !== -1) {
+        if (n.style.display !== 'none') coletarNav(n);   // .movies nunca recebe display: entra sempre
       }
     }
   }
@@ -424,7 +424,7 @@ video { width: 100%; height: auto; background: #000; }
     var bar = els.bar.getElementsByTagName('a');
     var grid = els.grid;
     links = [];
-    var i, j;
+    var i;
     for (i = 0; i < bar.length; i++) links.push(bar[i]);
     coletarNav(grid);
     if (idx >= links.length) idx = links.length - 1;
@@ -438,10 +438,9 @@ video { width: 100%; height: auto; background: #000; }
     else if (g.charAt(0) === 't') alternarTemporadaAberta(g.substring(2));
     else if (gruposAbertos[g]) delete gruposAbertos[g]; else gruposAbertos[g] = 1;
     // abrir uma serie fecha outra (talvez acima): redesenha o estado de TODOS os cabecalhos/caixas
-    var hds = els.grid.getElementsByTagName('a'), boxes = els.grid.getElementsByClassName('eps'), i;
+    var hds = els.grid.getElementsByClassName('grp'), boxes = els.grid.getElementsByClassName('eps'), i;
     for (i = 0; i < boxes.length; i++) boxes[i].style.display = grupoAberto(boxes[i].getAttribute('data-g')) ? 'block' : 'none';
     for (i = 0; i < hds.length; i++) {
-      if (hds[i].className.indexOf('grp') === -1) continue;
       hds[i].innerHTML = (grupoAberto(hds[i].getAttribute('data-g')) ? '▾ ' : '▸ ') + hds[i].getAttribute('data-label');
     }
     buildNav();

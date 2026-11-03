@@ -34,9 +34,8 @@ function fetchJsonOuNull(url) {
 }
 
 // Colapsa/expande um <div class="grupo"> de pasta de filme+extras (a série usa a sanfona abaixo). `folderSet` é o
-// Set (por página) que lembra quais grupos ficam abertos entre renders — index.html e
-// controle.html têm cada um o seu, com o mesmo nome (foldersAbertos), mas passado explícito
-// aqui em vez de global pra não acoplar esta função a uma variável de uma tela específica.
+// Set que lembra quais pastas ficam abertos entre renders — hoje só o index.html usa (foldersAbertos), mas
+// ele é passado explícito aqui em vez de global pra não acoplar esta função a uma variável de uma tela.
 function toggleGrupo(el, folderSet) {
   var grupo = el.parentNode;
   grupo.classList.toggle('collapsed');
@@ -105,6 +104,14 @@ function textoVistos(episodios) {
   return vistos ? vistos + '/' + episodios.length + ' vistos' : '';
 }
 
+// Esqueleto de um .grupo da sanfona (série ou temporada): cabeçalho clicável com caret + corpo. `classe` entra
+// depois de "grupo" (ex.: ' temporada') e `dados` é o atributo data-* que aplicarSanfona usa pra achar o grupo.
+function grupoHtml(classe, dados, aberto, onclick, tituloHtml, corpoHtml) {
+  return '<div class="grupo' + classe + (aberto ? '' : ' collapsed') + '" ' + dados + '>' +
+    '<div class="grupo-hd" onclick="' + onclick + '"><span class="caret">' + (aberto ? '▾' : '▸') + '</span>' + tituloHtml + '</div>' +
+    '<div class="grupo-body">' + corpoHtml + '</div></div>';
+}
+
 // Corpo de uma série (index/controle): seletor de áudio no topo, depois as temporadas
 // (cada uma um .grupo recuado, fechado) ou, com uma só, os episódios direto. `linhaHtml(ep)`
 // devolve a linha do episódio. A linha "Faltam: E01–E08" por temporada entraria aqui, no corpo
@@ -114,13 +121,19 @@ function corpoDaSerieHtml(episodios, audioHtml, linhaHtml) {
   var grupos = agruparPorTemporada(episodios);
   if (!grupos) return audioHtml + linhas(episodios);
   return audioHtml + grupos.map(function (g) {
-    var aberto = temporadaEstaAberta(g.chave), vistos = textoVistos(g.episodios);
-    return '<div class="grupo temporada' + (aberto ? '' : ' collapsed') + '" data-temp="' + attr(g.chave) + '">' +
-      '<div class="grupo-hd" onclick="cliqueTemporada(this)"><span class="caret">' + (aberto ? '▾' : '▸') + '</span>' +
+    var vistos = textoVistos(g.episodios);
+    return grupoHtml(' temporada', 'data-temp="' + attr(g.chave) + '"', temporadaEstaAberta(g.chave), 'cliqueTemporada(this)',
       esc(g.rotulo) + ' <span class="count">(' + contagemEpisodios(g.episodios.length) + ')</span>' +
-      (vistos ? ' <span class="count">' + vistos + '</span>' : '') + '</div>' +
-      '<div class="grupo-body">' + linhas(g.episodios) + '</div></div>';
+        (vistos ? ' <span class="count">' + vistos + '</span>' : ''),
+      linhas(g.episodios));
   }).join('');
+}
+
+// O .grupo inteiro de uma série (index/controle). `prefixoHtml` vem antes do nome (o pôster, no index).
+function serieHtml(s, prefixoHtml, audioHtml, linhaHtml) {
+  return grupoHtml('', 'data-serie="' + attr(s.chave) + '"', serieEstaAberta(s.chave), 'cliqueSerie(this)',
+    prefixoHtml + esc(s.nome) + ' <span class="count">(' + contagemEpisodios(s.episodios.length) + ')</span>',
+    corpoDaSerieHtml(s.episodios, audioHtml, linhaHtml));
 }
 
 // Reflete `sanfona` no DOM (classe collapsed + caret) sem refazer a lista — o scroll não pula.
