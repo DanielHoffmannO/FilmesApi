@@ -163,11 +163,7 @@ async function render() {
 
   const audiosDasSeries = t.series.length ? await carregarAudiosDasSeries() : {};
   for (const s of t.series) {
-    const aberto = serieEstaAberta(s.chave);
-    html += `<div class="grupo ${aberto ? '' : 'collapsed'}" data-serie="${esc(s.chave)}">
-      <div class="grupo-hd" onclick="cliqueSerie(this)"><span class="caret">${aberto ? '▾' : '▸'}</span>${esc(s.nome)} <span class="count">(${contagemEpisodios(s.episodios.length)})</span></div>
-      <div class="grupo-body">${corpoDaSerieHtml(s.episodios, seletorAudioSerieHtml(s.chave, audiosDasSeries[s.chave]), ep => rowHtml(ep, rotuloComTitulo(ep)))}</div>
-    </div>`;
+    html += serieHtml(s, '', seletorAudioSerieHtml(s.chave, audiosDasSeries[s.chave]), ep => rowHtml(ep, rotuloComTitulo(ep)));
   }
 
   msg.style.display = html ? 'none' : 'block';

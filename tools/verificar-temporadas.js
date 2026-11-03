@@ -109,4 +109,18 @@ caso('uma temporada só: episódios direto no corpo, sem .temporada', () => {
   assert.strictEqual(html, '<AUDIO><r1/><r2/>');
 });
 
+caso('serieHtml: .grupo da série (data-serie, onclick, contagem, corpo); aberto só se for a série aberta', () => {
+  reset();
+  ctx.s = { chave: 'a&b', nome: 'Série "X"', episodios: [ep(1, 1), ep(2, 1)] };
+  const gerar = () => vm.runInContext("serieHtml(s, '<P>', '<AUDIO>', function(e){return '';})", ctx);
+  let html = gerar();
+  assert.ok(html.startsWith('<div class="grupo collapsed" data-serie="a&amp;b">'));
+  assert.ok(html.includes('onclick="cliqueSerie(this)"><span class="caret">▸</span><P>Série &quot;X&quot; <span class="count">(2 episódios)</span>'));
+  assert.ok(html.includes('<div class="grupo-body"><AUDIO><div class="grupo temporada collapsed" data-temp="1">'));
+  vm.runInContext("alternarSerieAberta('a&b')", ctx);
+  html = gerar();
+  assert.ok(html.startsWith('<div class="grupo" data-serie="a&amp;b">'));
+  assert.ok(html.includes('<span class="caret">▾</span><P>'));
+});
+
 console.log(`\n${n} casos ok`);
