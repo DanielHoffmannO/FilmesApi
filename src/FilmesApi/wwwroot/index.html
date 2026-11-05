@@ -36,6 +36,8 @@ main{padding:16px 24px;max-width:1000px;margin:0 auto}
 .row .rep{color:var(--muted);font-variant-numeric:tabular-nums;margin-right:8px}
 .row .resume{font-size:12px;color:var(--accent);white-space:nowrap}
 .row .badge:hover{border-color:#666;color:#ccc}
+.row .baixar{flex:none;display:inline-flex;align-items:center;justify-content:center;min-width:36px;min-height:36px;margin:-6px -4px -6px 0;color:var(--muted);text-decoration:none;font-size:16px;border-radius:6px}
+.row .baixar:hover{color:#ccc;background:#222}
 .grupo{margin-bottom:2px}
 .grupo-hd:hover{background:var(--bg-3)}
 .grupo-body{padding-left:22px}
@@ -300,6 +302,7 @@ function rowHtml(f, episodio) {
       ${!episodio && f.anoLancamento ? `<span class="rano">${f.anoLancamento}</span>` : ''}
       ${retomar}
       <span class="badge ${f.assistido ? 'on' : ''}" onclick="event.stopPropagation(); toggleAssistido(${f.id})">${f.assistido ? '✓ Assistido' : 'Marcar'}</span>
+      <a class="baixar" href="/api/filmes/${f.id}/download" download title="Baixar o arquivo original" onclick="event.stopPropagation()">⬇</a>
       ${barraProgresso(f)}
     </div>`;
 }
