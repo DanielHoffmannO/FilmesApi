@@ -181,7 +181,7 @@ use `__`.
 
 **Transcoding:** `MaxConcurrentTranscodeJobs` (`1`), `HlsMaxAlturaReencode` (`1080`, `0`
 disables downscale), `HlsCacheMaxGB` (`20`), `HlsOrphanTimeoutSeconds` (`90`, `0` never
-aborts), `HlsStallTimeoutMinutes` (`8`), `ForceSoftwareEncoder` (`false`), `HlsRkmppDecodeHw`
+aborts), `DownloadsSimultaneos` (`2`, `0` no limit; `GET /api/filmes/{id}/download`), `HlsStallTimeoutMinutes` (`8`), `ForceSoftwareEncoder` (`false`), `HlsRkmppDecodeHw`
 (`false`), `RemuxCachePath` (`/data/remux`), `RemuxCacheMaxGB` (`15`), `HlsFalhaCooldownMinutes` (`10`),
 `TranscodeJobTimeoutHours` (`6`).
 

@@ -32,6 +32,7 @@ builder.Services.AddSingleton<PreferenciasAudioService>();
 builder.Services.AddSingleton<HlsTranscodeService>();
 builder.Services.AddSingleton<SubtitleService>();
 builder.Services.AddSingleton<PlayerStateService>();
+builder.Services.AddSingleton(sp => LimitadorDeDownloads.Da(sp.GetRequiredService<IConfiguration>()));
 builder.Services.AddHostedService<ScanPeriodicoService>();
 builder.Services.AddHostedService<PreAquecerContinuarService>();
 builder.Services.AddSingleton<LimpezaCacheService>();
