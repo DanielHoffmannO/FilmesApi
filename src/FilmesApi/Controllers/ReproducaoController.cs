@@ -18,11 +18,16 @@ public class ReproducaoController : ControllerBase
     private readonly EstadoMontagens _montagens;
 
     private readonly LimpezaCacheService _limpeza;
+    private readonly LimitadorDeDownloads _downloads;
+    private readonly ILogger<ReproducaoController> _log;
 
     public ReproducaoController(
         FilmeService service, HlsTranscodeService transcode, SubtitleService legendas,
-        RkmppCapabilityService rkmpp, ThermalService thermal, EstadoMontagens montagens, LimpezaCacheService limpeza)
+        RkmppCapabilityService rkmpp, ThermalService thermal, EstadoMontagens montagens, LimpezaCacheService limpeza,
+        LimitadorDeDownloads downloads, ILogger<ReproducaoController> log)
     {
+        _downloads = downloads;
+        _log = log;
         _limpeza = limpeza;
         _service = service;
         _transcode = transcode;
@@ -193,6 +198,38 @@ public class ReproducaoController : ControllerBase
         return path is null ? ArquivoNaoEncontrado() : ServirComRange(path);
     }
 
+    /// <summary>Baixa o arquivo original (mkv com todas as faixas etc.) com <c>Content-Disposition: attachment</c>
+    /// e nome decente (ver <see cref="NomeDeDownload"/>); Range vale, então dá pra retomar. Limitado por
+    /// <c>DownloadsSimultaneos</c> (429 acima). Não mexe em progresso nem em "assistido".</summary>
+    [HttpGet("{id:int}/download")]
+    public async Task<IActionResult> Download(int id)
+    {
+        var path = await _service.ResolverCaminhoAsync(id);
+        var filme = path is null ? null : await _service.ObterAsync(id);
+        if (path is null || filme is null) return ArquivoNaoEncontrado();
+
+        var vaga = _downloads.TentarEntrar();
+        if (vaga is null)
+        {
+            Response.Headers.RetryAfter = "30";
+            return StatusCode(StatusCodes.Status429TooManyRequests,
+                new { mensagem = "muitos downloads em andamento, tente de novo em instantes" });
+        }
+
+        // O nginx-proxy-manager bufferiza em disco por padrão: sem isto gravaria o filme inteiro no NVMe.
+        Response.Headers["X-Accel-Buffering"] = "no";
+        try
+        {
+            var stream = new StreamDeDownload(path, vaga, _log, id, HttpContext.RequestAborted);
+            return ServirComRange(stream, path, NomeDeDownload.Montar(filme, path));
+        }
+        catch
+        {
+            vaga.Dispose();   // arquivo sumiu/ilegível entre o resolver e o open
+            throw;
+        }
+    }
+
     /// <summary>Faixas de legenda embutidas no arquivo (as de texto viram .vtt via o endpoint abaixo).</summary>
     [HttpGet("{id:int}/legendas")]
     public async Task<IActionResult> Legendas(int id, CancellationToken ct)
@@ -257,7 +294,12 @@ public class ReproducaoController : ControllerBase
 
     private IActionResult ArquivoNaoEncontrado() => NotFound(new { mensagem = "arquivo não encontrado" });
 
-    private IActionResult ServirComRange(string caminho)
+    private IActionResult ServirComRange(string caminho) =>
+        ServirComRange(new FileStream(caminho, FileMode.Open, FileAccess.Read, FileShare.Read,
+            bufferSize: 65536, useAsync: true), caminho);
+
+    /// <summary>Com <paramref name="nomeDeDownload"/> a resposta vira <c>attachment</c> (o ASP.NET codifica acento).</summary>
+    private IActionResult ServirComRange(Stream stream, string caminho, string? nomeDeDownload = null)
     {
         var contentType = Path.GetExtension(caminho).ToLowerInvariant() switch
         {
@@ -268,8 +310,8 @@ public class ReproducaoController : ControllerBase
             _ => "application/octet-stream"
         };
 
-        var stream = new FileStream(caminho, FileMode.Open, FileAccess.Read, FileShare.Read,
-            bufferSize: 65536, useAsync: true);
-        return File(stream, contentType, enableRangeProcessing: true);
+        return nomeDeDownload is null
+            ? File(stream, contentType, enableRangeProcessing: true)
+            : File(stream, contentType, nomeDeDownload, enableRangeProcessing: true);
     }
 }

@@ -182,7 +182,7 @@ anidadas usan `__`.
 
 **Transcodificación:** `MaxConcurrentTranscodeJobs` (`1`), `HlsMaxAlturaReencode` (`1080`,
 `0` desactiva el downscale), `HlsCacheMaxGB` (`20`), `HlsOrphanTimeoutSeconds` (`90`, `0`
-nunca aborta), `HlsStallTimeoutMinutes` (`8`), `ForceSoftwareEncoder` (`false`),
+nunca aborta), `DownloadsSimultaneos` (`2`, `0` sin límite; `GET /api/filmes/{id}/download`), `HlsStallTimeoutMinutes` (`8`), `ForceSoftwareEncoder` (`false`),
 `HlsRkmppDecodeHw` (`false`), `RemuxCachePath` (`/data/remux`), `RemuxCacheMaxGB` (`15`), `HlsFalhaCooldownMinutes` (`10`),
 `TranscodeJobTimeoutHours` (`6`).
 

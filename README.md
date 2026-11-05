@@ -384,6 +384,7 @@ usam `__` (ex.: `ConnectionStrings__Default`).
 | `HlsMaxAlturaReencode` | `1080` | Reduz entradas mais altas pra esta altura antes de recodificar. `0` = sem downscale. |
 | `HlsCacheMaxGB` | `20` | Teto do cache HLS; acima disso, despejo LRU. `0` = ilimitado. |
 | `HlsOrphanTimeoutSeconds` | `90` | Aborta o transcode se ninguém pede status/segmento por este tempo. `0` = nunca aborta. |
+| `DownloadsSimultaneos` | `2` | Teto de downloads simultâneos em `GET /api/filmes/{id}/download` (arquivo original com nome decente e `Content-Disposition: attachment`; Range vale). Acima do teto: `429` com `Retry-After: 30`. `0` = sem limite. |
 | `HlsStallTimeoutMinutes` | `8` | Mata o ffmpeg se não gerar segmento novo neste intervalo. |
 | `TranscodeJobTimeoutHours` | `6` | Teto absoluto por job de ffmpeg. |
 | `ForceSoftwareEncoder` | `false` | Ignora a VPU e usa sempre `libx264`. |
@@ -457,6 +458,7 @@ filmes ainda sem metadados (roda ~30s depois do boot e reprocessa a cada scan).
 | `GET` | `/api/filmes/{id}/remux-status` | Estado do cache de `/remux` — dispara o job (vídeo copy + áudio→AAC) na 1ª chamada. `{status, progresso}`: `status` também pode vir `erro` (tentativa recente falhou, em cooldown); `progresso` é estimado durante "preparando", fixo em `100` quando "disponivel", `null` em "erro". |
 | `GET` | `/api/filmes/{id}/remux` | Vídeo copiado + áudio em AAC, já em cache — `409` se ainda não está pronto (consulte `/remux-status` antes). Com `Range`, como um arquivo normal. |
 | `GET` | `/api/filmes/{id}/original` | Sempre o arquivo original, sem transcodificar (VLC etc.). |
+| `GET` | `/api/filmes/{id}/download` | O arquivo original como anexo (`Content-Disposition: attachment`, nome `Título (ano).ext` / `Série - S05E01.ext`, Range). Limite `DownloadsSimultaneos` (`429` + `Retry-After`). Só o `index.html` tem o botão ⬇. |
 | `GET` | `/api/filmes/{id}/hls/playlist.m3u8` | Manifesto HLS (dispara/reusa o transcode). `202` enquanto prepara, `409` se o arquivo já é compatível direto (use `/stream`), `500` se o transcode falhou. |
 | `GET` | `/api/filmes/{id}/hls/{seg}.ts` | Segmentos HLS. |
 | `GET` | `/api/filmes/{id}/legendas` | Faixas de legenda (embutidas + externas), a melhor primeiro; `recomendada: true` na que as telas ligam sozinhas (áudio estrangeiro). O `idx` identifica a faixa em `/legenda/{idx}` e não muda com a ordem da lista. |
