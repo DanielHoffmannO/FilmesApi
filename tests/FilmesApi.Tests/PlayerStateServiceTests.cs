@@ -282,4 +282,27 @@ public class PlayerStateServiceTests
         Assert.False(fechado.legendaManual);
         Assert.Equal(-1, fechado.legendaIdx);
     }
+
+    [Fact]
+    public void Dois_seeks_no_mesmo_poll_nao_se_perdem_o_acumulado_soma()
+    {
+        var svc = new PlayerStateService();
+        dynamic base0 = svc.Snapshot();   // o que a TV viu no poll anterior
+
+        svc.Seek(30);
+        svc.Seek(30);   // seekDelta sozinho ficaria em 30: o 1º toque sumia
+        dynamic agora = svc.Snapshot();
+
+        Assert.Equal(30.0, agora.seekDelta);
+        Assert.Equal(60.0, agora.seekAcumulado - base0.seekAcumulado);   // o que a TV aplica
+    }
+
+    [Fact]
+    public void Recuo_entra_no_acumulado_com_sinal()
+    {
+        var svc = new PlayerStateService();
+        svc.Seek(30); svc.Seek(-30); svc.Seek(30);
+        dynamic s = svc.Snapshot();
+        Assert.Equal(30.0, s.seekAcumulado);
+    }
 }

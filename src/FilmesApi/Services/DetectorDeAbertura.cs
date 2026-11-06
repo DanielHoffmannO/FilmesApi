@@ -26,12 +26,13 @@ public static class DetectorDeAbertura
     private const double ExtensaoMaxSegundos = 8;   // por lado: ruído estacionário casa com ruído estacionário e o folgado correria o arquivo inteiro
     private const double DeslocamentoMaxSegundos = 180;   // abertura começa em pontos diferentes (com/sem "anteriormente")
 
-    /// <summary>A melhor corrida em comum com pelo menos <paramref name="minimoSegundos"/>, ou null. Acha pelo critério estrito
+    /// <summary>A melhor corrida em comum com pelo menos <paramref name="minimoSegundos"/>, ou null. <paramref name="deslocamentoMaxSegundos"/>:
+    /// quanto uma sequência pode estar deslocada da outra (180 s entre episódios; muito mais quando se procura um trecho curto numa janela longa). Acha pelo critério estrito
     /// (≤ 6 bits, 3 falhas) e depois estende as duas bordas pelo folgado (≤ 10 bits, 8 falhas).</summary>
-    public static TrechoComum? Encontrar(int[] a, int[] b, double minimoSegundos = 10)
+    public static TrechoComum? Encontrar(int[] a, int[] b, double minimoSegundos = 10, double deslocamentoMaxSegundos = DeslocamentoMaxSegundos)
     {
         var minimoItens = (int)Math.Ceiling(minimoSegundos / SegundosPorItem);
-        var maxDesloc = (int)(DeslocamentoMaxSegundos / SegundosPorItem);
+        var maxDesloc = (int)(deslocamentoMaxSegundos / SegundosPorItem);
         (int Ini, int Fim, int Desloc)? melhor = null;   // Fim exclusivo, em índices de a
 
         for (var d = -maxDesloc; d <= maxDesloc; d++)   // b[i + d] ~ a[i]

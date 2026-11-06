@@ -14,6 +14,7 @@ public class PlayerStateService
     private double _volume = 1.0;
     private int _seekVersion;
     private double _seekDelta;
+    private double _seekAcumulado;   // soma de TODOS os avanços/recuos já pedidos: a TV aplica a diferença entre dois polls, então dois toques no mesmo poll não se perdem
     private int _pararVersion;
     private double _posSegundos;      // reportado pela TV, pra o celular mostrar onde está
     private double _duracaoSegundos;
@@ -50,6 +51,7 @@ public class PlayerStateService
                 volume = _volume,
                 seekVersion = _seekVersion,
                 seekDelta = _seekDelta,
+                seekAcumulado = _seekAcumulado,
                 pararVersion = _pararVersion,
                 posSegundos = _posSegundos,
                 duracaoSegundos = _duracaoSegundos,
@@ -147,7 +149,7 @@ public class PlayerStateService
 
     public void Seek(double deltaSegundos)
     {
-        lock (_lock) { _seekVersion++; _seekDelta = deltaSegundos; }
+        lock (_lock) { _seekVersion++; _seekDelta = deltaSegundos; _seekAcumulado += deltaSegundos; }
     }
 
     /// <summary>Chamado tanto pelo comando remoto "parar" quanto pela TV avisando que o
