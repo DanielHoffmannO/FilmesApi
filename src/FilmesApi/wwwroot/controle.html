@@ -80,31 +80,49 @@ main{max-width:640px;margin:0 auto}
 .ep.filme.vi .t b{color:var(--mut)}
 .ep.filme .t small{display:block;color:var(--mut);font-size:12.5px}
 
-/* ─── barra de controle remoto ─── */
-.remote{position:fixed;left:0;right:0;bottom:0;background:var(--bg-2);border-top:1px solid #222;padding:10px 16px calc(10px + env(safe-area-inset-bottom));display:none;flex-direction:column;gap:8px;z-index:50}
+/* ─── barra de reprodução ─── */
+.remote{position:fixed;left:0;right:0;bottom:0;background:var(--s1);border-top:1px solid var(--line);border-radius:20px 20px 0 0;padding:14px 18px calc(16px + env(safe-area-inset-bottom));display:none;flex-direction:column;z-index:50}
 .remote.active{display:flex}
-.remote-l1{display:flex;align-items:baseline;gap:10px}
-.remote .titulo{background:none;border:none;padding:0;text-align:left;font-size:12px;color:#ccc;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.remote-time{font-size:11px;color:#aaa;font-variant-numeric:tabular-nums;white-space:nowrap}
-.remote-prog{position:relative;height:8px;background:var(--border);border-radius:4px;cursor:pointer;overflow:hidden}
-.remote-prog-fill{position:relative;height:100%;background:var(--accent);width:0;transition:width .3s linear}
-.remote-prog .faixa{position:absolute;top:0;bottom:0;background:rgba(255,255,255,.22);display:none}
-.remote-prog .faixa.creditos{background:rgba(120,170,255,.3)}
-.remote-l2{display:flex;align-items:center;gap:10px}
-.remote-l2 button{flex:1}
-.remote-l2 button.direita{flex:1}
-.remote-l2 button.direita.vermelho{flex:2;background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
-.remote-l3{display:flex;align-items:center;gap:10px}
-.remote-l3 input[type=range]{flex:1;min-width:0}
-.remote button{background:#222;color:#eee;border:1px solid var(--border);border-radius:6px;padding:9px 12px;font-size:13px;cursor:pointer}
-.remote button:active{background:#333}
-.remote button:disabled{opacity:.35;cursor:default}
-.remote button:disabled:active{background:#222}
-.remote .titulo:active{background:none}
-.remote-proximo{display:none;align-items:center;gap:10px;background:var(--bg-3);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:12px;color:#ccc}
+.remote>*{max-width:600px;width:100%;margin-left:auto;margin-right:auto}
+.l1{display:flex;align-items:center;gap:10px}
+.l1>svg{color:var(--acc)}
+.l1 .t{flex:1;min-width:0;cursor:pointer}
+.l1 .t b{display:block;font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.l1 .t small{display:block;color:var(--mut);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.l1 .ib{background:var(--s2);margin:0}
+.progw{height:30px;display:flex;align-items:center;margin-top:4px;cursor:pointer}
+.prog{position:relative;height:4px;width:100%;background:var(--s3);border-radius:2px}
+.prog .z{position:absolute;top:-1px;bottom:-1px;background:rgba(255,255,255,.22);border-radius:2px;display:none}
+.prog .p{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--acc);border-radius:2px;transition:width .3s linear}
+.prog .p::after{content:"";position:absolute;right:-6px;top:-4px;width:12px;height:12px;border-radius:50%;background:#fff}
+.tempos{display:flex;justify-content:space-between;color:var(--mut);font-size:12px;font-variant-numeric:tabular-nums;margin-top:-4px}
+.ctl{display:flex;align-items:center;gap:12px;margin-top:10px}
+.rb{position:relative;width:52px;height:52px;border-radius:50%;background:var(--s2);border:1px solid var(--line);display:grid;place-items:center;flex:none}
+.rb em{position:absolute;font-style:normal;font-size:10px;font-weight:700;top:19px}
+.rb:active,.cta.neutro:active{background:var(--s3)}
+.big{width:64px;height:64px;border-radius:50%;background:#fff;color:#000;display:grid;place-items:center;flex:none}
+.big svg{width:26px;height:26px}
+.big:active{background:#ddd}
+.cta{flex:1;min-width:0;height:52px;border-radius:26px;background:var(--acc);color:#fff;display:flex;align-items:center;justify-content:center;gap:8px;font-weight:600;font-size:15px;white-space:nowrap;transition:background .15s}
+.cta svg{width:18px;height:18px}
+.cta:active{background:#c40812}
+.cta.neutro{background:var(--s2);border:1px solid var(--line);color:var(--txt);font-weight:500}
+.l3{display:flex;align-items:center;gap:6px;margin-top:10px;color:var(--mut)}
+.l3 .ib{margin:0;width:44px;height:44px}
+.l3 .ib:disabled{opacity:.35}
+.remote-proximo{display:none;align-items:center;gap:10px;background:var(--s2);border:1px solid var(--line);border-radius:10px;padding:8px 8px 8px 12px;margin-top:10px;font-size:13px;color:var(--txt)}
 .remote-proximo.on{display:flex}
-.remote-proximo span{flex:1;min-width:0}
-.remote-proximo button{background:var(--accent);border-color:var(--accent);color:#fff;padding:6px 10px;font-size:12px;white-space:nowrap}
+.remote-proximo span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.remote-proximo button{background:var(--acc);color:#fff;border-radius:8px;padding:0 12px;height:36px;font-size:13px;font-weight:600;white-space:nowrap}
+/* volume: trilho de 4 px, preenchimento claro (--v, em %), bolinha de 16 px; a área de toque do input é de 44 px */
+input[type=range].vol{-webkit-appearance:none;appearance:none;flex:1;min-width:0;height:44px;background:transparent;margin:0 4px;--v:70%}
+input[type=range].vol::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(to right,#bbb var(--v),var(--s3) var(--v))}
+input[type=range].vol::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#fff;margin-top:-6px;border:0}
+input[type=range].vol::-moz-range-track{height:4px;border-radius:2px;background:var(--s3)}
+input[type=range].vol::-moz-range-progress{height:4px;border-radius:2px;background:#bbb}
+input[type=range].vol::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#fff;border:0}
+input[type=range].vol:focus-visible{outline:2px solid var(--acc);outline-offset:-6px;border-radius:8px}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
 
 /* ─── folha "Idioma e legenda" (sobe de trás da barra) e avisos ─── */
 .folha-scrim{position:fixed;inset:0;z-index:55}
@@ -157,24 +175,27 @@ main{max-width:640px;margin:0 auto}
 </div>
 
 <div class="remote" id="remote">
-  <div class="remote-l1">
-    <button class="titulo" id="remoteTitulo" onclick="abrirFolhaAgora()" title="Idioma e legenda"></button>
-    <span class="remote-time" id="remoteTime"></span>
+  <div class="l1">
+    <span data-ico="tv"></span>
+    <div class="t" role="button" tabindex="0" onclick="abrirFolhaAgora()" onkeydown="if (event.key === 'Enter') abrirFolhaAgora()"><b id="remoteTitulo"></b><small id="remoteSub"></small></div>
+    <button class="ib" onclick="abrirFolhaAgora()" aria-label="Idioma e legenda" data-ico="sliders"></button>
   </div>
-  <div class="remote-prog" id="remoteProg" onclick="remoteScrub(event)"><div class="faixa" id="remoteFaixaAbertura"></div><div class="faixa creditos" id="remoteFaixaCreditos"></div><div class="remote-prog-fill" id="remoteProgFill"></div></div>
+  <div class="progw" id="remoteProg" onclick="remoteScrub(event)"><div class="prog"><div class="z" id="remoteFaixaAbertura"></div><div class="z" id="remoteFaixaCreditos"></div><div class="p" id="remoteProgFill"></div></div></div>
+  <div class="tempos"><span id="remoteTempoDec"></span><span id="remoteTempoRest"></span></div>
   <div class="remote-proximo" id="remoteProximo">
     <span id="remoteProximoTxt"></span>
-    <button onclick="remoteAceitarProximo()">▶ Assistir agora</button>
+    <button onclick="remoteAceitarProximo()">Assistir agora</button>
   </div>
-  <div class="remote-l2">
-    <button onclick="remoteSeek(-SEEK_STEP_S)">« 30s</button>
-    <button onclick="remotePlayPause()" id="remotePlayPauseBtn">⏸</button>
-    <button onclick="remoteDireita()" id="remoteDireitaBtn" class="direita">30s »</button>
+  <div class="ctl">
+    <button class="rb" onclick="remoteSeek(-SEEK_STEP_S)" aria-label="Voltar 30 segundos"><span data-ico="back"></span><em>30</em></button>
+    <button class="big" onclick="remotePlayPause()" id="remotePlayPauseBtn" aria-label="Pausar"></button>
+    <button class="cta neutro" onclick="remoteDireita()" id="remoteDireitaBtn"></button>
   </div>
-  <div class="remote-l3">
-    <button onclick="remoteProximoEp()" id="remoteProximoEpBtn" title="Próximo episódio" style="display:none">⏭</button>
-    <input type="range" id="remoteVolume" min="0" max="1" step="0.05" oninput="remoteVolume(this.value)" aria-label="Volume">
-    <button onclick="remoteParar()" title="Parar" aria-label="Parar">⏹</button>
+  <div class="l3">
+    <button class="ib" onclick="remoteProximoEp()" id="remoteProximoEpBtn" aria-label="Próximo episódio" data-ico="next" style="display:none"></button>
+    <span data-ico="vol" style="margin-left:6px;display:grid"></span>
+    <input type="range" class="vol" id="remoteVolume" min="0" max="1" step="0.05" oninput="remoteVolume(this.value)" aria-label="Volume">
+    <button class="ib" onclick="remoteParar()" aria-label="Parar" data-ico="stop"></button>
   </div>
 </div>
 
@@ -200,6 +221,13 @@ const IC = {
   tv: '<rect x="3" y="7" width="18" height="12" rx="2"/><path d="M16 3l-4 4l-4-4"/>',
   skip: '<path d="M5 5l8 7l-8 7z"/><path d="M13 5l8 7l-8 7z"/>',
   next: '<path d="M7 4v16l10-8z"/><path d="M20 5v14"/>',
+  nextF: '<path d="M5.5 4.5v15L16 12z"/><rect x="18" y="5" width="2.4" height="14" rx="1.2"/>',
+  back: '<path d="M3.06 13a9 9 0 1 0 .49-4.087"/><path d="M3 4v5h5"/>',
+  pause: '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',
+  play: '<path d="M8 5v14l11-7z"/>',
+  sliders: '<path d="M4 6h8M16 6h4M4 12h2M10 12h10M4 18h12M20 18h0"/><circle cx="14" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
+  vol: '<path d="M15 8a5 5 0 0 1 0 8"/><path d="M6 15H4a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h2l3.5-4.5a.8.8 0 0 1 1.5.5v14a.8.8 0 0 1-1.5.5L6 15"/>',
+  stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
 };
 const ico = (nome, cls) => `<svg viewBox="0 0 24 24" class="${cls || ''}" aria-hidden="true">${IC[nome]}</svg>`;
 document.querySelectorAll('[data-ico]').forEach(el => { el.innerHTML = ico(el.dataset.ico); });
@@ -421,11 +449,19 @@ function pintarFaixa(id, ini, fim, dur) {
   el.style.display = ini != null && dur ? 'block' : 'none';
   if (ini != null && dur) { el.style.left = (100 * ini / dur) + '%'; el.style.width = (100 * (fim - ini) / dur) + '%'; }
 }
+// O botão contextual só é redesenhado quando muda de forma (não a cada poll): neutro "30s »", vermelho "Pular abertura" / "Próximo episódio".
+let ctaModo = null;
+function definirCta(modo) {
+  if (ctaModo === modo) return;
+  ctaModo = modo;
+  const b = document.getElementById('remoteDireitaBtn');
+  b.className = 'cta' + (modo === 'neutro' ? ' neutro' : '');
+  b.innerHTML = modo === 'abertura' ? ico('skip', 'f') + 'Pular abertura' : modo === 'proximo' ? ico('nextF', 'f') + 'Próximo episódio' : '30s ' + ico('skip');
+  b.setAttribute('aria-label', modo === 'abertura' ? 'Pular abertura' : modo === 'proximo' ? 'Próximo episódio' : 'Avançar 30 segundos');
+}
 function atualizarBotaoDireita(pos, dur) {
-  const btn = document.getElementById('remoteDireitaBtn');
   const pular = dentroDaAbertura(pos), proximo = !pular && nosCreditos(pos);
-  btn.classList.toggle('vermelho', pular || proximo);
-  btn.textContent = pular ? '⏩ Pular abertura' : proximo ? '⏭ Próximo episódio' : '30s »';
+  definirCta(pular ? 'abertura' : proximo ? 'proximo' : 'neutro');
   pintarFaixa('remoteFaixaAbertura', remoteAbertura && remoteAbertura.inicioSegundos, remoteAbertura && remoteAbertura.fimSegundos, dur);
   pintarFaixa('remoteFaixaCreditos', remoteCreditos && remoteCreditos.inicioSegundos, dur, dur);
 }
@@ -443,6 +479,7 @@ async function remotePularAbertura() {
 }
 
 async function remoteVolume(valor) {
+  document.getElementById('remoteVolume').style.setProperty('--v', (100 * valor) + '%');
   await fetch(`${PLAYER_API}/volume`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ valor: Number(valor) })
@@ -696,8 +733,7 @@ async function pollRemote() {
       els.remoteProximoEpBtn.style.display = 'none';
       remoteAbertura = null; remoteCreditos = null; remoteTemProximo = false;
       document.getElementById('remoteFaixaCreditos').style.display = 'none';
-      document.getElementById('remoteDireitaBtn').classList.remove('vermelho');
-      document.getElementById('remoteDireitaBtn').textContent = '30s »';
+      definirCta('neutro');
       document.getElementById('remoteFaixaAbertura').style.display = 'none';
       fecharFolha();
       // Só re-renderiza se realmente parou de tocar algo (transição real) -- no primeiro poll
@@ -716,12 +752,23 @@ async function pollRemote() {
         atualizarBotaoProximoEp(estado.filmeId);
       }
       const f = filmeAtualRemoto;
-      document.getElementById('remoteTitulo').textContent = (f ? `📺 ${rotuloComTitulo(f) || f.titulo}` : '📺 Reproduzindo…') + ' ▾';
-      document.getElementById('remotePlayPauseBtn').textContent = estado.playing ? '⏸' : '▶';
-      document.getElementById('remoteVolume').value = estado.volume;
+      document.getElementById('remoteTitulo').textContent = f ? (f.ehEpisodio && f.serie ? f.serie : f.titulo) : 'Reproduzindo…';
+      document.getElementById('remoteSub').textContent = f && f.ehEpisodio
+        ? [f.temporada != null ? 'T' + f.temporada : '', codigoEp(f), f.tituloEpisodio].filter(Boolean).join(' · ')
+        : (f && f.anoLancamento ? String(f.anoLancamento) : '');
+      const pp = document.getElementById('remotePlayPauseBtn');
+      if (pp.dataset.playing !== String(!!estado.playing)) {
+        pp.dataset.playing = String(!!estado.playing);
+        pp.innerHTML = ico(estado.playing ? 'pause' : 'play', 'f');
+        pp.setAttribute('aria-label', estado.playing ? 'Pausar' : 'Continuar');
+      }
+      const vol = document.getElementById('remoteVolume');
+      vol.value = estado.volume;
+      vol.style.setProperty('--v', (100 * estado.volume) + '%');
       const pos = estado.posSegundos || 0, dur = estado.duracaoSegundos || 0;
       document.getElementById('remoteProgFill').style.width = dur ? Math.min(100, 100 * pos / dur) + '%' : '0';
-      document.getElementById('remoteTime').textContent = dur ? `${mmss(pos)} / ${mmss(dur)}` : (pos ? mmss(pos) : '');
+      document.getElementById('remoteTempoDec').textContent = pos || dur ? mmss(pos) : '';
+      document.getElementById('remoteTempoRest').textContent = dur ? '−' + mmss(dur - pos) : '';
       atualizarBotaoDireita(pos, dur);
       if (trocouFilme) render();
     }
