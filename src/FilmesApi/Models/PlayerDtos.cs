@@ -11,3 +11,6 @@ public record LegendaRequest(int Idx);
 public record LegendaTvRequest(int Idx, bool Manual);
 public record AudioTrackRequest(int Idx);
 public record ProximoOfertaRequest(int FilmeId, string Rotulo);
+
+/// <summary>Corpo de <c>POST /api/admin/nomes</c>: <c>Secao</c> = "apelidos" | "nomes".</summary>
+public record NomeRequest(string? Secao, string? Chave, string? Valor);

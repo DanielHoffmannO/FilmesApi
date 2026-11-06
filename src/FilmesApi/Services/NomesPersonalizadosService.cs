@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace FilmesApi.Services;
 
@@ -74,6 +75,47 @@ public class NomesPersonalizadosService(IConfiguration config, ILogger<NomesPers
                 return (Resultado.Invalido, NomesArquivo.Vazio);
             }
         }
+    }
+
+    public enum ResultadoAdicao { Aplicado, SecaoInvalida, ArquivoInvalido, FalhaAoGravar }
+
+    /// <summary>Grava UMA entrada em <c>apelidos</c> ou <c>nomes</c> do arquivo (cria se não existe), sem perder o que
+    /// já há nele, guarda o anterior em <c>.bak</c> e recarrega na hora. Arquivo ilegível/inválido não é tocado.</summary>
+    public ResultadoAdicao Adicionar(string secao, string chave, string valor)
+    {
+        if (secao is not ("apelidos" or "nomes") || string.IsNullOrWhiteSpace(chave) || string.IsNullOrWhiteSpace(valor))
+            return ResultadoAdicao.SecaoInvalida;
+
+        lock (_trava)
+        {
+            try
+            {
+                var existe = File.Exists(_caminho);
+                var raiz = existe ? JsonNode.Parse(File.ReadAllText(_caminho)) as JsonObject : [];
+                if (raiz is null) return ResultadoAdicao.ArquivoInvalido;
+                if (raiz[secao] is not null && raiz[secao] is not JsonObject) return ResultadoAdicao.ArquivoInvalido;
+                var alvo = raiz[secao] as JsonObject ?? (JsonObject)(raiz[secao] = new JsonObject());
+                alvo[MediaNomeParser.NormalizarBusca(chave)] = valor.Trim();
+
+                var json = raiz.ToJsonString(new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
+                Ler(json);   // o que vamos gravar tem que ser lido de volta
+                if (existe) File.Copy(_caminho, _caminho + ".bak", overwrite: true);
+                var tmp = _caminho + ".tmp";
+                File.WriteAllText(tmp, json);
+                try { File.Move(tmp, _caminho, overwrite: true); }
+                catch (IOException) { File.WriteAllText(_caminho, json); File.Delete(tmp); }   // arquivo montado direto no contêiner não aceita rename
+            }
+            catch (Exception ex) when (ex is JsonException or FormatException)
+            {
+                return ResultadoAdicao.ArquivoInvalido;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                logger.LogWarning("Não consegui gravar o nomes.json ({Caminho}): {Erro}", _caminho, ex.Message);
+                return ResultadoAdicao.FalhaAoGravar;
+            }
+        }
+        return Recarregar().Resultado == Resultado.Invalido ? ResultadoAdicao.ArquivoInvalido : ResultadoAdicao.Aplicado;
     }
 
     private bool Mudou()

@@ -23,7 +23,8 @@ public record DiagnosticoResponse(
     List<RepetidoDiag> Repetidos,
     List<UmEpisodioDiag> SerieComUmEpisodio,
     List<ArquivoDiag> SoltosQueParecemEpisodio,
-    List<SuspeitoDiag> SuspeitosDePropaganda);
+    List<SuspeitoDiag> SuspeitosDePropaganda,
+    List<SugestaoNome> SugestoesDeNomes);
 
 /// <summary>
 /// O que dá pra descobrir olhando o catálogo inteiro: que episódios faltam, o que está repetido, o que o
@@ -65,7 +66,8 @@ public static partial class DiagnosticoCatalogo
             series.SelectMany(s => Repetidos(s, ComTamanho)).ToList(),
             series.Select(UmSoEpisodio).OfType<UmEpisodioDiag>().ToList(),
             SoltosQueParecemEpisodio(catalogo),
-            Suspeitos(catalogo, ComTamanho));
+            Suspeitos(catalogo, ComTamanho),
+            SugestoesDeNomes.Analisar(catalogo));
     }
 
     private static List<SerieAgregada> AgruparPorSerie(IReadOnlyList<FilmeResponse> catalogo)
