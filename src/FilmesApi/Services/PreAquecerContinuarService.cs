@@ -6,8 +6,8 @@ namespace FilmesApi.Services;
 /// Só quando o servidor está ocioso e o arquivo cabe no teto do cache sem expulsar nada (<see cref="PoliticaPreAquecimento"/>);
 /// o job cede o lugar se alguém precisar do encoder. <c>PreAquecerContinuarMinutos</c> (padrão 5; 0 desliga).
 /// </summary>
-public class PreAquecerContinuarService(IServiceScopeFactory escopos, IConfiguration config, ILogger<PreAquecerContinuarService> logger)
-    : BackgroundService
+public class PreAquecerContinuarService(IServiceScopeFactory escopos, IConfiguration config, ILogger<PreAquecerContinuarService> logger,
+    RegistroDeTarefas? tarefas = null) : BackgroundService
 {
     /// <summary>Quantos da frente da fila entram no pré-aquecimento (um aquecido por checagem).</summary>
     private const int Candidatos = 3;
@@ -15,7 +15,8 @@ public class PreAquecerContinuarService(IServiceScopeFactory escopos, IConfigura
     protected override async Task ExecuteAsync(CancellationToken parar)
     {
         var minutos = config.GetValue<double?>("PreAquecerContinuarMinutos") ?? 5;
-        if (minutos <= 0) return;
+        if (minutos <= 0) { tarefas?.Declarar("pre-aquecer", ligada: false); return; }
+        tarefas?.Declarar("pre-aquecer");
 
         try
         {
@@ -30,11 +31,12 @@ public class PreAquecerContinuarService(IServiceScopeFactory escopos, IConfigura
     /// <summary>Uma checagem; nunca lança. Devolve o id do filme cujo remux começou, ou null se nada foi aquecido.</summary>
     internal async Task<int?> ExecutarUmaVezAsync(CancellationToken ct = default)
     {
+        var medicao = tarefas?.Iniciar("pre-aquecer");
         try
         {
             using var escopo = escopos.CreateScope();
             var transcode = escopo.ServiceProvider.GetRequiredService<HlsTranscodeService>();
-            if (!transcode.Ocioso) return null;   // barato: antes de qualquer consulta
+            if (!transcode.Ocioso) { medicao?.Ok("servidor ocupado — não aqueceu"); return null; }   // barato: antes de qualquer consulta
 
             var filmes = escopo.ServiceProvider.GetRequiredService<FilmeService>();
             // um por vez: o que já está pronto (ou não precisa de remux) devolve false e passa a vez ao seguinte da fila
@@ -42,12 +44,17 @@ public class PreAquecerContinuarService(IServiceScopeFactory escopos, IConfigura
             {
                 var caminho = await filmes.ResolverCaminhoAsync(item.Filme.Id);
                 if (caminho is not null && await transcode.PreAquecerSeNecessarioAsync(item.Filme.Id, caminho, item.Filme.Assistido, ct))
+                {
+                    medicao?.Ok($"aquecendo o filme {item.Filme.Id}");
                     return item.Filme.Id;
+                }
             }
+            medicao?.Ok("nada a aquecer");
             return null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            medicao?.Falhou(ex);
             logger.LogWarning(ex, "Pré-aquecimento do continuar assistindo falhou — tenta de novo no próximo intervalo.");
             return null;
         }

@@ -10,7 +10,7 @@ namespace FilmesApi.Services;
 /// tempo ao 1º scan de povoar o catálogo — sem ele tudo pareceria órfão).
 /// </summary>
 public class LimpezaCacheService(IServiceScopeFactory escopos, HlsTranscodeService transcode, IConfiguration config,
-    ILogger<LimpezaCacheService> logger) : BackgroundService
+    ILogger<LimpezaCacheService> logger, RegistroDeTarefas? tarefas = null) : BackgroundService
 {
     private readonly object _trava = new();
     private (InventarioCache? Inventario, DateTime Quando) _inventario;
@@ -18,7 +18,8 @@ public class LimpezaCacheService(IServiceScopeFactory escopos, HlsTranscodeServi
     protected override async Task ExecuteAsync(CancellationToken parar)
     {
         var minutos = config.GetValue<double?>("LimpezaCacheMinutos") ?? 60;
-        if (minutos <= 0) return;
+        if (minutos <= 0) { tarefas?.Declarar("limpeza-cache", ligada: false); return; }
+        tarefas?.Declarar("limpeza-cache");
 
         try
         {
@@ -32,6 +33,7 @@ public class LimpezaCacheService(IServiceScopeFactory escopos, HlsTranscodeServi
     /// <summary>Uma varredura; nunca lança. Loga o resumo quando apagou algo.</summary>
     internal async Task<ResumoLimpeza> ExecutarUmaVezAsync()
     {
+        var medicao = tarefas?.Iniciar("limpeza-cache");
         try
         {
             var op = new OpcoesLimpeza(
@@ -41,10 +43,12 @@ public class LimpezaCacheService(IServiceScopeFactory escopos, HlsTranscodeServi
             var resumo = LimpezaDeCache.Varrer(transcode.PastaHls, transcode.PastaRemux, assistidos, DateTime.UtcNow, op, transcode.GanchosDeCache());
             if (resumo.Itens > 0)
                 logger.LogInformation("Limpeza do cache: {Itens} itens, {Gb:F1} GB.", resumo.Itens, resumo.Bytes / 1073741824.0);
+            medicao?.Ok(resumo.Itens > 0 ? $"{resumo.Itens} itens, {resumo.Bytes / 1073741824.0:F1} GB" : "nada a apagar");
             return resumo;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            medicao?.Falhou(ex);
             logger.LogWarning(ex, "Limpeza do cache falhou — tenta de novo no próximo intervalo.");
             return new ResumoLimpeza(0, 0);
         }

@@ -19,13 +19,15 @@ public class ReproducaoController : ControllerBase
 
     private readonly LimpezaCacheService _limpeza;
     private readonly LimitadorDeDownloads _downloads;
+    private readonly RegistroDeTarefas _tarefas;
     private readonly ILogger<ReproducaoController> _log;
 
     public ReproducaoController(
         FilmeService service, HlsTranscodeService transcode, SubtitleService legendas,
         RkmppCapabilityService rkmpp, ThermalService thermal, EstadoMontagens montagens, LimpezaCacheService limpeza,
-        LimitadorDeDownloads downloads, ILogger<ReproducaoController> log)
+        LimitadorDeDownloads downloads, ILogger<ReproducaoController> log, RegistroDeTarefas tarefas)
     {
+        _tarefas = tarefas;
         _downloads = downloads;
         _log = log;
         _limpeza = limpeza;
@@ -55,6 +57,7 @@ public class ReproducaoController : ControllerBase
         cache = await _limpeza.InventarioAsync(),
         montagens = _montagens.Montagens,
         montagensAtualizadoEm = _montagens.AtualizadoEm,
+        tarefas = _tarefas.Snapshot(),
     });
 
     /// <summary>Keepalive do player: "ainda tem alguém assistindo este filme". Sem isso, o
