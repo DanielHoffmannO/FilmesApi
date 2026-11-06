@@ -60,4 +60,37 @@ public class DetectorDeAberturaTests
     [Fact]
     public void Silencio_igual_nos_dois_nao_e_abertura() =>
         Assert.Null(DetectorDeAbertura.Encontrar(new int[Itens(120)], new int[Itens(120)]));
+
+    [Fact]
+    public void Minimo_e_configuravel_trecho_de_7s_so_passa_com_minimo_menor()
+    {
+        var comum = Aleatorio(Itens(7), 1);
+        var a = Aleatorio(Itens(50), 2).Concat(comum).Concat(Aleatorio(Itens(50), 3)).ToArray();
+        var b = Aleatorio(Itens(30), 4).Concat(comum).Concat(Aleatorio(Itens(50), 5)).ToArray();
+
+        Assert.Null(DetectorDeAbertura.Encontrar(a, b));   // padrão: 10 s
+        Assert.Null(DetectorDeAbertura.Encontrar(a, b, minimoSegundos: 10));
+        var t = DetectorDeAbertura.Encontrar(a, b, minimoSegundos: 4);   // mínimo de um pulo do Daniel
+        Assert.NotNull(t);
+        Assert.InRange(t!.Duracao, 6.5, 7.5);
+    }
+
+    [Fact]
+    public void Criterio_folgado_estende_as_bordas_mas_nao_cria_trecho()
+    {
+        var firme = Aleatorio(Itens(30), 1);
+        // 3 s de cada lado com 8 bits trocados por item: passa no folgado (<= 10), não no estrito (<= 6)
+        static int[] Frouxo(int[] x) => x.Select(v => v ^ 0b11111111).ToArray();
+        var borda = Aleatorio(Itens(3), 7);
+        var a = Aleatorio(Itens(40), 2).Concat(borda).Concat(firme).Concat(borda).Concat(Aleatorio(Itens(40), 3)).ToArray();
+        var b = Aleatorio(Itens(60), 4).Concat(Frouxo(borda)).Concat(firme).Concat(Frouxo(borda)).Concat(Aleatorio(Itens(40), 5)).ToArray();
+
+        var t = DetectorDeAbertura.Encontrar(a, b);
+
+        Assert.NotNull(t);
+        Assert.InRange(t!.Duracao, 35.5, 36.5);   // 30 s firmes + 3 s + 3 s das bordas
+
+        var soBorda = Aleatorio(Itens(30), 9);   // só "frouxo", sem miolo firme: o folgado nunca cria trecho
+        Assert.Null(DetectorDeAbertura.Encontrar(soBorda, Frouxo(soBorda)));
+    }
 }
