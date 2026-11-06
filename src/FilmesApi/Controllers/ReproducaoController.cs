@@ -20,13 +20,15 @@ public class ReproducaoController : ControllerBase
     private readonly LimpezaCacheService _limpeza;
     private readonly LimitadorDeDownloads _downloads;
     private readonly RegistroDeTarefas _tarefas;
+    private readonly PreferenciasAudioService _prefs;
     private readonly ILogger<ReproducaoController> _log;
 
     public ReproducaoController(
         FilmeService service, HlsTranscodeService transcode, SubtitleService legendas,
         RkmppCapabilityService rkmpp, ThermalService thermal, EstadoMontagens montagens, LimpezaCacheService limpeza,
-        LimitadorDeDownloads downloads, ILogger<ReproducaoController> log, RegistroDeTarefas tarefas)
+        LimitadorDeDownloads downloads, ILogger<ReproducaoController> log, RegistroDeTarefas tarefas, PreferenciasAudioService prefs)
     {
+        _prefs = prefs;
         _tarefas = tarefas;
         _downloads = downloads;
         _log = log;
@@ -259,9 +261,14 @@ public class ReproducaoController : ControllerBase
     private async Task<List<LegendaInfo>> MarcarRecomendadaAsync(int id, string path, List<LegendaInfo> faixas, CancellationToken ct)
     {
         if (faixas.Count == 0) return faixas;
-        var audios = await _transcode.ListarAudiosAsync(id, path, ct);
-        var idioma = audios.FirstOrDefault(a => a.Atual)?.Idioma;
-        var idx = SubtitleService.LegendaParaPreparar(idioma, faixas);
+        int? idx;
+        if (_prefs.LegendaDoEpisodio(id) is { } padrao)   // a série tem legenda padrão: ela manda (inclusive "off")
+            idx = SubtitleService.LegendaPorPadraoDaSerie(padrao, faixas);
+        else
+        {
+            var audios = await _transcode.ListarAudiosAsync(id, path, ct);
+            idx = SubtitleService.LegendaParaPreparar(audios.FirstOrDefault(a => a.Atual)?.Idioma, faixas);
+        }
         if (idx is int i) _legendas.PrepararEmSegundoPlano(id, path, i);
         return SubtitleService.MarcarRecomendada(faixas, idx);
     }

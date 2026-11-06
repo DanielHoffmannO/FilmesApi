@@ -68,6 +68,7 @@ public record AudioInfo(int Idx, string? Codec, string? Idioma, bool Default, bo
 public record AudioRequest(int Idx);
 public record SerieAudioRequest(string? Idioma);
 public record SerieAudioResponse(string? Idioma);
+public record TemporadaRequest(bool? PularAbertura, bool? ProximoAutomatico);
 
 public record ProgressoRequest(double Posicao, double? Duracao);
 public record ProgressoResponse(int FilmeId, double PosicaoSegundos, double? DuracaoSegundos, DateTime AtualizadoEm);
