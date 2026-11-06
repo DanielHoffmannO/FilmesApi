@@ -12,17 +12,47 @@ namespace FilmesApi.Controllers;
 public class PlayerController : ControllerBase
 {
     private readonly PlayerStateService _state;
+    private readonly AutomacaoDoPlayer _automacao;
+    private readonly FilmeService _filmes;
 
-    public PlayerController(PlayerStateService state) => _state = state;
+    public PlayerController(PlayerStateService state, AutomacaoDoPlayer automacao, FilmeService filmes)
+    {
+        _state = state;
+        _automacao = automacao;
+        _filmes = filmes;
+    }
 
     [HttpGet("state")]
     public IActionResult ObterEstado() => Ok(_state.Snapshot());
 
     [HttpPost("selecionar/{filmeId:int}")]
-    public IActionResult Selecionar(int filmeId)
+    public async Task<IActionResult> Selecionar(int filmeId)
     {
         _state.Selecionar(filmeId);
+        await _automacao.AtualizarContextoAsync(filmeId);   // abertura conhecida + interruptores da temporada vão no snapshot
         return Ok(_state.Snapshot());
+    }
+
+    /// <summary>O botão "Pular abertura" do controle: o servidor lê a abertura do que está tocando, manda a TV pro fim dela e liga o pulo
+    /// automático da temporada (o Daniel confirmou que ali é abertura). 404 se não há abertura conhecida. Use este e não o <c>seek-abs</c> genérico.</summary>
+    [HttpPost("pular-abertura")]
+    public async Task<IActionResult> PularAbertura()
+    {
+        if (_state.FilmeId is not int id || await _filmes.ObterAberturaAsync(id) is not var (_, fim))
+            return NotFound(new { mensagem = "não há abertura conhecida no que está tocando" });
+        _state.SeekAbsoluto(fim);
+        _state.MarcarAberturaPulada();
+        await _automacao.LigarPuloAutomaticoAsync(id);
+        return Ok(_state.Snapshot());
+    }
+
+    /// <summary>A TV avisa que pulou a abertura sozinha (temporada com pulo automático): o celular mostra "Abertura pulada · voltar" e não se repete neste episódio.</summary>
+    [HttpPost("abertura-pulada")]
+    public IActionResult AberturaPulada()
+    {
+        _state.MarcarAberturaPulada();
+        _state.Avisar("abertura", "Abertura pulada", "voltar");
+        return NoContent();
     }
 
     [HttpPost("play-pause")]

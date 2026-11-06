@@ -7,7 +7,7 @@ namespace FilmesApi.Controllers;
 /// <summary>Preferências por série: idioma de áudio e legenda padrão, e por temporada o que liga sozinho (pular abertura, próximo episódio).</summary>
 [ApiController]
 [Route("api/series")]
-public class SeriesController(PreferenciasAudioService prefs, PreferenciasTemporadaService temporadas) : ControllerBase
+public class SeriesController(PreferenciasAudioService prefs, PreferenciasTemporadaService temporadas, AutomacaoDoPlayer automacao, PlayerStateService player) : ControllerBase
 {
     /// <summary>Os dois padrões de uma vez, pro controle desenhar os chips: <c>{ chave: { audio, legenda } }</c> (null = automático).</summary>
     [HttpGet("padroes")]
@@ -32,9 +32,10 @@ public class SeriesController(PreferenciasAudioService prefs, PreferenciasTempor
 
     /// <summary>Liga/desliga, numa temporada, o pulo automático da abertura e/ou o próximo episódio automático (o que não vier fica como está).</summary>
     [HttpPut("{chave}/temporadas/{n:int}")]
-    public IActionResult DefinirTemporada(string chave, int n, [FromBody] TemporadaRequest req)
+    public async Task<IActionResult> DefinirTemporada(string chave, int n, [FromBody] TemporadaRequest req)
     {
         var l = temporadas.Definir(chave, n, req.PularAbertura, req.ProximoAutomatico);
+        if (player.FilmeId is int tocando) await automacao.AtualizarContextoAsync(tocando);   // a TV passa a obedecer já
         return Ok(new { pularAbertura = l.PularAbertura, proximoAutomatico = l.ProximoAutomatico });
     }
 
