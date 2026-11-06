@@ -588,7 +588,13 @@ async function recarregarInterruptores() {
 
 // ─── avisos do servidor ("Abertura pulada · voltar", "Abertura aprendida… · desligar") ───
 let ultimoAviso = null;   // null = ainda não vi o 1º estado (não mostra aviso velho ao abrir a página)
-function tratarAviso(aviso) {
+let instanciaVista = null;   // identifica o processo do servidor; muda a cada restart e zera os contadores dele (versão do aviso)
+function tratarAviso(aviso, instancia) {
+  if (instancia && instancia !== instanciaVista) {
+    const reinicio = instanciaVista !== null;
+    instanciaVista = instancia;
+    if (reinicio) ultimoAviso = 0;   // servidor novo: os avisos recomeçam da versão 1
+  }
   if (ultimoAviso === null) { ultimoAviso = aviso ? aviso.versao : 0; return; }
   if (!aviso || aviso.versao <= ultimoAviso) return;
   ultimoAviso = aviso.versao;
@@ -763,7 +769,7 @@ async function pollRemote() {
     const estadoAnterior = ultimoEstadoRemoto;
     const trocouFilme = !estadoAnterior || estadoAnterior.filmeId !== estado.filmeId;
     ultimoEstadoRemoto = estado;
-    tratarAviso(estado.aviso);
+    tratarAviso(estado.aviso, estado.instancia);
 
     const bar = els.remote;
     if (estado.filmeId === null) {

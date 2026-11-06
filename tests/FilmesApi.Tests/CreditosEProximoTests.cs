@@ -69,7 +69,7 @@ public class CreditosEProximoTests : IDisposable
 
         var l = await Linhas(f);
         Assert.Equal(3, l.Count);
-        Assert.All(l.Values, c => Assert.Equal((1290.5, OrigemAbertura.Capitulo, AnaliseDeAberturaService.VersaoAlgoritmo), (c.InicioSegundos, c.Origem, c.Versao)));
+        Assert.All(l.Values, c => Assert.Equal((1290.5, OrigemMarca.Capitulo, AnaliseDeAberturaService.VersaoAlgoritmo), (c.InicioSegundos, c.Origem, c.Versao)));
         var id = await f.IdDeAsync(Eps[0]);
         Assert.Equal(1290.5, await f.NoEscopoAsync(sp => sp.GetRequiredService<FilmeService>().ObterCreditosAsync(id)));
     }
@@ -93,7 +93,7 @@ public class CreditosEProximoTests : IDisposable
         for (var i = 0; i < Eps.Length; i++)
         {
             var c = l[await f.IdDeAsync(Eps[i])];
-            Assert.Equal(OrigemAbertura.Auto, c.Origem);
+            Assert.Equal(OrigemMarca.Auto, c.Origem);
             Assert.InRange(c.InicioSegundos!.Value, 1000 + antes[i] - 6, 1000 + antes[i] + 1);
         }
     }

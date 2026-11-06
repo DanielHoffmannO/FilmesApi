@@ -12,6 +12,21 @@ namespace FilmesApi.Tests;
 public class PlayerStateServiceTests
 {
     [Fact]
+    public void Instancia_e_estavel_no_processo_e_distinta_entre_instancias()
+    {
+        var a = new PlayerStateService();
+        var b = new PlayerStateService();   // "outro restart do servidor"
+        a.Avisar("abertura", "x", null);
+        dynamic sa1 = a.Snapshot(), sa2 = a.Snapshot(), sb = b.Snapshot();
+
+        Assert.False(string.IsNullOrEmpty((string)sa1.instancia));
+        Assert.Equal((string)sa1.instancia, (string)sa2.instancia);
+        Assert.NotEqual((string)sa1.instancia, (string)sb.instancia);
+        Assert.Equal(1, sa1.aviso.versao);   // a versão do aviso recomeça em 1 na instância nova — por isso o cliente precisa da instância
+        Assert.Null(sb.aviso);
+    }
+
+    [Fact]
     public void Estado_inicial_nao_tem_filme_tocando()
     {
         dynamic s = new PlayerStateService().Snapshot();

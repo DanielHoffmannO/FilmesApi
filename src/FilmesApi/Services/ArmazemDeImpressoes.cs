@@ -23,6 +23,15 @@ public static class ArmazemDeImpressoes
         return itens;
     }
 
+    /// <summary>A impressão guardada se existir e o arquivo ainda tiver o mesmo tamanho; senão vazio. Nunca chama o ffmpeg.</summary>
+    public static async Task<int[]> SoGuardadaAsync(AppDbContext db, int filmeId, string caminho, string janela, CancellationToken ct)
+    {
+        long bytes;
+        try { bytes = new FileInfo(caminho).Length; } catch (IOException) { return []; }
+        var guardada = await db.Impressoes.FindAsync([filmeId, janela], ct);
+        return guardada is not null && guardada.ArquivoBytes == bytes ? Decodificar(guardada.Dados) : [];
+    }
+
     /// <summary>A impressão guardada (se o arquivo ainda tem o mesmo tamanho) ou gerada agora com o ffmpeg e guardada. Vazio se o ffmpeg falhou.</summary>
     public static async Task<(int[] Itens, double InicioSegundos)> ObterAsync(
         AppDbContext db, FfmpegOptions ffmpeg, int filmeId, string caminho, string janela, double inicioDaJanela,
