@@ -49,7 +49,7 @@ const arquivo = a => `<span class="path">${esc(a.caminho)}</span> <span class="s
 
 // Copia a linha pronta pra lista "ignorar" do nomes.json. navigator.clipboard só existe em HTTPS/localhost —
 // no servidor de casa (http://IP:8080) cai no execCommand.
-async function copiar(botao, texto) {
+async function copiar(botao, texto, rotulo = 'copiar p/ ignorar') {
   try {
     if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(texto);
     else {
@@ -61,8 +61,26 @@ async function copiar(botao, texto) {
       if (!ok) throw new Error('copy falhou');
     }
     botao.textContent = 'copiado ✓';
-    setTimeout(() => { botao.textContent = 'copiar p/ ignorar'; }, 2500);
+    setTimeout(() => { botao.textContent = rotulo; }, 2500);
   } catch { botao.textContent = 'não deu — copie: ' + texto; }
+}
+
+// Grava a sugestão no nomes.json. Com AdminToken no servidor, pede o token uma vez (o mesmo do scan do index).
+async function aplicarNome(botao, s) {
+  const headers = () => { try { const t = localStorage.getItem('adminToken'); return t ? { 'X-Admin-Token': t, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' }; } catch { return { 'Content-Type': 'application/json' }; } };
+  const enviar = () => fetch('/api/admin/nomes', { method: 'POST', headers: headers(), body: JSON.stringify({ secao: s.secao, chave: s.chave, valor: s.valor }) });
+  try {
+    let r = await enviar();
+    if (r.status === 401) {
+      const token = prompt('O servidor pede um token de administrador:');
+      if (!token) return;
+      try { localStorage.setItem('adminToken', token); } catch { /* vale só desta vez */ }
+      r = await enviar();
+    }
+    if (r.ok) { botao.textContent = 'aplicado ✓'; botao.disabled = true; return; }
+    const m = await r.json().catch(() => null);
+    botao.textContent = 'falhou'; alert((m && (m.mensagem || m.title)) || 'Não consegui aplicar.');
+  } catch { botao.textContent = 'falhou'; }
 }
 
 function render(d) {
@@ -78,6 +96,8 @@ function render(d) {
         `<tr><td>${esc(u.serie)}</td><td>T${esc(u.temporada)}E${esc(String(u.episodio).padStart(2, '0'))}</td><td>${arquivo(u.arquivo)}</td></tr>`).join('')}</table>`),
     secao('Solto na raiz, parece episódio', 'Está na raiz de /media sem marcador que o parser entenda, mas o nome parece de episódio.', d.soltosQueParecemEpisodio,
       it => `<table>${it.map(a => `<tr><td>${arquivo(a)}</td></tr>`).join('')}</table>`),
+    secao('Sugestões de nomes', 'Séries que parecem a mesma sob nomes diferentes, ou com nome de exibição de release. "aplicar" grava a entrada no nomes.json (vale em segundos); "copiar" só põe a linha na área de transferência.', d.sugestoesDeNomes,
+      it => `<table><tr><th>Série</th><th>Sugestão</th><th></th></tr>${it.map((s, i) => `<tr><td>${esc(s.serie)}<div class="size">${esc(s.motivo)}</div></td><td><span class="path">${esc(s.secao)}: ${esc(s.chave)} → ${esc(s.valor)}</span></td><td><button data-n="${i}">aplicar</button> <button data-c="${i}">copiar</button></td></tr>`).join('')}</table>`),
     secao('Suspeito de propaganda', 'Menos de 60 MB com nome de uploader (1XBET, BLUDV, COMANDOTORRENTS, LAPUMIA), ou "Sample". Não dá pra apagar (torrent em seed)? Cole a linha na lista "ignorar" do nomes.json: o arquivo some do catálogo e continua no disco.', d.suspeitosDePropaganda,
       it => `<table><tr><th>Arquivo</th><th>Motivo</th><th></th></tr>${it.map((s, i) => `<tr><td>${arquivo(s.arquivo)}</td><td>${esc(s.motivo)}</td><td><button data-i="${i}">copiar p/ ignorar</button></td></tr>`).join('')}</table>`),
   ].join('');
@@ -85,6 +105,12 @@ function render(d) {
   conteudo.innerHTML = html;
   conteudo.querySelectorAll('button[data-i]').forEach(b =>
     b.addEventListener('click', () => copiar(b, d.suspeitosDePropaganda[Number(b.dataset.i)].entradaIgnorar + ',')));
+  conteudo.querySelectorAll('button[data-n]').forEach(b =>
+    b.addEventListener('click', () => aplicarNome(b, d.sugestoesDeNomes[Number(b.dataset.n)])));
+  conteudo.querySelectorAll('button[data-c]').forEach(b => b.addEventListener('click', () => {
+    const s = d.sugestoesDeNomes[Number(b.dataset.c)];
+    copiar(b, JSON.stringify(s.chave) + ': ' + JSON.stringify(s.valor) + ',', 'copiar');
+  }));
   document.getElementById('resumo').textContent = `${d.totalArquivos} arquivo(s) no catálogo`;
 }
 

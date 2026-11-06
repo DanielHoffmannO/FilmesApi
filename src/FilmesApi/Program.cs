@@ -1,5 +1,6 @@
 using System.Reflection;
 using FilmesApi.Data;
+using FilmesApi.Models;
 using FilmesApi.Services;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
@@ -169,6 +170,16 @@ app.MapPost("/api/admin/recarregar-nomes", (NomesPersonalizadosService nomes) =>
             tipos = arquivo.Contagem.Tipos,
         });
 });
+
+// Aplica uma sugestão do /diagnostico.html: adiciona UMA entrada (apelido ou nome de exibição) ao nomes.json.
+app.MapPost("/api/admin/nomes", (NomeRequest req, NomesPersonalizadosService nomes) =>
+    nomes.Adicionar(req.Secao ?? "", req.Chave ?? "", req.Valor ?? "") switch
+    {
+        NomesPersonalizadosService.ResultadoAdicao.Aplicado => Results.Ok(new { aplicado = true }),
+        NomesPersonalizadosService.ResultadoAdicao.SecaoInvalida => Results.BadRequest(new { mensagem = "secao precisa ser 'apelidos' ou 'nomes', com chave e valor." }),
+        NomesPersonalizadosService.ResultadoAdicao.ArquivoInvalido => Results.BadRequest(new { mensagem = "o nomes.json atual é inválido — nada foi alterado.", caminho = nomes.Caminho }),
+        _ => Results.Problem("não consegui gravar o nomes.json (permissão ou disco) — veja o log do servidor."),
+    });
 
 // TV Samsung antiga (Orsay): Menu Develop > IP Setting > Start App Sync baixa estes dois. O
 // endereço do app vem do que a própria TV usou pra chegar aqui (Host), sem IP gravado em arquivo.
