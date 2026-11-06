@@ -65,6 +65,11 @@ code{background:#2a2a2a;padding:1px 5px;border-radius:3px;font-size:13px}
 </div>
 
 <div class="card">
+  <h2>Tarefas em segundo plano</h2>
+  <div id="tarefas"><span class="muted">—</span></div>
+</div>
+
+<div class="card">
   <h2>Aceleração por hardware (rkmpp)</h2>
   <div class="row"><span class="k">Encoder de vídeo</span><span class="v" id="rkmpp">—</span></div>
   <div class="muted" id="rkmppInfo" style="margin-top:6px"></div>
@@ -140,6 +145,19 @@ async function tick(){
     : '<span class="muted">ainda sem scan desde que o servidor subiu</span>';
   txt('montagensInfo', d.montagensAtualizadoEm ? 'conferido no último scan (' + new Date(d.montagensAtualizadoEm).toLocaleTimeString() + ')' : '');
   txt('escritoInfo', 'em ' + horas.toFixed(1) + ' h (~' + mb(x.escritoBytes / horas * 24) + ' por dia nesse ritmo) — o cache de HLS/remux é a maior fonte de escrita do servidor');
+
+  // tarefas em segundo plano (workers)
+  const tarefas = d.tarefas || [];
+  document.getElementById('tarefas').innerHTML = tarefas.length ? tarefas.map(t => {
+    const quando = t.ultimaExecucao ? 'há ' + formatarTempo((Date.now() - new Date(t.ultimaExecucao).getTime()) / 1000) : 'ainda não rodou';
+    const pill = t.estado === 'ok' ? '<span class="pill on">ok</span>'
+      : t.estado === 'falhou' ? '<span class="pill off">falhou</span>'
+      : '<span class="pill">' + esc(t.estado) + '</span>';
+    return '<div class="row"><span class="k">' + esc(t.nome) + '</span><span class="v">' + pill + ' ' + quando +
+      (t.duracaoMs != null ? ' · ' + (t.duracaoMs / 1000).toFixed(1) + ' s' : '') + '</span></div>' +
+      '<div class="muted" style="margin:0 0 8px">' + esc(t.erro ? 'erro: ' + t.erro : (t.resumo || '')) +
+      (t.execucoes ? ' · ' + t.execucoes + ' execução(ões), ' + t.falhas + ' falha(s)' : '') + '</div>';
+  }).join('') : '<span class="muted">nenhuma tarefa registrada</span>';
 
   // rkmpp
   const r = d.rkmpp;

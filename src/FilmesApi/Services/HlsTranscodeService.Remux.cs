@@ -20,7 +20,7 @@ public partial class HlsTranscodeService
     /// chamada, reusa nas seguintes. Ao contrário do /remux antigo (pipe ao vivo, sem
     /// Content-Length — algumas TVs recusam isso na hora, sem nem tentar), aqui o arquivo só
     /// fica "disponivel" quando está completo e gravado, servido depois com Range normal
-    /// (<see cref="Controllers.ReproducaoController.ServirComRange"/>) — qualquer player aceita.
+    /// (<see cref="Controllers.ReproducaoController.ServirComRange(string)"/>) — qualquer player aceita.
     /// Enquanto "preparando", devolve também um progresso estimado (tamanho do .tmp / tamanho
     /// do original — o vídeo é copiado quase 1:1, só o áudio encolhe, então isso sobra perto
     /// do fim; por isso o teto de 99% até realmente terminar). É só pra não parecer travado

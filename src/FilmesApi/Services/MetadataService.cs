@@ -16,9 +16,12 @@ public class MetadataService : BackgroundService
     private readonly IServiceScopeFactory _escopos;
     private readonly TmdbService _tmdb;
     private readonly ILogger<MetadataService> _logger;
+    private readonly RegistroDeTarefas? _tarefas;
 
-    public MetadataService(IServiceScopeFactory escopos, TmdbService tmdb, ILogger<MetadataService> logger)
+    public MetadataService(IServiceScopeFactory escopos, TmdbService tmdb, ILogger<MetadataService> logger,
+        RegistroDeTarefas? tarefas = null)
     {
+        _tarefas = tarefas;
         _escopos = escopos;
         _tmdb = tmdb;
         _logger = logger;
@@ -26,7 +29,8 @@ public class MetadataService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!_tmdb.Habilitado) return;
+        if (!_tmdb.Habilitado) { _tarefas?.Declarar("metadados", ligada: false); return; }
+        _tarefas?.Declarar("metadados");
 
         try { await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); }
         catch (OperationCanceledException) { return; }
@@ -34,9 +38,11 @@ public class MetadataService : BackgroundService
         while (!stoppingToken.IsCancellationRequested)
         {
             TimeSpan pausa;
+            var medicao = _tarefas?.Iniciar("metadados");
             try
             {
                 var processados = await ProcessarLoteAsync(stoppingToken);
+                medicao?.Ok(processados > 0 ? $"{processados} filme(s) enriquecido(s)" : "nada pendente");
                 // Processou algo → segue logo pro próximo lote. Nada pendente → dorme bastante
                 // (novos arquivos só aparecem no próximo scan).
                 pausa = processados > 0 ? TimeSpan.FromSeconds(5) : TimeSpan.FromHours(6);
@@ -45,6 +51,7 @@ public class MetadataService : BackgroundService
             catch (Exception ex)
             {
                 // Falha de rede/DB/schema — tenta de novo em 10 min, não daqui a 6h.
+                medicao?.Falhou(ex);
                 _logger.LogWarning(ex, "Enriquecimento de metadados: lote falhou, nova tentativa em 10 min.");
                 pausa = TimeSpan.FromMinutes(10);
             }
