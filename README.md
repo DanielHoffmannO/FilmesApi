@@ -387,6 +387,7 @@ usam `__` (ex.: `ConnectionStrings__Default`).
 | `HlsMaxAlturaReencode` | `1080` | Reduz entradas mais altas pra esta altura antes de recodificar. `0` = sem downscale. |
 | `HlsCacheMaxGB` | `20` | Teto do cache HLS; acima disso, despejo LRU. `0` = ilimitado. |
 | `HlsOrphanTimeoutSeconds` | `90` | Aborta o transcode se ninguém pede status/segmento por este tempo. `0` = nunca aborta. |
+| `AberturaIntervaloMinutos` | `15` | De quanto em quanto tempo o servidor procura a abertura dos episódios (impressão de áudio chromaprint do começo de cada episódio, comparada com os vizinhos da temporada). Só roda com o servidor ocioso. `0` desliga. Também `AberturaAtrasoInicialSegundos` (`180`) e `AberturaOrcamentoMinutos` (`4`, quanto cada rodada pode gastar). Exige ffmpeg com chromaprint (o jellyfin-ffmpeg da imagem tem). |
 | `DownloadsSimultaneos` | `2` | Teto de downloads simultâneos em `GET /api/filmes/{id}/download` (arquivo original com nome decente e `Content-Disposition: attachment`; Range vale). Acima do teto: `429` com `Retry-After: 30`. `0` = sem limite. |
 | `HlsStallTimeoutMinutes` | `8` | Mata o ffmpeg se não gerar segmento novo neste intervalo. |
 | `TranscodeJobTimeoutHours` | `6` | Teto absoluto por job de ffmpeg. |
@@ -462,6 +463,7 @@ filmes ainda sem metadados (roda ~30s depois do boot e reprocessa a cada scan).
 | `GET` | `/api/filmes/{id}/remux` | Vídeo copiado + áudio em AAC, já em cache — `409` se ainda não está pronto (consulte `/remux-status` antes). Com `Range`, como um arquivo normal. |
 | `GET` | `/api/filmes/{id}/original` | Sempre o arquivo original, sem transcodificar (VLC etc.). |
 | `GET` | `/api/filmes/{id}/download` | O arquivo original como anexo (`Content-Disposition: attachment`, nome `Título (ano).ext` / `Série - S05E01.ext`, Range). Limite `DownloadsSimultaneos` (`429` + `Retry-After`). Só o `index.html` tem o botão ⬇. |
+| `GET` | `/api/filmes/{id}/abertura` | `{inicioSegundos, fimSegundos}` da abertura do episódio (achada em segundo plano comparando o áudio dos episódios da temporada); `404` enquanto não achou. O `controle.html` usa pro botão **⏩ Pular abertura**. |
 | `GET` | `/api/filmes/{id}/hls/playlist.m3u8` | Manifesto HLS (dispara/reusa o transcode). `202` enquanto prepara, `409` se o arquivo já é compatível direto (use `/stream`), `500` se o transcode falhou. |
 | `GET` | `/api/filmes/{id}/hls/{seg}.ts` | Segmentos HLS. |
 | `GET` | `/api/filmes/{id}/legendas` | Faixas de legenda (embutidas + externas), a melhor primeiro; `recomendada: true` na que as telas ligam sozinhas (áudio estrangeiro). O `idx` identifica a faixa em `/legenda/{idx}` e não muda com a ordem da lista. |

@@ -75,6 +75,7 @@ main{padding:16px 24px;max-width:640px;margin:0 auto}
     <button onclick="remoteSeek(-SEEK_STEP_S)">« 30s</button>
     <button onclick="remotePlayPause()" id="remotePlayPauseBtn">⏸</button>
     <button onclick="remoteSeek(SEEK_STEP_S)">30s »</button>
+    <button onclick="remotePularAbertura()" id="remotePularBtn" style="display:none">⏩ Pular abertura</button>
     <button onclick="remoteProximoEp()" id="remoteProximoEpBtn" style="display:none">⏭ Próximo ep</button>
     <button onclick="remoteCC()" id="remoteCCBtn" style="display:none">CC</button>
     <button onclick="remoteAudio()" id="remoteAudioBtn" style="display:none">🗣️</button>
@@ -211,6 +212,27 @@ async function remoteScrub(e) {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ pos: frac * dur })
   });
+  pollRemote();
+}
+
+// "Pular abertura": o servidor acha onde ela fica (/abertura, análise em segundo plano; 404 = ainda não achou) e o botão
+// só aparece enquanto a posição está dentro dela.
+let remoteAbertura = null;
+async function remoteCarregarAbertura(id) {
+  remoteAbertura = await fetchJsonOuNull(`${API}/${id}/abertura`);
+}
+function atualizarBotaoPular(pos) {
+  const a = remoteAbertura;
+  const dentro = a && pos >= a.inicioSegundos - 5 && pos < a.fimSegundos - 1;
+  document.getElementById('remotePularBtn').style.display = dentro ? '' : 'none';
+}
+async function remotePularAbertura() {
+  if (!remoteAbertura) return;
+  await fetch(`${PLAYER_API}/seek-abs`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pos: remoteAbertura.fimSegundos })
+  });
+  document.getElementById('remotePularBtn').style.display = 'none';
   pollRemote();
 }
 
@@ -351,6 +373,8 @@ async function pollRemote() {
       els.remoteCCBtn.style.display = 'none';
       els.remoteAudioBtn.style.display = 'none';
       els.remoteProximoEpBtn.style.display = 'none';
+      remoteAbertura = null;
+      document.getElementById('remotePularBtn').style.display = 'none';
       // Só re-renderiza se realmente parou de tocar algo (transição real) -- no primeiro poll
       // da página (estadoAnterior undefined) "nada tocando" já é exatamente o que o render()
       // inicial (linha ~303) desenhou, então um 2º fetch de /tela aqui seria só desperdício.
@@ -360,6 +384,8 @@ async function pollRemote() {
       if (trocouFilme) {
         remoteCarregarLegendas(estado.filmeId);
         remoteCarregarAudios(estado.filmeId);
+        remoteAbertura = null;
+        remoteCarregarAbertura(estado.filmeId);
         filmeAtualRemoto = await fetchJsonOuNull(`${API}/${estado.filmeId}`);
         atualizarBotaoProximoEp(estado.filmeId);
       }
@@ -370,6 +396,7 @@ async function pollRemote() {
       const pos = estado.posSegundos || 0, dur = estado.duracaoSegundos || 0;
       document.getElementById('remoteProgFill').style.width = dur ? Math.min(100, 100 * pos / dur) + '%' : '0';
       document.getElementById('remoteTime').textContent = dur ? `${mmss(pos)} / ${mmss(dur)}` : (pos ? mmss(pos) : '');
+      atualizarBotaoPular(pos);
       if (trocouFilme) render();
     }
     const proxBox = document.getElementById('remoteProximo');

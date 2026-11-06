@@ -116,6 +116,13 @@ public class FilmeService
     public async Task<FilmeResponse?> ObterAsync(int id) =>
         (await ListarAsync()).FirstOrDefault(f => f.Id == id);
 
+    /// <summary>Onde fica a abertura do episódio (segundos), ou null se não foi achada/analisada.</summary>
+    public async Task<(double Inicio, double Fim)?> ObterAberturaAsync(int id)
+    {
+        var a = await _db.Aberturas.AsNoTracking().FirstOrDefaultAsync(x => x.FilmeId == id);
+        return a is { InicioSegundos: double ini, FimSegundos: double fim } ? (ini, fim) : null;
+    }
+
     public Task<bool> ExisteAsync(int id) => _db.Filmes.AnyAsync(f => f.Id == id);
 
     /// <summary>Próximo episódio da mesma série na ordem (temporada, episódio). null quando
