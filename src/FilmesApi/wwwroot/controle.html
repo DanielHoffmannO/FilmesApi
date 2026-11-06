@@ -285,12 +285,10 @@ function remoteDireita() {
   if (dentroDaAbertura((ultimoEstadoRemoto && ultimoEstadoRemoto.posSegundos) || 0)) return remotePularAbertura();
   return remoteSeek(SEEK_STEP_S);
 }
+// O servidor pula (vai pro fim da abertura que ele conhece) e liga o pulo automático da temporada: o Daniel confirmou que ali é abertura.
 async function remotePularAbertura() {
-  if (!remoteAbertura) return;
-  await fetch(`${PLAYER_API}/seek-abs`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pos: remoteAbertura.fimSegundos })
-  });
+  const res = await fetch(`${PLAYER_API}/pular-abertura`, { method: 'POST' }).catch(() => null);
+  if (!res || !res.ok) toast('Não achei a abertura deste episódio.');
   pollRemote();
 }
 
@@ -382,16 +380,47 @@ document.getElementById('grid').addEventListener('click', async e => {
   if (!sw) return;
   e.stopPropagation();   // (captura) o clique não chega ao cabeçalho da série/temporada, que abriria/fecharia
   const { serie, temp, sw: campo } = sw.dataset;
-  const novo = !sw.classList.contains('on');
+  definirInterruptor(serie, temp, campo, !sw.classList.contains('on'));
+}, true);
+
+async function definirInterruptor(serie, temp, campo, novo) {
   const r = await fetch(`/api/series/${encodeURIComponent(serie)}/temporadas/${temp}`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [campo]: novo })
   }).catch(() => null);
-  if (!r || !r.ok) { toast('Não consegui salvar. Tente de novo.'); return; }
+  if (!r || !r.ok) { toast('Não consegui salvar. Tente de novo.'); return false; }
   ((prefsTemporadas[serie] ||= {})[temp] ||= {})[campo] = novo;
-  document.querySelectorAll(`.sw[data-sw="${campo}"]`).forEach(b => {
-    if (b.dataset.serie === serie && b.dataset.temp === temp) { b.classList.toggle('on', novo); b.setAttribute('aria-pressed', novo); }
+  pintarInterruptores();
+  return true;
+}
+
+function pintarInterruptores() {
+  document.querySelectorAll('.sw').forEach(b => {
+    const ligado = !!(((prefsTemporadas[b.dataset.serie] || {})[b.dataset.temp] || {})[b.dataset.sw]);
+    b.classList.toggle('on', ligado); b.setAttribute('aria-pressed', ligado);
   });
-}, true);
+}
+
+// O servidor liga sozinho (aprendeu com o pulo / botão Pular abertura): relê e repinta os interruptores.
+async function recarregarInterruptores() {
+  prefsTemporadas = (await fetchJsonOuNull('/api/series/temporadas')) || prefsTemporadas;
+  pintarInterruptores();
+}
+
+// ─── avisos do servidor ("Abertura pulada · voltar", "Abertura aprendida… · desligar") ───
+let ultimoAviso = null;   // null = ainda não vi o 1º estado (não mostra aviso velho ao abrir a página)
+function tratarAviso(aviso) {
+  if (ultimoAviso === null) { ultimoAviso = aviso ? aviso.versao : 0; return; }
+  if (!aviso || aviso.versao <= ultimoAviso) return;
+  ultimoAviso = aviso.versao;
+  const f = filmeAtualRemoto, ab = ultimoEstadoRemoto && ultimoEstadoRemoto.abertura;
+  const acoes = {
+    voltar: ab && { rotulo: 'Voltar', fazer: () => fetch(`${PLAYER_API}/seek-abs`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pos: ab.inicio }) }).then(pollRemote) },
+    desligar: f && f.serieChave && { rotulo: 'Desligar', fazer: () => definirInterruptor(f.serieChave, f.temporada, 'pularAbertura', false) },
+  };
+  toast(aviso.texto, acoes[aviso.acao] || null);
+  if (aviso.tipo === 'abertura') recarregarInterruptores();
+}
 
 async function salvarPadrao(chave, tipo, valor) {   // tipo: 'audio' | 'legenda'
   const r = await fetch(`/api/series/${encodeURIComponent(chave)}/${tipo}`, {
@@ -523,6 +552,7 @@ async function pollRemote() {
     const estadoAnterior = ultimoEstadoRemoto;
     const trocouFilme = !estadoAnterior || estadoAnterior.filmeId !== estado.filmeId;
     ultimoEstadoRemoto = estado;
+    tratarAviso(estado.aviso);
 
     const bar = els.remote;
     if (estado.filmeId === null) {
