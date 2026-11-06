@@ -33,6 +33,7 @@ main{padding:16px 24px;max-width:640px;margin:0 auto}
 .remote-prog{position:relative;height:8px;background:var(--border);border-radius:4px;cursor:pointer;overflow:hidden}
 .remote-prog-fill{position:relative;height:100%;background:var(--accent);width:0;transition:width .3s linear}
 .remote-prog .faixa{position:absolute;top:0;bottom:0;background:rgba(255,255,255,.22);display:none}
+.remote-prog .faixa.creditos{background:rgba(120,170,255,.3)}
 .remote-l2{display:flex;align-items:center;gap:10px}
 .remote-l2 button{flex:1}
 .remote-l2 button.direita{flex:1}
@@ -104,7 +105,7 @@ main{padding:16px 24px;max-width:640px;margin:0 auto}
     <button class="titulo" id="remoteTitulo" onclick="abrirFolhaAgora()" title="Idioma e legenda"></button>
     <span class="remote-time" id="remoteTime"></span>
   </div>
-  <div class="remote-prog" id="remoteProg" onclick="remoteScrub(event)"><div class="faixa" id="remoteFaixaAbertura"></div><div class="remote-prog-fill" id="remoteProgFill"></div></div>
+  <div class="remote-prog" id="remoteProg" onclick="remoteScrub(event)"><div class="faixa" id="remoteFaixaAbertura"></div><div class="faixa creditos" id="remoteFaixaCreditos"></div><div class="remote-prog-fill" id="remoteProgFill"></div></div>
   <div class="remote-proximo" id="remoteProximo">
     <span id="remoteProximoTxt"></span>
     <button onclick="remoteAceitarProximo()">▶ Assistir agora</button>
@@ -258,31 +259,41 @@ async function remoteScrub(e) {
   pollRemote();
 }
 
-// Botão da direita da barra, contextual: "30s »" normalmente; "Pular abertura" (vermelho) dentro da abertura conhecida.
-// O servidor acha a abertura em segundo plano (/abertura; 404 = ainda não achou).
+// Botão da direita da barra, contextual: "30s »" normalmente; "Pular abertura" (vermelho) dentro da abertura conhecida; "Próximo episódio"
+// (vermelho) a partir do início dos créditos conhecidos, se há próximo. O servidor acha abertura e créditos em segundo plano (404 = ainda não achou).
 let remoteAbertura = null;
+let remoteCreditos = null;       // { inicioSegundos } ou null
+let remoteTemProximo = false;
 async function remoteCarregarAbertura(id) {
   remoteAbertura = await fetchJsonOuNull(`${API}/${id}/abertura`);
+}
+async function remoteCarregarCreditos(id) {
+  remoteCreditos = await fetchJsonOuNull(`${API}/${id}/creditos`);
 }
 function dentroDaAbertura(pos) {
   const a = remoteAbertura;
   return !!a && pos >= a.inicioSegundos - 5 && pos < a.fimSegundos - 1;
 }
+function nosCreditos(pos) {
+  return !!remoteCreditos && remoteTemProximo && pos >= remoteCreditos.inicioSegundos;
+}
+function pintarFaixa(id, ini, fim, dur) {
+  const el = document.getElementById(id);
+  el.style.display = ini != null && dur ? 'block' : 'none';
+  if (ini != null && dur) { el.style.left = (100 * ini / dur) + '%'; el.style.width = (100 * (fim - ini) / dur) + '%'; }
+}
 function atualizarBotaoDireita(pos, dur) {
   const btn = document.getElementById('remoteDireitaBtn');
-  const pular = dentroDaAbertura(pos);
-  btn.classList.toggle('vermelho', pular);
-  btn.textContent = pular ? '⏩ Pular abertura' : '30s »';
-  const faixa = document.getElementById('remoteFaixaAbertura');
-  const a = remoteAbertura;
-  faixa.style.display = a && dur ? 'block' : 'none';
-  if (a && dur) {
-    faixa.style.left = (100 * a.inicioSegundos / dur) + '%';
-    faixa.style.width = (100 * (a.fimSegundos - a.inicioSegundos) / dur) + '%';
-  }
+  const pular = dentroDaAbertura(pos), proximo = !pular && nosCreditos(pos);
+  btn.classList.toggle('vermelho', pular || proximo);
+  btn.textContent = pular ? '⏩ Pular abertura' : proximo ? '⏭ Próximo episódio' : '30s »';
+  pintarFaixa('remoteFaixaAbertura', remoteAbertura && remoteAbertura.inicioSegundos, remoteAbertura && remoteAbertura.fimSegundos, dur);
+  pintarFaixa('remoteFaixaCreditos', remoteCreditos && remoteCreditos.inicioSegundos, dur, dur);
 }
 function remoteDireita() {
-  if (dentroDaAbertura((ultimoEstadoRemoto && ultimoEstadoRemoto.posSegundos) || 0)) return remotePularAbertura();
+  const pos = (ultimoEstadoRemoto && ultimoEstadoRemoto.posSegundos) || 0;
+  if (dentroDaAbertura(pos)) return remotePularAbertura();
+  if (nosCreditos(pos)) return remoteProximoEp();
   return remoteSeek(SEEK_STEP_S);
 }
 // O servidor pula (vai pro fim da abertura que ele conhece) e liga o pulo automático da temporada: o Daniel confirmou que ali é abertura.
@@ -313,11 +324,13 @@ async function remoteAceitarProximo() {
 
 // Botão manual "próximo episódio" — diferente da oferta automática (remoteAceitarProximo):
 // pula na hora, sem esperar a TV chegar perto do fim e abrir a contagem regressiva sozinha.
+// O servidor toca o próximo e, se foi apertado no fim do episódio, liga o próximo automático da temporada (e avisa).
 async function remoteProximoEp() {
-  if (!ultimoEstadoRemoto || ultimoEstadoRemoto.filmeId == null) return;
-  const prox = await fetch(`${API}/${ultimoEstadoRemoto.filmeId}/proximo`)
-    .then(r => r.status === 200 ? r.json() : null).catch(() => null);
-  if (prox) enviarParaTv(prox.id);
+  const res = await fetch(`${PLAYER_API}/proximo-manual`, { method: 'POST' }).catch(() => null);
+  if (!res || !res.ok) { toast('Não há próximo episódio.'); return; }
+  const { proximoId } = await res.json();
+  fetch(`${API}/${proximoId}/pre-aquecer`, { method: 'POST' }).catch(() => {});   // adianta o remux enquanto a TV carrega
+  pollRemote();
 }
 
 // Mostra o botão pra qualquer episódio, mas só habilita se REALMENTE existe um próximo --
@@ -325,12 +338,12 @@ async function remoteProximoEp() {
 // (silencioso, parecia quebrado em vez de "já é o último").
 async function atualizarBotaoProximoEp(filmeId) {
   const btn = els.remoteProximoEpBtn;
-  if (!filmeAtualRemoto || !filmeAtualRemoto.ehEpisodio) { btn.style.display = 'none'; return; }
+  if (!filmeAtualRemoto || !filmeAtualRemoto.ehEpisodio) { btn.style.display = 'none'; remoteTemProximo = false; return; }
   btn.style.display = '';
   btn.disabled = true;
   const prox = await fetch(`${API}/${filmeId}/proximo`)
     .then(r => r.status === 200 ? r.json() : null).catch(() => null);
-  if (filmeId === ultimoEstadoRemoto?.filmeId) btn.disabled = !prox;
+  if (filmeId === ultimoEstadoRemoto?.filmeId) { btn.disabled = !prox; remoteTemProximo = !!prox; }
 }
 
 // ─── Faixas do que está tocando e padrões por série ─────────────────────────
@@ -417,9 +430,11 @@ function tratarAviso(aviso) {
     voltar: ab && { rotulo: 'Voltar', fazer: () => fetch(`${PLAYER_API}/seek-abs`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pos: ab.inicio }) }).then(pollRemote) },
     desligar: f && f.serieChave && { rotulo: 'Desligar', fazer: () => definirInterruptor(f.serieChave, f.temporada, 'pularAbertura', false) },
+    'desligar-proximo': f && f.serieChave && { rotulo: 'Desligar', fazer: () => definirInterruptor(f.serieChave, f.temporada, 'proximoAutomatico', false) },
+    cancelar: { rotulo: 'Cancelar', fazer: () => fetch(`${PLAYER_API}/proximo-cancelar`, { method: 'POST' }).then(pollRemote) },
   };
   toast(aviso.texto, acoes[aviso.acao] || null);
-  if (aviso.tipo === 'abertura') recarregarInterruptores();
+  if (aviso.tipo === 'abertura' || aviso.tipo === 'proximo') recarregarInterruptores();
 }
 
 async function salvarPadrao(chave, tipo, valor) {   // tipo: 'audio' | 'legenda'
@@ -559,7 +574,8 @@ async function pollRemote() {
       bar.classList.remove('active');
       filmeAtualRemoto = null;
       els.remoteProximoEpBtn.style.display = 'none';
-      remoteAbertura = null;
+      remoteAbertura = null; remoteCreditos = null; remoteTemProximo = false;
+      document.getElementById('remoteFaixaCreditos').style.display = 'none';
       document.getElementById('remoteDireitaBtn').classList.remove('vermelho');
       document.getElementById('remoteDireitaBtn').textContent = '30s »';
       document.getElementById('remoteFaixaAbertura').style.display = 'none';
@@ -573,8 +589,9 @@ async function pollRemote() {
       if (trocouFilme) {
         remoteCarregarLegendas(estado.filmeId);
         remoteCarregarAudios(estado.filmeId);
-        remoteAbertura = null;
+        remoteAbertura = null; remoteCreditos = null; remoteTemProximo = false;
         remoteCarregarAbertura(estado.filmeId);
+        remoteCarregarCreditos(estado.filmeId);
         filmeAtualRemoto = await fetchJsonOuNull(`${API}/${estado.filmeId}`);
         atualizarBotaoProximoEp(estado.filmeId);
       }
