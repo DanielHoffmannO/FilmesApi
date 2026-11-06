@@ -1120,7 +1120,10 @@ video { width: 100%; height: auto; background: #000; }
     if (!estado.playing && !v.paused) { try { v.pause(); } catch (e) {} }
     if (estado.volume !== anterior.volume) v.volume = estado.volume;
     if (estado.seekVersion !== anterior.seekVersion) {
-      try { v.currentTime = Math.max(0, v.currentTime + estado.seekDelta); } catch (e) {}
+      // dois toques no mesmo poll viravam um (seekDelta sobrescreve): aplica a diferença do acumulado; servidor antigo sem o campo: seekDelta
+      var passo = (typeof estado.seekAcumulado === 'number' && typeof anterior.seekAcumulado === 'number')
+        ? estado.seekAcumulado - anterior.seekAcumulado : estado.seekDelta;
+      try { v.currentTime = Math.max(0, v.currentTime + passo); } catch (e) {}
     }
     if (estado.seekAbsVersion !== anterior.seekAbsVersion) {
       try { v.currentTime = Math.max(0, estado.seekAbsPos); } catch (e) {}
