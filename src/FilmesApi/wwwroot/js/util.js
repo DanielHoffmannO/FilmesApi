@@ -198,6 +198,41 @@ function contagemDoProximo(estado, padrao) {
   return typeof estado.proximoContagem === 'number' && estado.proximoContagem > 0 ? estado.proximoContagem : padrao;
 }
 
+// ─── Nomes de idioma (controle.html): código cru do ffprobe -> rótulo em português ───
+
+var NOMES_IDIOMA = {
+  por: 'Português', pt: 'Português', eng: 'Inglês', en: 'Inglês', spa: 'Espanhol', es: 'Espanhol',
+  ger: 'Alemão', deu: 'Alemão', de: 'Alemão', fre: 'Francês', fra: 'Francês', fr: 'Francês',
+  rus: 'Russo', ru: 'Russo', ara: 'Árabe', ar: 'Árabe', ita: 'Italiano', it: 'Italiano',
+  jpn: 'Japonês', ja: 'Japonês', kor: 'Coreano', ko: 'Coreano', chi: 'Chinês', zho: 'Chinês', zh: 'Chinês'
+};
+
+// "por"/"Brazilian" -> "Português (Brasil)"; "spa"/"Latin American" -> "Espanhol (América Latina)"; "spa"/"European" -> "Espanhol (Europa)".
+// Desconhecido: o código em maiúsculas ("XYZ"); sem código ("und" ou vazio), o título da faixa ou "Desconhecido".
+function nomeDoIdioma(idioma, titulo) {
+  var cod = String(idioma == null ? '' : idioma).toLowerCase().replace(/^\s+|\s+$/g, '');
+  var tit = String(titulo == null ? '' : titulo).toLowerCase();
+  var nome = NOMES_IDIOMA[cod];
+  if (!nome) return cod && cod !== 'und' ? cod.toUpperCase() : (titulo ? String(titulo) : 'Desconhecido');
+  if (nome === 'Português' && /brazil|brasil|\bbr\b|pt-br/.test(tit)) return 'Português (Brasil)';
+  if (nome === 'Espanhol' && /latin|latam|am[eé]rica/.test(tit)) return 'Espanhol (América Latina)';
+  if (nome === 'Espanhol' && /europ|spain|espa[nñ]a|castil/.test(tit)) return 'Espanhol (Europa)';
+  return nome;
+}
+
+// Ordem de exibição: português, inglês, espanhol, depois o resto em ordem alfabética do nome. Estável. `pegar(item)` -> { idioma, titulo }.
+function ordenarPorIdioma(itens, pegar) {
+  var peso = { 'Português': 0, 'Inglês': 1, 'Espanhol': 2 };
+  var chaves = itens.map(function (it, i) {
+    var x = pegar(it), nome = nomeDoIdioma(x.idioma, x.titulo), base = nome.replace(/ \(.*$/, '');
+    return { it: it, i: i, nome: nome, p: peso[base] === undefined ? 3 : peso[base] };
+  });
+  chaves.sort(function (a, b) {
+    return a.p - b.p || (a.p === 3 ? a.nome.localeCompare(b.nome, 'pt') : 0) || a.nome.localeCompare(b.nome, 'pt') || a.i - b.i;
+  });
+  return chaves.map(function (k) { return k.it; });
+}
+
 // ─── Áudio padrão por série (index.html e controle.html; a TV só obedece o servidor) ───
 
 // { chave: idioma } das séries com idioma definido; {} se o servidor não responder.
