@@ -43,7 +43,7 @@ main{max-width:640px;margin:0 auto}
 .serie .t{flex:1;min-width:0}
 .serie .t b{display:block;font-size:15.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .serie .t small{display:block;color:var(--mut);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cv{color:var(--mut2);width:18px;height:18px;transition:transform .15s}
+.cv{color:var(--mut2);width:18px;height:18px}   /* sem transition: o estado aberto (seta pra baixo) vale na hora, até em captura de tela logo após o clique */
 .grupo:not(.collapsed)>.serie .cv,.grupo:not(.collapsed)>.temp-hd .cv{transform:rotate(90deg)}
 .tag{font-size:11.5px;color:var(--mut);background:var(--s2);border:1px solid var(--line);border-radius:6px;padding:3px 7px;white-space:nowrap}
 .temp{margin:2px 20px 8px;background:var(--s1);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
@@ -287,12 +287,15 @@ function linhaFilme(f) {
 }
 
 // Cartão do "Continuar assistindo": série (ou filme), "T4 · E22" e um fio vermelho de progresso quando há posição salva
+// chave da série -> nome de exibição (o MESMO da lista de séries: o mais frequente / nomes.json). O `serie` cru do episódio é o do arquivo
+// e pode vir em MAIÚSCULAS ('FUTURAMA') quando só aquele arquivo está assim.
+let nomesDeSerie = {};
 function cartaoFila(i) {
   const f = i.filme;
   const ep = f.ehEpisodio ? (f.temporada != null ? 'T' + f.temporada + ' · ' : '') + codigoEp(f) : (f.anoLancamento || '');
   const sub = i.motivo === 'proximo' ? 'A seguir · ' + ep : ep;
   const pct = i.motivo !== 'proximo' && f.posicaoSegundos && f.duracaoSegundos ? Math.min(100, 100 * f.posicaoSegundos / f.duracaoSegundos) : 0;
-  return `<button class="card" onclick="enviarParaTv(${f.id})"><b>${esc(f.ehEpisodio && f.serie ? f.serie : f.titulo)}</b><small>${esc(sub)}</small>` +
+  return `<button class="card" onclick="enviarParaTv(${f.id})"><b>${esc(f.ehEpisodio && f.serie ? (nomesDeSerie[f.serieChave] || f.serie) : f.titulo)}</b><small>${esc(sub)}</small>` +
          (pct ? `<div class="fio"><i style="width:${pct.toFixed(0)}%"></i></div>` : '') + '</button>';
 }
 
@@ -374,6 +377,7 @@ async function render() {
     ]);
   }
 
+  nomesDeSerie = Object.fromEntries(t.series.map(s => [s.chave, s.nome]));
   let html = '';
   if (fila && fila.length) {
     // "proximo": o episódio seguinte de uma série vista há pouco; o cartão mostra o nome da série porque está fora do grupo dela
