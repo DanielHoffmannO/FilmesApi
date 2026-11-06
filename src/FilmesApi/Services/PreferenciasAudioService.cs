@@ -13,6 +13,7 @@ public class PreferenciasAudioService(IServiceScopeFactory escopos)
 {
     private readonly object _trava = new();
     private Dictionary<string, string>? _series;
+    private Dictionary<string, string>? _legendas;
     private Dictionary<int, int>? _episodios;
     private readonly ConcurrentDictionary<int, string?> _chaves = new();
 
@@ -45,23 +46,69 @@ public class PreferenciasAudioService(IServiceScopeFactory escopos)
         lock (_trava)
         {
             Carregar();
-            using var escopo = escopos.CreateScope();
-            var db = escopo.ServiceProvider.GetRequiredService<AppDbContext>();
-            if (canonico is null)
-            {
-                db.PreferenciasSerie.Where(p => p.ChaveSerie == chave).ExecuteDelete();
-                _series!.Remove(chave);
-            }
-            else
-            {
-                var existente = db.PreferenciasSerie.Find(chave);
-                if (existente is null) db.PreferenciasSerie.Add(new PreferenciaSerie { ChaveSerie = chave, IdiomaAudio = canonico });
-                else existente.IdiomaAudio = canonico;
-                db.SaveChanges();
-                _series![chave] = canonico;
-            }
+            Gravar(chave, linha => linha.IdiomaAudio = canonico ?? "");
+            if (canonico is null) _series!.Remove(chave); else _series![chave] = canonico;
         }
         return true;
+    }
+
+    /// <summary>Legenda padrão da série: <c>"off"</c>, um idioma, ou null (sem preferência).</summary>
+    public string? LegendaDaSerie(string chave)
+    {
+        lock (_trava)
+        {
+            Carregar();
+            return _legendas!.GetValueOrDefault(chave);
+        }
+    }
+
+    /// <summary>Séries com legenda padrão definida (chave → "off" | idioma).</summary>
+    public Dictionary<string, string> TodasAsLegendas()
+    {
+        lock (_trava)
+        {
+            Carregar();
+            return new Dictionary<string, string>(_legendas!);
+        }
+    }
+
+    /// <summary>Define a legenda padrão: <c>"off"</c>, um idioma reconhecido, ou null pra voltar ao automático.
+    /// false se o idioma não é reconhecido.</summary>
+    public bool DefinirLegendaDaSerie(string chave, string? idioma)
+    {
+        var valor = idioma is null ? null : idioma.Trim().ToLowerInvariant() == "off" ? "off" : EscolhaAudio.NormalizarIdioma(idioma);
+        if (idioma is not null && valor is null) return false;
+
+        lock (_trava)
+        {
+            Carregar();
+            Gravar(chave, linha => linha.IdiomaLegenda = valor);
+            if (valor is null) _legendas!.Remove(chave); else _legendas![chave] = valor;
+        }
+        return true;
+    }
+
+    /// <summary>Legenda padrão da série a que o episódio pertence (null = sem preferência).</summary>
+    public string? LegendaDoEpisodio(int filmeId)
+    {
+        bool haLegendas;
+        lock (_trava) { Carregar(); haLegendas = _legendas!.Count > 0; }
+        return haLegendas ? LegendaDaSerie(ChaveDoFilme(filmeId) ?? "") : null;
+    }
+
+    /// <summary>Cria/atualiza a linha da série e apaga quando não sobra preferência nenhuma (nem áudio, nem legenda). Dentro da trava.</summary>
+    private void Gravar(string chave, Action<PreferenciaSerie> alterar)
+    {
+        using var escopo = escopos.CreateScope();
+        var db = escopo.ServiceProvider.GetRequiredService<AppDbContext>();
+        var linha = db.PreferenciasSerie.Find(chave);
+        var nova = linha is null;
+        linha ??= new PreferenciaSerie { ChaveSerie = chave };
+        alterar(linha);
+        var vazia = linha.IdiomaAudio == "" && linha.IdiomaLegenda is null;
+        if (vazia) { if (!nova) db.PreferenciasSerie.Remove(linha); }
+        else { if (nova) db.PreferenciasSerie.Add(linha); }
+        db.SaveChanges();
     }
 
     public void DefinirFaixaDoEpisodio(int filmeId, int audioIndex)
@@ -109,7 +156,9 @@ public class PreferenciasAudioService(IServiceScopeFactory escopos)
         if (_series is not null) return;
         using var escopo = escopos.CreateScope();
         var db = escopo.ServiceProvider.GetRequiredService<AppDbContext>();
-        _series = db.PreferenciasSerie.AsNoTracking().ToDictionary(p => p.ChaveSerie, p => p.IdiomaAudio);
+        var linhas = db.PreferenciasSerie.AsNoTracking().ToList();
+        _series = linhas.Where(p => p.IdiomaAudio != "").ToDictionary(p => p.ChaveSerie, p => p.IdiomaAudio);
+        _legendas = linhas.Where(p => p.IdiomaLegenda is not null).ToDictionary(p => p.ChaveSerie, p => p.IdiomaLegenda!);
         _episodios = db.PreferenciasEpisodio.AsNoTracking().ToDictionary(p => p.FilmeId, p => p.AudioIndex);
     }
 }

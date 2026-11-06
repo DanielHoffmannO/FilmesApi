@@ -106,6 +106,12 @@ public class SubtitleService
         return melhor is not null && Relevancia(melhor) <= 2 ? melhor.Idx : null;
     }
 
+    /// <summary>Legenda a ligar quando a SÉRIE tem legenda padrão: <c>"off"</c> → nenhuma; um idioma → a melhor faixa nesse idioma
+    /// (convertível, não forçada); sem faixa nele, nenhuma. <paramref name="faixasOrdenadas"/> vem de <see cref="OrdenarPorRelevancia"/>.</summary>
+    internal static int? LegendaPorPadraoDaSerie(string padrao, IReadOnlyList<LegendaInfo> faixasOrdenadas) =>
+        padrao == "off" ? null
+        : faixasOrdenadas.FirstOrDefault(f => f.Convertivel && Relevancia(f) != 4 && EscolhaAudio.NormalizarIdioma(f.Idioma) == padrao)?.Idx;
+
     /// <summary>Marca como <c>Recomendada</c> a faixa <paramref name="idxRecomendado"/> (ver
     /// <see cref="LegendaParaPreparar"/>); null não marca nenhuma.</summary>
     internal static List<LegendaInfo> MarcarRecomendada(List<LegendaInfo> faixas, int? idxRecomendado) =>

@@ -464,6 +464,10 @@ filmes ainda sem metadados (roda ~30s depois do boot e reprocessa a cada scan).
 | `GET` | `/api/filmes/{id}/original` | Sempre o arquivo original, sem transcodificar (VLC etc.). |
 | `GET` | `/api/filmes/{id}/download` | O arquivo original como anexo (`Content-Disposition: attachment`, nome `Título (ano).ext` / `Série - S05E01.ext`, Range). Limite `DownloadsSimultaneos` (`429` + `Retry-After`). Só o `index.html` tem o botão ⬇. |
 | `GET` | `/api/filmes/{id}/abertura` | `{inicioSegundos, fimSegundos}` da abertura do episódio (achada em segundo plano comparando o áudio dos episódios da temporada); `404` enquanto não achou. O `controle.html` usa pro botão **⏩ Pular abertura**. |
+| `GET` / `PUT` | `/api/series/audio`, `/api/series/{chave}/audio` | Idioma de áudio padrão por série (`{chave: idioma}`; `PUT` com `{idioma}`, null = automático). |
+| `GET` | `/api/series/padroes` | Áudio e legenda padrão de todas as séries de uma vez: `{chave: {audio, legenda}}`. |
+| `PUT` | `/api/series/{chave}/legenda` | Legenda padrão da série: `{idioma: "off"\|"por"\|"eng"…\|null}`. Com padrão definido, a legenda recomendada da TV segue ele (inclusive `off`); sem padrão, nada muda. |
+| `GET` / `PUT` | `/api/series/temporadas`, `/api/series/{chave}/temporadas/{n}` | O que está ligado por temporada (`pularAbertura`, `proximoAutomatico`; tudo desligado por padrão). `PUT` aceita um ou os dois campos. |
 | `GET` | `/api/filmes/{id}/hls/playlist.m3u8` | Manifesto HLS (dispara/reusa o transcode). `202` enquanto prepara, `409` se o arquivo já é compatível direto (use `/stream`), `500` se o transcode falhou. |
 | `GET` | `/api/filmes/{id}/hls/{seg}.ts` | Segmentos HLS. |
 | `GET` | `/api/filmes/{id}/legendas` | Faixas de legenda (embutidas + externas), a melhor primeiro; `recomendada: true` na que as telas ligam sozinhas (áudio estrangeiro). O `idx` identifica a faixa em `/legenda/{idx}` e não muda com a ordem da lista. |

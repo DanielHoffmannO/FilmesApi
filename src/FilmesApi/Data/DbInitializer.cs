@@ -32,6 +32,18 @@ public static class DbInitializer
                 "IdiomaAudio" TEXT NOT NULL
             );
             """);
+        // Legenda padrão por série (coluna nova numa tabela que bancos antigos já têm).
+        if (!db.Database.SqlQueryRaw<string>("""SELECT name AS "Value" FROM pragma_table_info('PreferenciasSerie');""").ToList().Contains("IdiomaLegenda"))
+            db.Database.ExecuteSqlRaw("""ALTER TABLE "PreferenciasSerie" ADD COLUMN "IdiomaLegenda" TEXT NULL;""");
+        db.Database.ExecuteSqlRaw("""
+            CREATE TABLE IF NOT EXISTS "PreferenciasTemporada" (
+                "ChaveSerie" TEXT NOT NULL,
+                "Temporada" INTEGER NOT NULL,
+                "PularAbertura" INTEGER NOT NULL DEFAULT 0,
+                "ProximoAutomatico" INTEGER NOT NULL DEFAULT 0,
+                CONSTRAINT "PK_PreferenciasTemporada" PRIMARY KEY ("ChaveSerie", "Temporada")
+            );
+            """);
         db.Database.ExecuteSqlRaw("""
             CREATE TABLE IF NOT EXISTS "PreferenciasEpisodio" (
                 "FilmeId" INTEGER NOT NULL CONSTRAINT "PK_PreferenciasEpisodio" PRIMARY KEY,
