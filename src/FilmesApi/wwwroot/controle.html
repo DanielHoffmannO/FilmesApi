@@ -773,7 +773,7 @@ async function pollRemote() {
       document.getElementById('remoteFaixaCreditos').style.display = 'none';
       definirCta('neutro');
       document.getElementById('remoteFaixaAbertura').style.display = 'none';
-      fecharFolha();
+      if (folha && folha.modo === 'agora') fecharFolha();   // a folha do que toca some quando para; a do padrão da série (⋯) fica até o Daniel fechar
       // Só re-renderiza se realmente parou de tocar algo (transição real) -- no primeiro poll
       // da página (estadoAnterior undefined) "nada tocando" já é exatamente o que o render()
       // inicial (linha ~303) desenhou, então um 2º fetch de /tela aqui seria só desperdício.
