@@ -19,6 +19,18 @@ public class AberturaEpisodio
     public string Origem { get; set; } = OrigemAbertura.Auto;
 }
 
+/// <summary>Onde começam os créditos do episódio (o fim é o fim do arquivo). Mesma lógica de versão/origem de <see cref="AberturaEpisodio"/>;
+/// <see cref="InicioSegundos"/> nulo = analisou e não achou.</summary>
+public class CreditosEpisodio
+{
+    public int FilmeId { get; set; }
+    public Filme? Filme { get; set; }
+    public double? InicioSegundos { get; set; }
+    public DateTime AnalisadoEm { get; set; } = DateTime.UtcNow;
+    public int Versao { get; set; } = 1;
+    public string Origem { get; set; } = OrigemAbertura.Auto;
+}
+
 public static class OrigemAbertura
 {
     public const string Auto = "auto", Capitulo = "capitulo", Pulo = "pulo";

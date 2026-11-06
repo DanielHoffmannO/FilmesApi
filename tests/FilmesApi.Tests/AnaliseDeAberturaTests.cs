@@ -233,6 +233,7 @@ public class AnaliseDeAberturaTests : IDisposable
         var a = await db.Aberturas.AsNoTracking().SingleAsync();
         Assert.Equal((10.0, 90.0, 1, "auto"), (a.InicioSegundos, a.FimSegundos, a.Versao, a.Origem));
         Assert.Equal(0, await db.Impressoes.CountAsync());
+        Assert.Equal(0, await db.Creditos.CountAsync());   // tabela nova também nasce no banco antigo
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
     }
 

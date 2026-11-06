@@ -64,6 +64,18 @@ public static class DbInitializer
             );
             """);
 
+        db.Database.ExecuteSqlRaw("""
+            CREATE TABLE IF NOT EXISTS "Creditos" (
+                "FilmeId" INTEGER NOT NULL CONSTRAINT "PK_Creditos" PRIMARY KEY,
+                "InicioSegundos" REAL NULL,
+                "AnalisadoEm" TEXT NOT NULL,
+                "Versao" INTEGER NOT NULL DEFAULT 1,
+                "Origem" TEXT NOT NULL DEFAULT 'auto',
+                CONSTRAINT "FK_Creditos_Filmes_FilmeId" FOREIGN KEY ("FilmeId")
+                    REFERENCES "Filmes" ("Id") ON DELETE CASCADE
+            );
+            """);
+
         // Versão do algoritmo e origem da marcação (colunas novas; linhas antigas valem 1/'auto')
         var colunasAberturas = db.Database.SqlQueryRaw<string>("""SELECT name AS "Value" FROM pragma_table_info('Aberturas');""").ToList();
         if (!colunasAberturas.Contains("Versao"))

@@ -30,7 +30,8 @@ public class AutomacaoDoPlayer(IServiceScopeFactory escopos, PlayerStateService 
             var lig = filme is { EhEpisodio: true, SerieChave: { } chave, Temporada: { } t } ? temporadas.Da(chave, t) : null;
             estado.DefinirContexto(filmeId, new ContextoDoFilme(
                 abertura?.Inicio, abertura?.Fim, lig?.PularAbertura ?? false, lig?.ProximoAutomatico ?? false,
-                null, filme?.SerieChave, filme?.Temporada));
+                await filmes.ObterCreditosAsync(filmeId), filme?.SerieChave, filme?.Temporada,
+                config.GetValue<int?>("ProximoAutomaticoContagemSegundos") ?? 5));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -52,6 +53,34 @@ public class AutomacaoDoPlayer(IServiceScopeFactory escopos, PlayerStateService 
         }
         await AtualizarContextoAsync(filmeId);
         return !estavaLigado;
+    }
+
+    /// <summary>Liga o próximo episódio automático da temporada do episódio em exibição (o Daniel apertou "próximo" no fim). Avisa uma vez.</summary>
+    public async Task<bool> LigarProximoAutomaticoAsync(int filmeId)
+    {
+        using var escopo = escopos.CreateScope();
+        var filme = await escopo.ServiceProvider.GetRequiredService<FilmeService>().ObterAsync(filmeId);
+        if (filme is not { EhEpisodio: true, SerieChave: { } chave, Temporada: { } t }) return false;
+        if (temporadas.Da(chave, t).ProximoAutomatico) return false;
+        temporadas.Definir(chave, t, pularAbertura: null, proximoAutomatico: true);
+        estado.Avisar("proximo", $"Próximo automático ligado na temporada {t}.", "desligar-proximo");
+        return true;
+    }
+
+    /// <summary>"Próximo episódio" apertado no controle: toca o próximo e, se foi no fim (<see cref="ProximoManual"/>), liga o próximo automático
+    /// da temporada. Devolve o id do próximo, ou null se não há. Apertar no meio do episódio só toca — nada é aprendido.</summary>
+    public async Task<(int? ProximoId, bool Aprendeu)> ProximoManualAsync()
+    {
+        if (estado.FilmeId is not int id) return (null, false);
+        using var escopo = escopos.CreateScope();
+        var prox = await escopo.ServiceProvider.GetRequiredService<FilmeService>().ProximoEpisodioAsync(id);
+        if (prox is null) return (null, false);
+
+        var acabou = estado.JaAcabou(config.GetValue<double?>("ProximoRestanteSegundos") ?? ProximoManual.RestantePadraoSegundos);
+        var aprendeu = acabou && await LigarProximoAutomaticoAsync(id);
+        estado.Selecionar(prox.Id);
+        await AtualizarContextoAsync(prox.Id);
+        return (prox.Id, aprendeu);
     }
 
     /// <summary>Uma rajada de avanços terminou: era a abertura? Nunca lança.</summary>

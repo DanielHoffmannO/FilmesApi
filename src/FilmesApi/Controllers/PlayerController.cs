@@ -46,6 +46,31 @@ public class PlayerController : ControllerBase
         return Ok(_state.Snapshot());
     }
 
+    /// <summary>O botão "Próximo episódio" do controle. Toca o próximo; se foi apertado no fim do episódio (créditos conhecidos, ou restam ≤
+    /// <c>ProximoRestanteSegundos</c>, ou há oferta de próximo no ar), liga o próximo automático da temporada. 404 se não há próximo.</summary>
+    [HttpPost("proximo-manual")]
+    public async Task<IActionResult> ProximoManual()
+    {
+        var (proximo, aprendeu) = await _automacao.ProximoManualAsync();
+        return proximo is int id ? Ok(new { proximoId = id, aprendeu }) : NotFound(new { mensagem = "não há próximo episódio" });
+    }
+
+    /// <summary>O Daniel cancelou o "Indo para o próximo" (próximo automático): a TV desiste e não repete neste episódio.</summary>
+    [HttpPost("proximo-cancelar")]
+    public IActionResult ProximoCancelar()
+    {
+        _state.CancelarProximoAutomatico();
+        return Ok(_state.Snapshot());
+    }
+
+    /// <summary>A TV avisa que vai pro próximo sozinha (próximo automático): o celular mostra "Indo para o próximo · cancelar".</summary>
+    [HttpPost("proximo-auto")]
+    public IActionResult ProximoAuto()
+    {
+        _state.Avisar("proximo", "Indo para o próximo", "cancelar");
+        return NoContent();
+    }
+
     /// <summary>A TV avisa que pulou a abertura sozinha (temporada com pulo automático): o celular mostra "Abertura pulada · voltar" e não se repete neste episódio.</summary>
     [HttpPost("abertura-pulada")]
     public IActionResult AberturaPulada()

@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 namespace FilmesApi.Services;
 
 /// <summary>
-/// Em segundo plano, acha a abertura dos episódios (botão "Pular abertura" do controle). Por temporada: primeiro o capítulo "Opening" do
+/// Em segundo plano, acha a abertura e os créditos dos episódios (botões "Pular abertura" e "Próximo episódio" do controle). Por temporada: primeiro o capítulo "Opening" do
 /// próprio arquivo (exato, quando existe — <see cref="CapituloDeAbertura"/>); o resto pela comparação da impressão de áudio do começo com
 /// os vizinhos (<see cref="DetectorDeAbertura"/>; ±1 e, só se nada achou, ±2). As impressões ficam guardadas (<see cref="ArmazemDeImpressoes"/>),
 /// então melhorar o algoritmo e subir <see cref="VersaoAlgoritmo"/> reanalisa tudo em segundos, sem reler o disco. Só roda com o servidor
@@ -52,12 +52,13 @@ public class AnaliseDeAberturaService(IServiceScopeFactory escopos, FfmpegOption
 
             var fim = DateTime.UtcNow.AddMinutes(config.GetValue<double?>("AberturaOrcamentoMinutos") ?? 4);
             var jaFeitos = (await db.Aberturas.AsNoTracking().ToListAsync(ct)).ToDictionary(a => a.FilmeId);
-            var pendentes = TemporadasPendentes(await filmes.ListarAsync(), jaFeitos);
+            var creditos = (await db.Creditos.AsNoTracking().ToListAsync(ct)).ToDictionary(c => c.FilmeId);
+            var pendentes = TemporadasPendentes(await filmes.ListarAsync(), jaFeitos, creditos);
 
             foreach (var temporada in pendentes)
             {
                 if (!transcode.Ocioso || DateTime.UtcNow > fim) break;
-                analisados += await AnalisarTemporadaAsync(temporada, jaFeitos, filmes, escopo.ServiceProvider, db, ct);
+                analisados += await AnalisarTemporadaAsync(temporada, jaFeitos, creditos, filmes, escopo.ServiceProvider, db, ct);
             }
             medicao?.Ok(pendentes.Count == 0 ? "nada pendente" : $"{analisados} episódio(s) analisado(s), {pendentes.Count} temporada(s) na fila");
             if (analisados > 0) logger.LogInformation("Aberturas: {N} episódio(s) analisado(s).", analisados);
@@ -78,16 +79,25 @@ public class AnaliseDeAberturaService(IServiceScopeFactory escopos, FfmpegOption
             && (linha.Versao < VersaoAlgoritmo
                 || (linha.InicioSegundos is null && temporada.Any(o => o.DataAdicionado > linha.AnalisadoEm))));
 
-    /// <summary>Temporadas (2+ episódios) com algum episódio que <see cref="PrecisaAnalisar"/>.</summary>
-    internal static List<List<FilmeResponse>> TemporadasPendentes(IReadOnlyList<FilmeResponse> catalogo, IReadOnlyDictionary<int, AberturaEpisodio> jaFeitos) =>
+    /// <summary>Mesma regra pros créditos.</summary>
+    internal static bool PrecisaAnalisarCreditos(CreditosEpisodio? linha, IEnumerable<FilmeResponse> temporada) =>
+        linha is null
+        || (linha.Origem == OrigemAbertura.Auto
+            && (linha.Versao < VersaoAlgoritmo
+                || (linha.InicioSegundos is null && temporada.Any(o => o.DataAdicionado > linha.AnalisadoEm))));
+
+    /// <summary>Temporadas (2+ episódios) com algum episódio que <see cref="PrecisaAnalisar"/> (abertura) ou <see cref="PrecisaAnalisarCreditos"/>.</summary>
+    internal static List<List<FilmeResponse>> TemporadasPendentes(IReadOnlyList<FilmeResponse> catalogo,
+        IReadOnlyDictionary<int, AberturaEpisodio> jaFeitos, IReadOnlyDictionary<int, CreditosEpisodio>? creditos = null) =>
         catalogo.Where(f => f.EhEpisodio && !f.EhExtra && f.Temporada is not null && f.Episodio is not null && !string.IsNullOrEmpty(f.SerieChave))
             .GroupBy(f => (f.SerieChave, f.Temporada))
             .Select(g => g.OrderBy(f => f.Episodio).ThenBy(f => f.Id).ToList())
-            .Where(eps => eps.Count >= 2 && eps.Any(f => PrecisaAnalisar(jaFeitos.GetValueOrDefault(f.Id), eps)))
+            .Where(eps => eps.Count >= 2 && eps.Any(f => PrecisaAnalisar(jaFeitos.GetValueOrDefault(f.Id), eps)
+                || (creditos is not null && PrecisaAnalisarCreditos(creditos.GetValueOrDefault(f.Id), eps))))
             .ToList();
 
     private async Task<int> AnalisarTemporadaAsync(List<FilmeResponse> eps, Dictionary<int, AberturaEpisodio> jaFeitos,
-        FilmeService filmes, IServiceProvider sp, AppDbContext db, CancellationToken ct)
+        Dictionary<int, CreditosEpisodio> creditos, FilmeService filmes, IServiceProvider sp, AppDbContext db, CancellationToken ct)
     {
         var minimo = config.GetValue<double?>("AberturaMinimoSegundos") ?? 10;
         var caminhos = new string?[eps.Count];
@@ -126,9 +136,72 @@ public class AnaliseDeAberturaService(IServiceScopeFactory escopos, FfmpegOption
             }
         }
 
+        await AnalisarCreditosAsync(eps, caminhos, creditos, sp.GetService<MediaProbeService>(), db, minimo, ct);
+
         db.ChangeTracker.Clear();
-        foreach (var a in await db.Aberturas.AsNoTracking().Where(a => eps.Select(e => e.Id).Contains(a.FilmeId)).ToListAsync(ct)) jaFeitos[a.FilmeId] = a;
+        var ids = eps.Select(e => e.Id).ToList();
+        foreach (var a in await db.Aberturas.AsNoTracking().Where(a => ids.Contains(a.FilmeId)).ToListAsync(ct)) jaFeitos[a.FilmeId] = a;
+        foreach (var c in await db.Creditos.AsNoTracking().Where(c => ids.Contains(c.FilmeId)).ToListAsync(ct)) creditos[c.FilmeId] = c;
         return feitos;
+    }
+
+    /// <summary>Créditos: capítulo "Credits"/"Ending" do arquivo (exato) ou o trecho comum dos ÚLTIMOS 300 s com os vizinhos (±1, depois ±2);
+    /// o começo do trecho comum é onde os créditos começam. Só vale na metade final do episódio.</summary>
+    private async Task<int> AnalisarCreditosAsync(List<FilmeResponse> eps, string?[] caminhos, Dictionary<int, CreditosEpisodio> creditos,
+        MediaProbeService? probe, AppDbContext db, double minimo, CancellationToken ct)
+    {
+        var restantes = new HashSet<int>(Enumerable.Range(0, eps.Count).Where(i => PrecisaAnalisarCreditos(creditos.GetValueOrDefault(eps[i].Id), eps)));
+        if (restantes.Count == 0 || probe is null) return 0;
+
+        var infos = new MediaInfo?[eps.Count];
+        for (var i = 0; i < eps.Count; i++) if (caminhos[i] is not null) infos[i] = await ProbeSeguroAsync(probe, caminhos[i]!, ct);
+
+        var feitos = 0;
+        if (config.GetValue<bool?>("AberturaUsarCapitulos") ?? true)
+            foreach (var i in restantes.ToList())
+                if (CapituloDeAbertura.InicioDosCreditos(infos[i]?.Capitulos) is double inicio)
+                {
+                    feitos += await GravarCreditosAsync(db, eps[i].Id, Math.Round(inicio, 1), OrigemAbertura.Capitulo);
+                    restantes.Remove(i);
+                }
+        if (restantes.Count == 0) return feitos;
+
+        var impressoes = new int[eps.Count][];
+        var inicios = new double[eps.Count];
+        for (var i = 0; i < eps.Count; i++)
+        {
+            impressoes[i] = [];
+            if (caminhos[i] is null || infos[i]?.DuracaoSegundos is not double dur || dur <= ImpressaoDeAudio.JanelaFimSegundos) continue;
+            inicios[i] = dur - ImpressaoDeAudio.JanelaFimSegundos;
+            impressoes[i] = (await ArmazemDeImpressoes.ObterAsync(db, ffmpeg, eps[i].Id, caminhos[i]!, ArmazemDeImpressoes.JanelaFim,
+                inicios[i], ImpressaoDeAudio.Trecho.Fim, ct)).Itens;
+        }
+
+        foreach (var i in restantes)
+        {
+            if (impressoes[i].Length == 0) continue;   // sem ffprobe/áudio: tenta de novo na próxima rodada
+            var t = MelhorTrecho(i, impressoes, minimo);
+            var abs = t is null ? (double?)null : inicios[i] + t.InicioA;
+            if (abs is double a && a < infos[i]!.DuracaoSegundos!.Value * 0.5) abs = null;   // "créditos" no meio do episódio é coincidência
+            feitos += await GravarCreditosAsync(db, eps[i].Id, abs is null ? null : Math.Round(abs.Value, 1), OrigemAbertura.Auto);
+        }
+        return feitos;
+    }
+
+    private static async Task<int> GravarCreditosAsync(AppDbContext db, int filmeId, double? inicio, string origem)
+    {
+        var linha = await db.Creditos.FindAsync(filmeId);
+        if (linha is not null && !OrigemAbertura.PodeSobrescrever(linha.Origem, origem)) return 0;
+        if (linha is null) db.Creditos.Add(linha = new CreditosEpisodio { FilmeId = filmeId });
+        if (inicio is not null || linha.InicioSegundos is null)
+        {
+            linha.InicioSegundos = inicio;
+            linha.Origem = origem;
+        }
+        linha.Versao = VersaoAlgoritmo;
+        linha.AnalisadoEm = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        return 1;
     }
 
     /// <summary>Vizinhos ±1; só quando nenhum deles tem trecho comum, ±2 (recupera o episódio cujo vizinho imediato não tem abertura).</summary>
