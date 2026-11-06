@@ -89,6 +89,19 @@ public class AnaliseDeAberturaTests : IDisposable
     private const string Opening2s = "{\"start_time\":\"10.0\",\"end_time\":\"12.3\",\"tags\":{\"title\":\"Opening\"}}";
 
     [Fact]
+    public async Task Resumo_da_tarefa_mostra_o_progresso_real_e_o_motivo_da_pausa()
+    {
+        var (f, servico, tarefas) = await Cenario(Eps);
+        await servico.ExecutarUmaVezAsync();   // sem .fp: nada é gravado, tudo continua pendente
+        var resumo = tarefas.Snapshot().Single(t => t.Nome == "abertura").Resumo;
+        Assert.Equal($"v{AnaliseDeAberturaService.VersaoAlgoritmo}: 0 de 3 episódios; 1 temporada(s) pendente(s)", resumo);
+
+        Assert.Equal("3 analisado(s) agora · v2: 240 de 1149 episódios; 46 temporada(s) pendente(s) · pausado: servidor ocupado (transcode/remux ativo)",
+            AnaliseDeAberturaService.Resumo(3, 46, (240, 1149), "servidor ocupado (transcode/remux ativo)"));
+        Assert.Equal("v2: 5 de 5 episódios; 0 temporada(s) pendente(s)", AnaliseDeAberturaService.Resumo(0, 0, (5, 5), null));
+    }
+
+    [Fact]
     public async Task Episodio_sem_arquivo_nao_impede_os_seguintes_de_usar_o_capitulo()
     {
         string[] eps = [.. Eps, "Hora de Aventura/Hora.de.Aventura.S01E04.mkv"];
