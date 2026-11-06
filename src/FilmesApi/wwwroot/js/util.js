@@ -183,6 +183,21 @@ function decidirSaltoAbertura(abertura, pos, jaPulouNestaReproducao) {
   return pos >= abertura.inicio - 1 && pos < abertura.fim ? abertura.fim : null;
 }
 
+// ─── Próximo episódio automático (a TV executa; decisões puras aqui pra testar) ───
+
+// `estado` = /api/player/state. Com o interruptor da temporada ligado e os créditos conhecidos: ao entrar neles (e uma vez por episódio) vai pro
+// próximo. O cancelamento do Daniel (proximoCancelado) vale pro resto do episódio.
+function decidirProximoAutomatico(estado, pos, jaFezNesteEpisodio) {
+  if (!estado || !estado.proximoAutomatico || estado.proximoCancelado || jaFezNesteEpisodio) return false;
+  return typeof estado.inicioCreditos === 'number' && pos >= estado.inicioCreditos;
+}
+
+// Contagem (s) da oferta de próximo no 'ended': com o próximo automático ligado e não cancelado cai de `padrao` (12) pra estado.proximoContagem (5).
+function contagemDoProximo(estado, padrao) {
+  if (!estado || !estado.proximoAutomatico || estado.proximoCancelado) return padrao;
+  return typeof estado.proximoContagem === 'number' && estado.proximoContagem > 0 ? estado.proximoContagem : padrao;
+}
+
 // ─── Áudio padrão por série (index.html e controle.html; a TV só obedece o servidor) ───
 
 // { chave: idioma } das séries com idioma definido; {} se o servidor não responder.

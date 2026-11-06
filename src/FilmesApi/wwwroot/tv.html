@@ -189,6 +189,7 @@ video { width: 100%; height: auto; background: #000; }
   // uma duracao pequena de mais durante a conversao e o backend marca "assistido" na marra —
   // mesmo bug que ja existia no index.html antes de duracaoConfiavel existir la.
   var duracaoConfiavel = false;
+  var proximoAutoDe = null;         // id do episódio em que a TV já foi pro próximo sozinha (ao entrar nos créditos)
   var aberturaPuladaDe = null;      // id do episódio em que a TV já pulou a abertura sozinha (1x por reprodução)
   var reproducaoConcluida = false;  // apos 'ended', nao deixa um save tardio recriar a retomada
   var proximoPendente = null;       // proximo episodio oferecido apos o 'ended'
@@ -848,7 +849,7 @@ video { width: 100%; height: auto; background: #000; }
     proximoOfertaId++;  // invalida qualquer resposta de /proximo ainda em voo (ver ofereceProximo)
   }
 
-  function ofereceProximo(id) {
+  function ofereceProximo(id, contagem) {
     // 'ended' pode disparar 2x (visto em navegador de TV). cancelarProximo() sozinho nao
     // bastava: se as 2 chamadas acontecem sincronas (uma logo apos a outra, antes do fetch
     // da 1a responder), as 2 leem proximoTimer==null e nenhuma cancela nada — cada resposta
@@ -873,7 +874,7 @@ video { width: 100%; height: auto; background: #000; }
       // tem o controle.html na mao nao sabe que apareceu nem consegue confirmar.
       send('POST', PLAYER + '/proximo-oferece', { filmeId: prox.id, rotulo: rotuloComTitulo(prox) });
       var pmsg = els.pmsg;
-      var resta = PROXIMO_COUNTDOWN_S;
+      var resta = contagem || PROXIMO_COUNTDOWN_S;
       function tick() {
         pmsg.innerHTML = 'Proximo: ' + esc(rotuloComTitulo(prox)) + ' &mdash; OK assiste, Voltar cancela  (' + resta + 's)';
         if (resta-- <= 0) irProximo();
@@ -1064,7 +1065,10 @@ video { width: 100%; height: auto; background: #000; }
       reproducaoConcluida = true;
       var idFim = filmeAtual;
       send('POST', API + '/' + idFim + '/concluir');
-      ofereceProximo(idFim);
+      // temporada com o proximo automatico ligado (e nao cancelado): contagem curta e aviso no celular; senao, a de sempre
+      var contagem = contagemDoProximo(estadoRemotoAnterior, PROXIMO_COUNTDOWN_S);
+      if (contagem !== PROXIMO_COUNTDOWN_S && proximoAutoDe !== idFim) send('POST', PLAYER + '/proximo-auto');
+      ofereceProximo(idFim, contagem);
     };
 
     // Keepalive: avisa o backend que ainda tem alguem aqui, senao o transcode em
@@ -1138,6 +1142,17 @@ video { width: 100%; height: auto; background: #000; }
       send('POST', PLAYER + '/abertura-pulada');
       avisoNoPlayer('Abertura pulada');
     }
+    // Proximo automatico: ao entrar nos creditos conhecidos vai pro proximo (contagem curta, com "cancelar" no celular). O episodio conta
+    // como visto ja aqui (como o 'ended' faria) e o proximo comeca a ser preparado pelo ofereceProximo.
+    if (decidirProximoAutomatico(estado, v.currentTime, proximoAutoDe === filmeAtual)) {
+      proximoAutoDe = filmeAtual;
+      reproducaoConcluida = true;
+      send('POST', API + '/' + filmeAtual + '/concluir');
+      send('POST', PLAYER + '/proximo-auto');
+      ofereceProximo(filmeAtual, contagemDoProximo(estado, PROXIMO_COUNTDOWN_S));
+    }
+    // o Daniel cancelou pelo celular: desiste da contagem (nao repete neste episodio)
+    if (estado.proximoCancelado && !anterior.proximoCancelado && proximoPendente) cancelarProximo();
     if (estado.legendaVersion !== anterior.legendaVersion) { legendaManualLocal = true; ativarLegenda(estado.legendaIdx); }
     if (estado.audioVersion !== anterior.audioVersion) aplicarAudioRemoto(estado.audioIdx);
     // Celular confirmou a oferta de proximo episodio que esta TV mesma colocou no ar —
