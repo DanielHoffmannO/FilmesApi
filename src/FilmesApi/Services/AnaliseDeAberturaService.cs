@@ -53,6 +53,8 @@ public class AnaliseDeAberturaService(IServiceScopeFactory escopos, FfmpegOption
             var fim = DateTime.UtcNow.AddMinutes(config.GetValue<double?>("AberturaOrcamentoMinutos") ?? 4);
             var jaFeitos = (await db.Aberturas.AsNoTracking().ToListAsync(ct)).ToDictionary(a => a.FilmeId);
             var creditos = (await db.Creditos.AsNoTracking().ToListAsync(ct)).ToDictionary(c => c.FilmeId);
+            if (await DescartarDeArquivoTrocadoAsync(db, filmes, jaFeitos, creditos, ct) is > 0 and var n)
+                logger.LogInformation("Aberturas: {N} marcação(ões) descartada(s) porque o arquivo foi trocado.", n);
             var pendentes = TemporadasPendentes(await filmes.ListarAsync(), jaFeitos, creditos);
 
             string? pausa = null;
@@ -132,7 +134,7 @@ public class AnaliseDeAberturaService(IServiceScopeFactory escopos, FfmpegOption
                 if (caminhos[i] is null) continue;   // um episódio sem arquivo não impede os seguintes de usar o capítulo
                 var info = await ProbeSeguroAsync(probe, caminhos[i]!, ct);
                 if (CapituloDeAbertura.Abertura(info?.Capitulos) is not var (ini, fimCap)) continue;
-                feitos += await GravarAsync(db, eps[i].Id, Math.Round(ini, 1), Math.Round(fimCap, 1), OrigemMarca.Capitulo);
+                feitos += await GravarAsync(db, eps[i].Id, Math.Round(ini, 1), Math.Round(fimCap, 1), OrigemMarca.Capitulo, TamanhoDe(caminhos[i]));
                 restantes.Remove(i);
             }
         }
@@ -150,7 +152,7 @@ public class AnaliseDeAberturaService(IServiceScopeFactory escopos, FfmpegOption
                 if (impressoes[i].Length == 0) continue;   // sem áudio/ffmpeg falhou: tenta de novo na próxima rodada
                 var achado = MelhorTrecho(i, impressoes, minimo);
                 feitos += await GravarAsync(db, eps[i].Id, achado is null ? null : Math.Round(achado.InicioA, 1),
-                    achado is null ? null : Math.Round(achado.FimA, 1), OrigemMarca.Auto);
+                    achado is null ? null : Math.Round(achado.FimA, 1), OrigemMarca.Auto, TamanhoDe(caminhos[i]));
             }
         }
 
@@ -179,7 +181,7 @@ public class AnaliseDeAberturaService(IServiceScopeFactory escopos, FfmpegOption
             foreach (var i in restantes.ToList())
                 if (CapituloDeAbertura.InicioDosCreditos(infos[i]?.Capitulos) is double inicio)
                 {
-                    feitos += await GravarCreditosAsync(db, eps[i].Id, Math.Round(inicio, 1), OrigemMarca.Capitulo);
+                    feitos += await GravarCreditosAsync(db, eps[i].Id, Math.Round(inicio, 1), OrigemMarca.Capitulo, TamanhoDe(caminhos[i]));
                     restantes.Remove(i);
                 }
         if (restantes.Count == 0) return feitos;
@@ -201,12 +203,12 @@ public class AnaliseDeAberturaService(IServiceScopeFactory escopos, FfmpegOption
             var t = MelhorTrecho(i, impressoes, minimo);
             var abs = t is null ? (double?)null : inicios[i] + t.InicioA;
             if (abs is double a && a < infos[i]!.DuracaoSegundos!.Value * 0.5) abs = null;   // "créditos" no meio do episódio é coincidência
-            feitos += await GravarCreditosAsync(db, eps[i].Id, abs is null ? null : Math.Round(abs.Value, 1), OrigemMarca.Auto);
+            feitos += await GravarCreditosAsync(db, eps[i].Id, abs is null ? null : Math.Round(abs.Value, 1), OrigemMarca.Auto, TamanhoDe(caminhos[i]));
         }
         return feitos;
     }
 
-    private static async Task<int> GravarCreditosAsync(AppDbContext db, int filmeId, double? inicio, string origem)
+    private static async Task<int> GravarCreditosAsync(AppDbContext db, int filmeId, double? inicio, string origem, long bytes)
     {
         var linha = await db.Creditos.FindAsync(filmeId);
         if (linha is not null && !OrigemMarca.PodeSobrescrever(linha.Origem, origem)) return 0;
@@ -217,6 +219,7 @@ public class AnaliseDeAberturaService(IServiceScopeFactory escopos, FfmpegOption
             linha.Origem = origem;
         }
         linha.Versao = VersaoAlgoritmo;
+        linha.ArquivoBytes = bytes;
         linha.AnalisadoEm = DateTime.UtcNow;
         await db.SaveChangesAsync();
         return 1;
@@ -236,6 +239,33 @@ public class AnaliseDeAberturaService(IServiceScopeFactory escopos, FfmpegOption
         return null;
     }
 
+    /// <summary>Tamanho do arquivo (0 se não há caminho ou não dá pra ler): o que fica na linha pra detectar que o arquivo foi trocado.</summary>
+    internal static long TamanhoDe(string? caminho)
+    {
+        try { return caminho is null ? 0 : new FileInfo(caminho).Length; } catch (IOException) { return 0; }
+    }
+
+    /// <summary>Marcação 'capitulo' ou 'pulo' feita com um arquivo de OUTRO tamanho (release trocada): a linha é apagada e o episódio volta à fila.
+    /// 'pulo' foi o Daniel que confirmou, mas num arquivo que não existe mais — descartar é mais seguro que pular no lugar errado. Linhas antigas
+    /// (ArquivoBytes 0) e 'auto' (que a versão já cuida) ficam como estão. Devolve quantas linhas apagou.</summary>
+    internal static async Task<int> DescartarDeArquivoTrocadoAsync(AppDbContext db, FilmeService filmes,
+        Dictionary<int, AberturaEpisodio> aberturas, Dictionary<int, CreditosEpisodio> creditos, CancellationToken ct)
+    {
+        var apagar = 0;
+        async Task<bool> Trocado(int id, long bytes, string origem)
+        {
+            if (bytes <= 0 || origem == OrigemMarca.Auto) return false;
+            var atual = TamanhoDe(await filmes.ResolverCaminhoAsync(id));
+            return atual > 0 && atual != bytes;
+        }
+        foreach (var a in aberturas.Values.ToList())
+            if (await Trocado(a.FilmeId, a.ArquivoBytes, a.Origem)) { db.Aberturas.Remove(await db.Aberturas.FindAsync([a.FilmeId], ct) ?? a); aberturas.Remove(a.FilmeId); apagar++; }
+        foreach (var c in creditos.Values.ToList())
+            if (await Trocado(c.FilmeId, c.ArquivoBytes, c.Origem)) { db.Creditos.Remove(await db.Creditos.FindAsync([c.FilmeId], ct) ?? c); creditos.Remove(c.FilmeId); apagar++; }
+        if (apagar > 0) { await db.SaveChangesAsync(ct); db.ChangeTracker.Clear(); }
+        return apagar;
+    }
+
     private async Task<MediaInfo?> ProbeSeguroAsync(MediaProbeService probe, string caminho, CancellationToken ct)
     {
         try { return await probe.InspecionarAsync(caminho, ct); }
@@ -244,7 +274,7 @@ public class AnaliseDeAberturaService(IServiceScopeFactory escopos, FfmpegOption
 
     /// <summary>Grava respeitando a precedência. 'auto' sem resultado ("não achou") não apaga uma marcação que já existe: só registra que foi reanalisada.
     /// Devolve 1 se mexeu na linha.</summary>
-    private static async Task<int> GravarAsync(AppDbContext db, int filmeId, double? inicio, double? fim, string origem)
+    private static async Task<int> GravarAsync(AppDbContext db, int filmeId, double? inicio, double? fim, string origem, long bytes)
     {
         var linha = await db.Aberturas.FindAsync(filmeId);
         if (linha is not null && !OrigemMarca.PodeSobrescrever(linha.Origem, origem)) return 0;
@@ -256,6 +286,7 @@ public class AnaliseDeAberturaService(IServiceScopeFactory escopos, FfmpegOption
             linha.Origem = origem;
         }
         linha.Versao = VersaoAlgoritmo;
+        linha.ArquivoBytes = bytes;
         linha.AnalisadoEm = DateTime.UtcNow;
         await db.SaveChangesAsync();
         return 1;
