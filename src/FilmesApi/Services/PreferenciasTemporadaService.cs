@@ -58,6 +58,19 @@ public class PreferenciasTemporadaService(IServiceScopeFactory escopos)
         }
     }
 
+    /// <summary>Liga o pulo automático (<paramref name="abertura"/> true) ou o próximo automático (false) SÓ se estiver desligado, de forma atômica:
+    /// devolve true pra quem de fato ligou. Duas chamadas concorrentes (botão + fim de rajada) → só uma recebe true, então só sai um aviso.</summary>
+    public bool Ligar(string chaveSerie, int temporada, bool abertura)
+    {
+        lock (_trava)
+        {
+            var atual = Da(chaveSerie, temporada);
+            if (abertura ? atual.PularAbertura : atual.ProximoAutomatico) return false;
+            Definir(chaveSerie, temporada, abertura ? true : null, abertura ? null : true);
+            return true;
+        }
+    }
+
     private void Carregar()
     {
         if (_todas is not null) return;

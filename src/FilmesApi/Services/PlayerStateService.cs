@@ -22,6 +22,10 @@ public class PlayerStateService(Func<DateTime>? agora = null)
 
     private readonly Func<DateTime> _agora = agora ?? (() => DateTime.UtcNow);
     private readonly object _lock = new();
+
+    /// <summary>Identifica ESTA instância do servidor: muda a cada restart. Os contadores (versões de aviso/seek, seekAcumulado) voltam a zero
+    /// com ela; quem os acompanha (controle, TV) descarta a linha de base quando ela muda, em vez de ler a queda como um evento.</summary>
+    public string Instancia { get; } = Guid.NewGuid().ToString("N");
     private sealed class RajadaEmCurso(int filmeId, double posAntes, DateTime ultimoToque)
     {
         public int FilmeId = filmeId; public double PosAntes = posAntes; public DateTime UltimoToque = ultimoToque; public double? PosFinal;
@@ -31,7 +35,6 @@ public class PlayerStateService(Func<DateTime>? agora = null)
     private bool _aberturaPulada;   // 1x por reprodução: o salto automático (ou o botão) já aconteceu neste episódio
     private int _avisoVersao;
     private string? _avisoTipo, _avisoTexto, _avisoAcao;
-    private DateTime _avisoAte;
 
     /// <summary>Uma rajada de avanços terminou (6 s sem toque novo e a TV já pousou). Disparado FORA da trava.</summary>
     public event Action<RajadaDePulo>? RajadaConcluida;
@@ -73,6 +76,7 @@ public class PlayerStateService(Func<DateTime>? agora = null)
         {
             return new
             {
+                instancia = Instancia,
                 filmeId = _filmeId,
                 playing = _playing,
                 volume = _volume,
@@ -98,7 +102,7 @@ public class PlayerStateService(Func<DateTime>? agora = null)
                 proximoContagem = _contexto?.ContagemProximoSegundos ?? 5,
                 proximoCancelado = _proximoCancelado,
                 inicioCreditos = _contexto?.InicioCreditos,
-                aviso = _avisoVersao == 0 ? null : new { versao = _avisoVersao, tipo = _avisoTipo, texto = _avisoTexto, acao = _avisoAcao, ate = _avisoAte },
+                aviso = _avisoVersao == 0 ? null : new { versao = _avisoVersao, tipo = _avisoTipo, texto = _avisoTexto, acao = _avisoAcao },
             };
         }
     }
@@ -146,9 +150,9 @@ public class PlayerStateService(Func<DateTime>? agora = null)
 
     /// <summary>Aviso curto pro controle (toast) e pra TV (uma linha): "Abertura pulada · voltar", "Pulo automático ligado · desligar"…
     /// A versão sobe a cada aviso pra o controle mostrar cada um uma vez só.</summary>
-    public void Avisar(string tipo, string texto, string? acao, int segundos = 10)
+    public void Avisar(string tipo, string texto, string? acao)
     {
-        lock (_lock) { _avisoVersao++; _avisoTipo = tipo; _avisoTexto = texto; _avisoAcao = acao; _avisoAte = _agora().AddSeconds(segundos); }
+        lock (_lock) { _avisoVersao++; _avisoTipo = tipo; _avisoTexto = texto; _avisoAcao = acao; }
     }
 
     /// <summary>A TV começou a contagem regressiva de "próximo episódio" — o celular passa a

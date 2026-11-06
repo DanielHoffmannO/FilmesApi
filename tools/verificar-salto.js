@@ -49,4 +49,33 @@ caso('contagem no fim: 5 s com o próximo automático ligado, 12 s (padrão) sem
   assert.strictEqual(contagem(null), 12);
 });
 
+
+// ─── A2: no 'ended' cancelado = sem oferta ───
+const noFim = (estado) => { ctx.e = estado; return vm.runInContext('contagemNoFim(e, 12)', ctx); };
+caso('fim do vídeo: cancelou o próximo automático neste episódio -> NÃO oferece (null), mesmo com a flag ligada', () => {
+  assert.strictEqual(noFim(est({ proximoCancelado: true, proximoContagem: 5 })), null);
+  assert.strictEqual(noFim(est({ proximoAutomatico: false, proximoCancelado: true })), null);
+});
+caso('fim do vídeo: sem cancelamento a contagem é a de sempre (5 s com o automático, 12 s sem)', () => {
+  assert.strictEqual(noFim(est({ proximoContagem: 5 })), 5);
+  assert.strictEqual(noFim(est({ proximoAutomatico: false })), 12);
+  assert.strictEqual(noFim(null), 12);   // 1º poll ainda não chegou: oferta padrão
+});
+
+// ─── A1/A6: reinício do servidor ───
+const reiniciou = (a, b) => { ctx.e = a; ctx.p = b; return vm.runInContext('servidorReiniciou(e, p)', ctx); };
+caso('servidor reiniciou (instancia mudou): a linha de base é descartada', () => {
+  assert.strictEqual(reiniciou({ instancia: 'b', seekAcumulado: 0 }, { instancia: 'a', seekAcumulado: 150 }), true);
+  assert.strictEqual(reiniciou({ instancia: 'b' }, { }), true);   // anterior de servidor antigo, sem o campo
+});
+caso('mesma instância ou sem base: reage normalmente', () => {
+  assert.strictEqual(reiniciou({ instancia: 'a', seekAcumulado: 180 }, { instancia: 'a', seekAcumulado: 150 }), false);
+  assert.strictEqual(reiniciou({ instancia: 'a' }, null), false);
+  assert.strictEqual(reiniciou(null, { instancia: 'a' }), false);
+});
+caso('A6 em números: sem o descarte o acumulado 0 contra 150 seria um recuo de 150 s', () => {
+  assert.strictEqual(0 - 150, -150);
+  assert.strictEqual(reiniciou({ instancia: 'b', seekAcumulado: 0, seekVersion: 1 }, { instancia: 'a', seekAcumulado: 150, seekVersion: 5 }), true);
+});
+
 console.log(`\n${n} casos ok`);

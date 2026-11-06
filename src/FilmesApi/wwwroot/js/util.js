@@ -198,6 +198,19 @@ function contagemDoProximo(estado, padrao) {
   return typeof estado.proximoContagem === 'number' && estado.proximoContagem > 0 ? estado.proximoContagem : padrao;
 }
 
+// No 'ended': a contagem (s) da oferta de próximo, ou null = NÃO oferecer. Se o Daniel cancelou o próximo automático neste episódio, a TV fica
+// parada no fim (como ficaria sem o automático) e não monta a oferta de novo; o cancelamento vale até o episódio mudar (o servidor zera no Selecionar).
+function contagemNoFim(estado, padrao) {
+  if (estado && estado.proximoCancelado) return null;
+  return contagemDoProximo(estado, padrao);
+}
+
+// O servidor reiniciou entre dois polls? (`instancia` muda a cada restart; os contadores dele voltam a zero.) Aí a linha de base não vale: a TV a descarta
+// e não reage a esse poll (uma diferença de seekAcumulado, por exemplo, viraria um recuo de minutos).
+function servidorReiniciou(estado, anterior) {
+  return !!(estado && anterior && estado.instancia !== anterior.instancia);
+}
+
 // ─── Nomes de idioma (controle.html): código cru do ffprobe -> rótulo em português ───
 
 var NOMES_IDIOMA = {

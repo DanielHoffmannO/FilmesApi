@@ -28,8 +28,7 @@ public class PlayerController : ControllerBase
     [HttpPost("selecionar/{filmeId:int}")]
     public async Task<IActionResult> Selecionar(int filmeId)
     {
-        _state.Selecionar(filmeId);
-        await _automacao.AtualizarContextoAsync(filmeId);   // abertura conhecida + interruptores da temporada vão no snapshot
+        await _automacao.SelecionarAsync(filmeId);   // seleciona e monta o contexto: abertura conhecida + interruptores da temporada vão no snapshot
         return Ok(_state.Snapshot());
     }
 

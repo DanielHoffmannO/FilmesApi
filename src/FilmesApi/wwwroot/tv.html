@@ -1066,7 +1066,8 @@ video { width: 100%; height: auto; background: #000; }
       var idFim = filmeAtual;
       send('POST', API + '/' + idFim + '/concluir');
       // temporada com o proximo automatico ligado (e nao cancelado): contagem curta e aviso no celular; senao, a de sempre
-      var contagem = contagemDoProximo(estadoRemotoAnterior, PROXIMO_COUNTDOWN_S);
+      var contagem = contagemNoFim(estadoRemotoAnterior, PROXIMO_COUNTDOWN_S);
+      if (contagem === null) return;   // o Daniel cancelou o próximo automático neste episódio: fica parada no fim, sem oferta
       if (contagem !== PROXIMO_COUNTDOWN_S && proximoAutoDe !== idFim) send('POST', PLAYER + '/proximo-auto');
       ofereceProximo(idFim, contagem);
     };
@@ -1109,6 +1110,7 @@ video { width: 100%; height: auto; background: #000; }
     var anterior = estadoRemotoAnterior;
     estadoRemotoAnterior = estado;
     if (!anterior) return;  // 1o poll: so guarda a base, nao reage a versao "zerada" do boot
+    if (servidorReiniciou(estado, anterior)) return;  // servidor reiniciou: os contadores zeraram; esta leitura e a nova base
 
     if (estado.pararVersion !== anterior.pararVersion && filmeAtual !== null) {
       fecharPlayer();

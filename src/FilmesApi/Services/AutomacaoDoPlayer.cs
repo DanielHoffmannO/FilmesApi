@@ -16,7 +16,20 @@ public class AutomacaoDoPlayer(IServiceScopeFactory escopos, PlayerStateService 
     public Task StartAsync(CancellationToken ct) { estado.RajadaConcluida += OnRajada; return Task.CompletedTask; }
     public Task StopAsync(CancellationToken ct) { estado.RajadaConcluida -= OnRajada; return Task.CompletedTask; }
 
+    /// <summary>Uma aprendizagem por vez: rajadas seguidas esperam a anterior (cada uma lê áudio do mesmo disco que a TV usa).</summary>
+    private readonly SemaphoreSlim _umPorVez = new(1, 1);
+
+    /// <summary>Quantos vizinhos de cada lado têm a impressão gerada na hora; os demais da temporada só entram como modelo se a impressão já estiver guardada.</summary>
+    internal const int RaioDeVizinhos = 2;
+
     private void OnRajada(RajadaDePulo r) => _ = Task.Run(() => AprenderAsync(r));
+
+    /// <summary>Escolhe o filme no player e já monta o contexto dele (abertura conhecida + interruptores da temporada). O único caminho pra "selecionar".</summary>
+    public async Task SelecionarAsync(int filmeId)
+    {
+        estado.Selecionar(filmeId);
+        await AtualizarContextoAsync(filmeId);
+    }
 
     /// <summary>Monta o contexto do episódio (abertura conhecida + interruptores da temporada) e entrega ao estado do player.</summary>
     public async Task AtualizarContextoAsync(int filmeId)
@@ -45,14 +58,10 @@ public class AutomacaoDoPlayer(IServiceScopeFactory escopos, PlayerStateService 
         using var escopo = escopos.CreateScope();
         var filme = await escopo.ServiceProvider.GetRequiredService<FilmeService>().ObterAsync(filmeId);
         if (filme is not { EhEpisodio: true, SerieChave: { } chave, Temporada: { } t }) return false;
-        var estavaLigado = temporadas.Da(chave, t).PularAbertura;
-        if (!estavaLigado)
-        {
-            temporadas.Definir(chave, t, pularAbertura: true, proximoAutomatico: null);
-            estado.Avisar("abertura", textoDoAviso ?? $"Pulo automático da abertura ligado na temporada {t}.", "desligar");
-        }
+        var ligou = temporadas.Ligar(chave, t, abertura: true);
+        if (ligou) estado.Avisar("abertura", textoDoAviso ?? $"Pulo automático da abertura ligado na temporada {t}.", "desligar");
         await AtualizarContextoAsync(filmeId);
-        return !estavaLigado;
+        return ligou;
     }
 
     /// <summary>Liga o próximo episódio automático da temporada do episódio em exibição (o Daniel apertou "próximo" no fim). Avisa uma vez.</summary>
@@ -61,8 +70,7 @@ public class AutomacaoDoPlayer(IServiceScopeFactory escopos, PlayerStateService 
         using var escopo = escopos.CreateScope();
         var filme = await escopo.ServiceProvider.GetRequiredService<FilmeService>().ObterAsync(filmeId);
         if (filme is not { EhEpisodio: true, SerieChave: { } chave, Temporada: { } t }) return false;
-        if (temporadas.Da(chave, t).ProximoAutomatico) return false;
-        temporadas.Definir(chave, t, pularAbertura: null, proximoAutomatico: true);
+        if (!temporadas.Ligar(chave, t, abertura: false)) return false;
         estado.Avisar("proximo", $"Próximo automático ligado na temporada {t}.", "desligar-proximo");
         return true;
     }
@@ -78,14 +86,15 @@ public class AutomacaoDoPlayer(IServiceScopeFactory escopos, PlayerStateService 
 
         var acabou = estado.JaAcabou(config.GetValue<double?>("ProximoRestanteSegundos") ?? ProximoManual.RestantePadraoSegundos);
         var aprendeu = acabou && await LigarProximoAutomaticoAsync(id);
-        estado.Selecionar(prox.Id);
-        await AtualizarContextoAsync(prox.Id);
+        await SelecionarAsync(prox.Id);
         return (prox.Id, aprendeu);
     }
 
     /// <summary>Uma rajada de avanços terminou: era a abertura? Nunca lança.</summary>
     internal async Task AprenderAsync(RajadaDePulo r, CancellationToken ct = default)
     {
+        try { await _umPorVez.WaitAsync(ct); }
+        catch (OperationCanceledException) { return; }
         try
         {
             using var escopo = escopos.CreateScope();
@@ -115,15 +124,18 @@ public class AutomacaoDoPlayer(IServiceScopeFactory escopos, PlayerStateService 
             var janela = await ImpressaoDeAudio.ObterAsync(ffmpeg.Ffmpeg, caminho, new ImpressaoDeAudio.Trecho(inicioJanela, duracaoJanela), ct);
             if (janela is null || janela.Length == 0) return;
 
-            // impressões dos vizinhos: as guardadas (ou geradas agora, uma vez só)
+            // impressões: dos vizinhos próximos (±RaioDeVizinhos) as guardadas ou geradas agora (ffmpeg em prioridade baixa); dos demais, só as
+            // que já estão guardadas — o resto da temporada o serviço de fundo completa quando o servidor está ocioso
+            var pos = eps.FindIndex(e => e.Id == r.FilmeId);
             var impressoes = new int[eps.Count][];
             for (var i = 0; i < eps.Count; i++)
             {
-                var cam = eps[i].Id == r.FilmeId ? null : await filmes.ResolverCaminhoAsync(eps[i].Id);
-                impressoes[i] = cam is null ? [] : (await ArmazemDeImpressoes.ObterAsync(db, ffmpeg, eps[i].Id, cam,
-                    ArmazemDeImpressoes.JanelaInicio, 0, ImpressaoDeAudio.Trecho.Inicio, ct)).Itens;
+                var cam = i == pos ? null : await filmes.ResolverCaminhoAsync(eps[i].Id);
+                impressoes[i] = cam is null ? []
+                    : Math.Abs(i - pos) <= RaioDeVizinhos
+                        ? (await ArmazemDeImpressoes.ObterAsync(db, ffmpeg, eps[i].Id, cam, ArmazemDeImpressoes.JanelaInicio, 0, ImpressaoDeAudio.Trecho.Inicio, ct)).Itens
+                        : await ArmazemDeImpressoes.SoGuardadaAsync(db, eps[i].Id, cam, ArmazemDeImpressoes.JanelaInicio, ct);
             }
-            var pos = eps.FindIndex(e => e.Id == r.FilmeId);
             var vizinhos = new[] { pos - 1, pos + 1, pos - 2, pos + 2 }.Where(j => j >= 0 && j < eps.Count).Select(j => impressoes[j]).ToList();
 
             var validado = AprendizadoDePulo.Validar(janela, inicioJanela, r, vizinhos, minimoPulo);
@@ -151,16 +163,17 @@ public class AutomacaoDoPlayer(IServiceScopeFactory escopos, PlayerStateService 
         {
             logger.LogWarning(ex, "Aprender com o pulo do filme {Id} falhou.", r.FilmeId);
         }
+        finally { _umPorVez.Release(); }
     }
 
     private static async Task<bool> GravarPuloAsync(AppDbContext db, int filmeId, double inicio, double fim)
     {
         var linha = await db.Aberturas.FindAsync(filmeId);
-        if (linha is not null && !OrigemAbertura.PodeSobrescrever(linha.Origem, OrigemAbertura.Pulo)) return false;
+        if (linha is not null && !OrigemMarca.PodeSobrescrever(linha.Origem, OrigemMarca.Pulo)) return false;
         if (linha is null) db.Aberturas.Add(linha = new AberturaEpisodio { FilmeId = filmeId });
         linha.InicioSegundos = Math.Round(inicio, 1);
         linha.FimSegundos = Math.Round(fim, 1);
-        linha.Origem = OrigemAbertura.Pulo;
+        linha.Origem = OrigemMarca.Pulo;
         linha.Versao = AnaliseDeAberturaService.VersaoAlgoritmo;
         linha.AnalisadoEm = DateTime.UtcNow;
         await db.SaveChangesAsync();

@@ -236,7 +236,7 @@ public class AutomacaoDoPlayerTests : IDisposable
 
         var l = await Linhas(f);
         Assert.Equal(4, l.Count);
-        Assert.All(l.Values, x => Assert.Equal(OrigemAbertura.Pulo, x.Origem));
+        Assert.All(l.Values, x => Assert.Equal(OrigemMarca.Pulo, x.Origem));
         Assert.InRange(l[id].InicioSegundos!.Value, 594, 603);   // as bordas têm ~±3 s (o critério folgado estende um pouco)
         for (var i = 0; i < Eps.Length; i++)
             if (i != 2) Assert.InRange(l[await f.IdDeAsync(Eps[i])].InicioSegundos!.Value, inicios[i] - 6, inicios[i] + 1);
@@ -246,6 +246,96 @@ public class AutomacaoDoPlayerTests : IDisposable
         Assert.Equal("abertura", s.aviso.tipo);
         Assert.Equal("desligar", s.aviso.acao);
         Assert.Contains("temporada 4", (string)s.aviso.texto);
+    }
+
+    [Fact]
+    public async Task So_os_vizinhos_ate_2_de_distancia_tem_a_impressao_gerada_na_hora()
+    {
+        string[] seis = [.. Eps, "Futurama/Futurama.S04E31.mkv", "Futurama/Futurama.S04E32.mkv"];
+        var (f, a, estado, _) = await Cenario(seis);
+        var abertura = Aleatorio(Itens(40), 1);
+        Gravar(Path.Combine(f.Media, seis[0]), Aleatorio(Itens(10), 2).Concat(abertura).Concat(Aleatorio(Itens(60), 3)).ToArray());   // janela do pulado (E27)
+        for (var i = 1; i < seis.Length; i++) Gravar(Path.Combine(f.Media, seis[i]), Aleatorio(Itens(100), 10 + i).Concat(abertura).Concat(Aleatorio(Itens(300), 20 + i)).ToArray());
+        var id0 = await f.IdDeAsync(seis[0]);
+        estado.Selecionar(id0);
+
+        await a.AprenderAsync(new RajadaDePulo(id0, 5, 55));
+
+        var l = await Linhas(f);
+        Assert.Equal(new[] { id0, await f.IdDeAsync(seis[1]), await f.IdDeAsync(seis[2]) }.Order(), l.Keys.Order());   // E27 + ±2; o resto fica pro serviço de fundo
+        var geradas = await f.NoEscopoAsync(sp => sp.GetRequiredService<AppDbContext>().Impressoes.AsNoTracking().Select(x => x.FilmeId).ToListAsync());
+        Assert.DoesNotContain(await f.IdDeAsync(seis[3]), geradas);
+        Assert.DoesNotContain(await f.IdDeAsync(seis[5]), geradas);
+        dynamic s = estado.Snapshot();
+        Assert.Contains("aprendida", (string)s.aviso.texto);   // o toast "Abertura aprendida" continua saindo
+    }
+
+    [Fact]
+    public async Task Impressao_ja_guardada_de_episodio_distante_ainda_serve_de_modelo()
+    {
+        string[] seis = [.. Eps, "Futurama/Futurama.S04E31.mkv", "Futurama/Futurama.S04E32.mkv"];
+        var (f, a, estado, _) = await Cenario(seis);
+        var abertura = Aleatorio(Itens(40), 1);
+        Gravar(Path.Combine(f.Media, seis[0]), Aleatorio(Itens(10), 2).Concat(abertura).Concat(Aleatorio(Itens(60), 3)).ToArray());
+        for (var i = 1; i < seis.Length; i++) Gravar(Path.Combine(f.Media, seis[i]), Aleatorio(Itens(100), 10 + i).Concat(abertura).Concat(Aleatorio(Itens(300), 20 + i)).ToArray());
+        var idLonge = await f.IdDeAsync(seis[5]);
+        await f.NoEscopoAsync(async sp =>   // o serviço de fundo já tinha guardado a impressão dele
+        {
+            var db = sp.GetRequiredService<AppDbContext>();
+            await ArmazemDeImpressoes.ObterAsync(db, sp.GetRequiredService<FfmpegOptions>(), idLonge, Path.Combine(f.Media, seis[5]),
+                ArmazemDeImpressoes.JanelaInicio, 0, ImpressaoDeAudio.Trecho.Inicio, CancellationToken.None);
+            return 0;
+        });
+        var id0 = await f.IdDeAsync(seis[0]);
+        estado.Selecionar(id0);
+
+        await a.AprenderAsync(new RajadaDePulo(id0, 5, 55));
+
+        Assert.True((await Linhas(f)).ContainsKey(idLonge));
+    }
+
+    [Fact]
+    public async Task Duas_rajadas_seguidas_nao_rodam_ao_mesmo_tempo()
+    {
+        var log = Path.Combine(_bin, "ffmpeg.log");
+        var ffmpeg = TestesComuns.ScriptFalso(_bin, "ffmpeg-lento.sh",
+            $"while [ $# -gt 0 ]; do [ \"$1\" = \"-i\" ] && arq=\"$2\"; shift; done\n[ -f \"$arq.fp\" ] || exit 1\necho ini >> \"{log}\"\nsleep 0.15\ncat \"$arq.fp\"\necho fim >> \"{log}\"");
+        var f = new ScanFixture(ffmpeg: ffmpeg);
+        _fixtures.Add(f);
+        foreach (var e in Eps) f.Arquivo(e, new string('x', 2048));
+        await f.ScanAsync();
+        var abertura = Aleatorio(Itens(40), 1);
+        Gravar(Path.Combine(f.Media, Eps[1]), Aleatorio(Itens(10), 2).Concat(abertura).Concat(Aleatorio(Itens(60), 3)).ToArray());
+        foreach (var i in new[] { 0, 2, 3 }) Gravar(Path.Combine(f.Media, Eps[i]), Aleatorio(Itens(100), 10 + i).Concat(abertura).Concat(Aleatorio(Itens(300), 20 + i)).ToArray());
+        var a = new AutomacaoDoPlayer(f.Escopos, new PlayerStateService(), new PreferenciasTemporadaService(f.Escopos), f.Servico<FfmpegOptions>(),
+            new ConfigurationBuilder().Build(), NullLogger<AutomacaoDoPlayer>.Instance);
+        var id = await f.IdDeAsync(Eps[1]);
+
+        await Task.WhenAll(a.AprenderAsync(new RajadaDePulo(id, 5, 55)), a.AprenderAsync(new RajadaDePulo(id, 5, 55)));
+
+        var linhas = await File.ReadAllLinesAsync(log);
+        Assert.NotEmpty(linhas);
+        for (var i = 0; i < linhas.Length; i++) Assert.Equal(i % 2 == 0 ? "ini" : "fim", linhas[i]);   // nunca dois ffmpeg em paralelo
+    }
+
+    [Fact]
+    public async Task Ligar_o_pulo_automatico_concorrente_gera_um_unico_aviso()
+    {
+        var (f, a, estado, temp) = await Cenario(Eps);
+        var id = await f.IdDeAsync(Eps[1]);
+
+        // o "ligar" em si (leitura + gravação sob a trava do serviço): 8 threads, uma só ganha
+        var ganhou = Enumerable.Range(0, 8).AsParallel().WithDegreeOfParallelism(8).Select(_ => temp.Ligar("futurama", 4, abertura: true)).ToList();
+        Assert.Single(ganhou, true);
+        Assert.True(temp.Da("futurama", 4).PularAbertura);
+        Assert.False(temp.Da("futurama", 4).ProximoAutomatico);   // ligar um não mexe no outro
+
+        // e quem usa o resultado (aviso) só avisa se foi ele quem ligou
+        Assert.True(await a.LigarPuloAutomaticoAsync(id) == false);
+        Assert.Null(((dynamic)estado.Snapshot()).aviso);
+        Assert.True(await a.LigarProximoAutomaticoAsync(id));
+        Assert.False(await a.LigarProximoAutomaticoAsync(id));
+        Assert.Equal(1, ((dynamic)estado.Snapshot()).aviso.versao);
     }
 
     [Fact]
@@ -282,7 +372,7 @@ public class AutomacaoDoPlayerTests : IDisposable
         await f.NoEscopoAsync(async sp =>
         {
             var db = sp.GetRequiredService<AppDbContext>();
-            db.Aberturas.Add(new AberturaEpisodio { FilmeId = id, InicioSegundos = 100, FimSegundos = 190, Origem = OrigemAbertura.Capitulo, Versao = 2 });
+            db.Aberturas.Add(new AberturaEpisodio { FilmeId = id, InicioSegundos = 100, FimSegundos = 190, Origem = OrigemMarca.Capitulo, Versao = 2 });
             await db.SaveChangesAsync();
             return 0;
         });
@@ -291,7 +381,7 @@ public class AutomacaoDoPlayerTests : IDisposable
         await a.AprenderAsync(new RajadaDePulo(id, 95, 200));
 
         Assert.True(temp.Da("futurama", 4).PularAbertura);
-        Assert.Equal(OrigemAbertura.Capitulo, (await Linhas(f))[id].Origem);   // não virou 'pulo' (nada foi reanalisado)
+        Assert.Equal(OrigemMarca.Capitulo, (await Linhas(f))[id].Origem);   // não virou 'pulo' (nada foi reanalisado)
         dynamic s = estado.Snapshot();
         Assert.Contains("confirmada", (string)s.aviso.texto);
     }
@@ -307,7 +397,7 @@ public class AutomacaoDoPlayerTests : IDisposable
         await f.NoEscopoAsync(async sp =>
         {
             var db = sp.GetRequiredService<AppDbContext>();
-            db.Aberturas.Add(new AberturaEpisodio { FilmeId = id1, InicioSegundos = 1, FimSegundos = 3, Origem = OrigemAbertura.Capitulo, Versao = 2 });
+            db.Aberturas.Add(new AberturaEpisodio { FilmeId = id1, InicioSegundos = 1, FimSegundos = 3, Origem = OrigemMarca.Capitulo, Versao = 2 });
             await db.SaveChangesAsync();
             return 0;
         });
@@ -317,7 +407,7 @@ public class AutomacaoDoPlayerTests : IDisposable
         await a.AprenderAsync(new RajadaDePulo(id0, 5, 55));
 
         var linha = (await Linhas(f))[id1];
-        Assert.Equal(OrigemAbertura.Pulo, linha.Origem);
+        Assert.Equal(OrigemMarca.Pulo, linha.Origem);
         Assert.InRange(linha.InicioSegundos!.Value, 94, 101);
     }
 }

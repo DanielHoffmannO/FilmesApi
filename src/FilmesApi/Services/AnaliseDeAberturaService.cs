@@ -73,16 +73,14 @@ public class AnaliseDeAberturaService(IServiceScopeFactory escopos, FfmpegOption
 
     /// <summary>Esse episódio entra na análise? Sem linha; ou linha 'auto' de versão antiga; ou "não achou" antes de chegar episódio novo na
     /// temporada. Linha 'capitulo' ou 'pulo' nunca é refeita.</summary>
-    internal static bool PrecisaAnalisar(AberturaEpisodio? linha, IEnumerable<FilmeResponse> temporada) =>
-        linha is null
-        || (linha.Origem == OrigemAbertura.Auto
-            && (linha.Versao < VersaoAlgoritmo
-                || (linha.InicioSegundos is null && temporada.Any(o => o.DataAdicionado > linha.AnalisadoEm))));
+    internal static bool PrecisaAnalisar(AberturaEpisodio? linha, IEnumerable<FilmeResponse> temporada) => Desatualizada(linha, temporada);
 
     /// <summary>Mesma regra pros créditos.</summary>
-    internal static bool PrecisaAnalisarCreditos(CreditosEpisodio? linha, IEnumerable<FilmeResponse> temporada) =>
+    internal static bool PrecisaAnalisarCreditos(CreditosEpisodio? linha, IEnumerable<FilmeResponse> temporada) => Desatualizada(linha, temporada);
+
+    private static bool Desatualizada(IMarcacao? linha, IEnumerable<FilmeResponse> temporada) =>
         linha is null
-        || (linha.Origem == OrigemAbertura.Auto
+        || (linha.Origem == OrigemMarca.Auto
             && (linha.Versao < VersaoAlgoritmo
                 || (linha.InicioSegundos is null && temporada.Any(o => o.DataAdicionado > linha.AnalisadoEm))));
 
@@ -109,12 +107,12 @@ public class AnaliseDeAberturaService(IServiceScopeFactory escopos, FfmpegOption
         if (config.GetValue<bool?>("AberturaUsarCapitulos") ?? true)
         {
             var probe = sp.GetService<MediaProbeService>();
-            foreach (var i in restantes.ToList())
+            foreach (var i in probe is null ? [] : restantes.ToList())
             {
-                if (probe is null || caminhos[i] is null) break;
+                if (caminhos[i] is null) continue;   // um episódio sem arquivo não impede os seguintes de usar o capítulo
                 var info = await ProbeSeguroAsync(probe, caminhos[i]!, ct);
                 if (CapituloDeAbertura.Abertura(info?.Capitulos) is not var (ini, fimCap)) continue;
-                feitos += await GravarAsync(db, eps[i].Id, Math.Round(ini, 1), Math.Round(fimCap, 1), OrigemAbertura.Capitulo);
+                feitos += await GravarAsync(db, eps[i].Id, Math.Round(ini, 1), Math.Round(fimCap, 1), OrigemMarca.Capitulo);
                 restantes.Remove(i);
             }
         }
@@ -132,7 +130,7 @@ public class AnaliseDeAberturaService(IServiceScopeFactory escopos, FfmpegOption
                 if (impressoes[i].Length == 0) continue;   // sem áudio/ffmpeg falhou: tenta de novo na próxima rodada
                 var achado = MelhorTrecho(i, impressoes, minimo);
                 feitos += await GravarAsync(db, eps[i].Id, achado is null ? null : Math.Round(achado.InicioA, 1),
-                    achado is null ? null : Math.Round(achado.FimA, 1), OrigemAbertura.Auto);
+                    achado is null ? null : Math.Round(achado.FimA, 1), OrigemMarca.Auto);
             }
         }
 
@@ -161,7 +159,7 @@ public class AnaliseDeAberturaService(IServiceScopeFactory escopos, FfmpegOption
             foreach (var i in restantes.ToList())
                 if (CapituloDeAbertura.InicioDosCreditos(infos[i]?.Capitulos) is double inicio)
                 {
-                    feitos += await GravarCreditosAsync(db, eps[i].Id, Math.Round(inicio, 1), OrigemAbertura.Capitulo);
+                    feitos += await GravarCreditosAsync(db, eps[i].Id, Math.Round(inicio, 1), OrigemMarca.Capitulo);
                     restantes.Remove(i);
                 }
         if (restantes.Count == 0) return feitos;
@@ -183,7 +181,7 @@ public class AnaliseDeAberturaService(IServiceScopeFactory escopos, FfmpegOption
             var t = MelhorTrecho(i, impressoes, minimo);
             var abs = t is null ? (double?)null : inicios[i] + t.InicioA;
             if (abs is double a && a < infos[i]!.DuracaoSegundos!.Value * 0.5) abs = null;   // "créditos" no meio do episódio é coincidência
-            feitos += await GravarCreditosAsync(db, eps[i].Id, abs is null ? null : Math.Round(abs.Value, 1), OrigemAbertura.Auto);
+            feitos += await GravarCreditosAsync(db, eps[i].Id, abs is null ? null : Math.Round(abs.Value, 1), OrigemMarca.Auto);
         }
         return feitos;
     }
@@ -191,7 +189,7 @@ public class AnaliseDeAberturaService(IServiceScopeFactory escopos, FfmpegOption
     private static async Task<int> GravarCreditosAsync(AppDbContext db, int filmeId, double? inicio, string origem)
     {
         var linha = await db.Creditos.FindAsync(filmeId);
-        if (linha is not null && !OrigemAbertura.PodeSobrescrever(linha.Origem, origem)) return 0;
+        if (linha is not null && !OrigemMarca.PodeSobrescrever(linha.Origem, origem)) return 0;
         if (linha is null) db.Creditos.Add(linha = new CreditosEpisodio { FilmeId = filmeId });
         if (inicio is not null || linha.InicioSegundos is null)
         {
@@ -229,7 +227,7 @@ public class AnaliseDeAberturaService(IServiceScopeFactory escopos, FfmpegOption
     private static async Task<int> GravarAsync(AppDbContext db, int filmeId, double? inicio, double? fim, string origem)
     {
         var linha = await db.Aberturas.FindAsync(filmeId);
-        if (linha is not null && !OrigemAbertura.PodeSobrescrever(linha.Origem, origem)) return 0;
+        if (linha is not null && !OrigemMarca.PodeSobrescrever(linha.Origem, origem)) return 0;
         if (linha is null) db.Aberturas.Add(linha = new AberturaEpisodio { FilmeId = filmeId });
         if (inicio is not null || linha.InicioSegundos is null)   // resultado novo, ou nada a perder
         {

@@ -2,7 +2,7 @@ namespace FilmesApi.Models;
 
 /// <summary>Onde fica a abertura de um episódio (achada por <see cref="Services.AnaliseDeAberturaService"/>). Uma linha por
 /// episódio já analisado; <see cref="InicioSegundos"/>/<see cref="FimSegundos"/> nulos = analisou e não achou nada.</summary>
-public class AberturaEpisodio
+public class AberturaEpisodio : IMarcacao
 {
     public int FilmeId { get; set; }
     public Filme? Filme { get; set; }
@@ -16,22 +16,33 @@ public class AberturaEpisodio
 
     /// <summary>De onde veio: <c>auto</c> (comparação de áudio), <c>capitulo</c> (capítulo "Opening" do arquivo) ou <c>pulo</c> (o Daniel pulou ali).
     /// Precedência pulo &gt; capitulo &gt; auto: uma origem mais fraca nunca sobrescreve uma mais forte.</summary>
-    public string Origem { get; set; } = OrigemAbertura.Auto;
+    public string Origem { get; set; } = OrigemMarca.Auto;
 }
 
 /// <summary>Onde começam os créditos do episódio (o fim é o fim do arquivo). Mesma lógica de versão/origem de <see cref="AberturaEpisodio"/>;
 /// <see cref="InicioSegundos"/> nulo = analisou e não achou.</summary>
-public class CreditosEpisodio
+public class CreditosEpisodio : IMarcacao
 {
     public int FilmeId { get; set; }
     public Filme? Filme { get; set; }
     public double? InicioSegundos { get; set; }
     public DateTime AnalisadoEm { get; set; } = DateTime.UtcNow;
     public int Versao { get; set; } = 1;
-    public string Origem { get; set; } = OrigemAbertura.Auto;
+    public string Origem { get; set; } = OrigemMarca.Auto;
 }
 
-public static class OrigemAbertura
+/// <summary>O que a abertura e os créditos têm em comum: de onde veio a marcação, que versão do algoritmo a fez e quando. Base de
+/// <see cref="Services.AnaliseDeAberturaService.PrecisaAnalisar"/>.</summary>
+public interface IMarcacao
+{
+    double? InicioSegundos { get; }
+    DateTime AnalisadoEm { get; }
+    int Versao { get; }
+    string Origem { get; }
+}
+
+/// <summary>De onde veio uma marcação (abertura ou créditos): <c>auto</c>, <c>capitulo</c> ou <c>pulo</c> — os valores gravados no banco.</summary>
+public static class OrigemMarca
 {
     public const string Auto = "auto", Capitulo = "capitulo", Pulo = "pulo";
 

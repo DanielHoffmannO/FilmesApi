@@ -89,6 +89,25 @@ public class AnaliseDeAberturaTests : IDisposable
     private const string Opening2s = "{\"start_time\":\"10.0\",\"end_time\":\"12.3\",\"tags\":{\"title\":\"Opening\"}}";
 
     [Fact]
+    public async Task Episodio_sem_arquivo_nao_impede_os_seguintes_de_usar_o_capitulo()
+    {
+        string[] eps = [.. Eps, "Hora de Aventura/Hora.de.Aventura.S01E04.mkv"];
+        var (f, servico, _) = await CenarioComProbe(FfprobeComCapitulos(Opening2a90), eps);
+        var id3 = await f.IdDeAsync(eps[2]);
+        File.Delete(Path.Combine(f.Media, eps[2]));   // o 3º some do disco depois do scan: ResolverCaminho devolve null
+        var abertura = Aleatorio(Itens(60), 1);
+        foreach (var e in new[] { eps[0], eps[1], eps[3] }) GravarImpressao(Path.Combine(f.Media, e), ComAbertura(abertura, 20, 10));
+
+        await servico.ExecutarUmaVezAsync();
+
+        var linhas = (await Linhas(f)).ToDictionary(a => a.FilmeId);
+        var id4 = await f.IdDeAsync(eps[3]);
+        Assert.False(linhas.ContainsKey(id3));
+        Assert.Equal(OrigemMarca.Capitulo, linhas[id4].Origem);   // antes: o `break` no 3º episódio deixava o 4º pra comparação de áudio
+        Assert.Equal((2.0, 90.0), (linhas[id4].InicioSegundos, linhas[id4].FimSegundos));
+    }
+
+    [Fact]
     public async Task Capitulo_Opening_do_arquivo_vence_a_comparacao_de_audio_e_o_audio_nao_sobrescreve()
     {
         var (f, servico, _) = await CenarioComProbe(FfprobeComCapitulos(Opening2a90), Eps);
@@ -97,7 +116,7 @@ public class AnaliseDeAberturaTests : IDisposable
 
         Assert.Equal(3, await servico.ExecutarUmaVezAsync());
         var linhas = await Linhas(f);
-        Assert.All(linhas, a => Assert.Equal((OrigemAbertura.Capitulo, 2.0, 90.0, AnaliseDeAberturaService.VersaoAlgoritmo), (a.Origem, a.InicioSegundos, a.FimSegundos, a.Versao)));
+        Assert.All(linhas, a => Assert.Equal((OrigemMarca.Capitulo, 2.0, 90.0, AnaliseDeAberturaService.VersaoAlgoritmo), (a.Origem, a.InicioSegundos, a.FimSegundos, a.Versao)));
         Assert.Equal(0, await servico.ExecutarUmaVezAsync());   // 'capitulo' nunca é refeita
     }
 
@@ -109,7 +128,7 @@ public class AnaliseDeAberturaTests : IDisposable
         for (var i = 0; i < Eps.Length; i++) GravarImpressao(Path.Combine(f.Media, Eps[i]), ComAbertura(abertura, 20 + i * 5, 10 + i));
 
         await servico.ExecutarUmaVezAsync();
-        Assert.All(await Linhas(f), a => Assert.Equal(OrigemAbertura.Auto, a.Origem));
+        Assert.All(await Linhas(f), a => Assert.Equal(OrigemMarca.Auto, a.Origem));
     }
 
     [Fact]
@@ -124,7 +143,7 @@ public class AnaliseDeAberturaTests : IDisposable
         await f.NoEscopoAsync(async sp =>
         {
             var db = sp.GetRequiredService<AppDbContext>();
-            var a0 = await db.Aberturas.FindAsync(ids[0]); a0!.Origem = OrigemAbertura.Pulo; a0.InicioSegundos = 1; a0.FimSegundos = 2; a0.Versao = 1;
+            var a0 = await db.Aberturas.FindAsync(ids[0]); a0!.Origem = OrigemMarca.Pulo; a0.InicioSegundos = 1; a0.FimSegundos = 2; a0.Versao = 1;
             var a1 = await db.Aberturas.FindAsync(ids[1]); a1!.Versao = 1; a1.InicioSegundos = 5; a1.FimSegundos = 6;   // marcação de um algoritmo antigo
             var a2 = await db.Aberturas.FindAsync(ids[2]); a2!.Versao = 1;
             await db.SaveChangesAsync();
@@ -135,7 +154,7 @@ public class AnaliseDeAberturaTests : IDisposable
         Assert.Equal(2, await servico.ExecutarUmaVezAsync());   // as duas 'auto'; a 'pulo' não conta nem muda
 
         var l = (await Linhas(f)).ToDictionary(a => a.FilmeId);
-        Assert.Equal((OrigemAbertura.Pulo, 1.0, 2.0), (l[ids[0]].Origem, l[ids[0]].InicioSegundos, l[ids[0]].FimSegundos));
+        Assert.Equal((OrigemMarca.Pulo, 1.0, 2.0), (l[ids[0]].Origem, l[ids[0]].InicioSegundos, l[ids[0]].FimSegundos));
         Assert.NotEqual(5.0, l[ids[1]].InicioSegundos);   // resultado novo trocou a marcação antiga
         Assert.Equal(AnaliseDeAberturaService.VersaoAlgoritmo, l[ids[1]].Versao);
     }
@@ -181,7 +200,7 @@ public class AnaliseDeAberturaTests : IDisposable
     [InlineData("capitulo", "auto", false)] [InlineData("capitulo", "capitulo", true)] [InlineData("capitulo", "pulo", true)]
     [InlineData("pulo", "auto", false)] [InlineData("pulo", "capitulo", false)] [InlineData("pulo", "pulo", true)]
     public void Precedencia_das_origens(string atual, string nova, bool pode) =>
-        Assert.Equal(pode, OrigemAbertura.PodeSobrescrever(atual, nova));
+        Assert.Equal(pode, OrigemMarca.PodeSobrescrever(atual, nova));
 
     [Fact]
     public void Precisa_analisar_so_sem_linha_ou_auto_antiga_ou_nao_achou_com_episodio_novo()
