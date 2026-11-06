@@ -173,6 +173,16 @@ function cliqueTemporada(hd) {
   aplicarSanfona();
 }
 
+// ─── Salto automático da abertura (a TV executa; a decisão é pura e fica aqui pra testar) ───
+
+// `abertura` = estado.abertura do /api/player/state ({ inicio, fim, pular, pulada }) ou null. `jaPulouNestaReproducao`: a TV já saltou (ou o
+// Daniel já pulou pelo botão) neste episódio. Devolve a posição de destino (fim da abertura) ou null. Uma vez só por reprodução: se ele voltar
+// pra dentro da abertura depois, não repete. Retomar um episódio no meio da abertura também salta.
+function decidirSaltoAbertura(abertura, pos, jaPulouNestaReproducao) {
+  if (!abertura || !abertura.pular || abertura.pulada || jaPulouNestaReproducao) return null;
+  return pos >= abertura.inicio - 1 && pos < abertura.fim ? abertura.fim : null;
+}
+
 // ─── Áudio padrão por série (index.html e controle.html; a TV só obedece o servidor) ───
 
 // { chave: idioma } das séries com idioma definido; {} se o servidor não responder.
