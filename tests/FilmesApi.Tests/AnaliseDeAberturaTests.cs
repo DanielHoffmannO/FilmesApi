@@ -32,9 +32,15 @@ public class AnaliseDeAberturaTests : IDisposable
     private static void GravarImpressao(string arquivo, int[] itens) =>
         File.WriteAllBytes(arquivo + ".fp", itens.SelectMany(BitConverter.GetBytes).ToArray());
 
-    private async Task<(ScanFixture F, AnaliseDeAberturaService Servico, RegistroDeTarefas Tarefas)> Cenario(params string[] episodios)
+    private string FfprobeComCapitulos(string capitulosJson) => TestesComuns.ScriptFalso(_bin, "ffprobe-cap.sh",
+        "echo '{\"streams\":[],\"format\":{\"duration\":\"1300.0\"},\"chapters\":[" + capitulosJson + "]}'");
+
+    private Task<(ScanFixture F, AnaliseDeAberturaService Servico, RegistroDeTarefas Tarefas)> Cenario(params string[] episodios) =>
+        CenarioComProbe(null, episodios);
+
+    private async Task<(ScanFixture F, AnaliseDeAberturaService Servico, RegistroDeTarefas Tarefas)> CenarioComProbe(string? ffprobe, params string[] episodios)
     {
-        var f = new ScanFixture(ffmpeg: FfmpegDasImpressoes());
+        var f = new ScanFixture(ffmpeg: FfmpegDasImpressoes(), ffprobe: ffprobe);
         _fixtures.Add(f);
         foreach (var e in episodios) f.Arquivo(e, new string('x', 2048));
         await f.ScanAsync();
@@ -74,6 +80,160 @@ public class AnaliseDeAberturaTests : IDisposable
         var (ini, fim) = (await f.NoEscopoAsync(async sp => await sp.GetRequiredService<FilmeService>().ObterAberturaAsync(id)))!.Value;
         Assert.InRange(ini, 29.5, 30.5);
         Assert.InRange(fim, 89, 91);
+    }
+
+    private static int[] ComAbertura(int[] abertura, int antes, int semente) =>
+        Aleatorio(Itens(antes), semente).Concat(abertura).Concat(Aleatorio(Itens(200), semente + 100)).ToArray();
+
+    private const string Opening2a90 = "{\"start_time\":\"2.0\",\"end_time\":\"90.0\",\"tags\":{\"title\":\"Opening\"}}";
+    private const string Opening2s = "{\"start_time\":\"10.0\",\"end_time\":\"12.3\",\"tags\":{\"title\":\"Opening\"}}";
+
+    [Fact]
+    public async Task Capitulo_Opening_do_arquivo_vence_a_comparacao_de_audio_e_o_audio_nao_sobrescreve()
+    {
+        var (f, servico, _) = await CenarioComProbe(FfprobeComCapitulos(Opening2a90), Eps);
+        var abertura = Aleatorio(Itens(60), 1);
+        for (var i = 0; i < Eps.Length; i++) GravarImpressao(Path.Combine(f.Media, Eps[i]), ComAbertura(abertura, 20 + i * 5, 10 + i));
+
+        Assert.Equal(3, await servico.ExecutarUmaVezAsync());
+        var linhas = await Linhas(f);
+        Assert.All(linhas, a => Assert.Equal((OrigemAbertura.Capitulo, 2.0, 90.0, AnaliseDeAberturaService.VersaoAlgoritmo), (a.Origem, a.InicioSegundos, a.FimSegundos, a.Versao)));
+        Assert.Equal(0, await servico.ExecutarUmaVezAsync());   // 'capitulo' nunca é refeita
+    }
+
+    [Fact]
+    public async Task Opening_de_2_segundos_nao_e_abertura_e_cai_na_comparacao_de_audio()
+    {
+        var (f, servico, _) = await CenarioComProbe(FfprobeComCapitulos(Opening2s), Eps);
+        var abertura = Aleatorio(Itens(40), 1);
+        for (var i = 0; i < Eps.Length; i++) GravarImpressao(Path.Combine(f.Media, Eps[i]), ComAbertura(abertura, 20 + i * 5, 10 + i));
+
+        await servico.ExecutarUmaVezAsync();
+        Assert.All(await Linhas(f), a => Assert.Equal(OrigemAbertura.Auto, a.Origem));
+    }
+
+    [Fact]
+    public async Task Linha_pulo_fica_intacta_e_linha_auto_antiga_e_reanalisada_sem_ler_o_disco()
+    {
+        var (f, servico, _) = await CenarioComProbe(null, Eps);
+        var abertura = Aleatorio(Itens(60), 1);
+        for (var i = 0; i < Eps.Length; i++) GravarImpressao(Path.Combine(f.Media, Eps[i]), ComAbertura(abertura, 20 + i * 5, 10 + i));
+        await servico.ExecutarUmaVezAsync();   // gera e guarda as impressões
+
+        var ids = new[] { await f.IdDeAsync(Eps[0]), await f.IdDeAsync(Eps[1]), await f.IdDeAsync(Eps[2]) };
+        await f.NoEscopoAsync(async sp =>
+        {
+            var db = sp.GetRequiredService<AppDbContext>();
+            var a0 = await db.Aberturas.FindAsync(ids[0]); a0!.Origem = OrigemAbertura.Pulo; a0.InicioSegundos = 1; a0.FimSegundos = 2; a0.Versao = 1;
+            var a1 = await db.Aberturas.FindAsync(ids[1]); a1!.Versao = 1; a1.InicioSegundos = 5; a1.FimSegundos = 6;   // marcação de um algoritmo antigo
+            var a2 = await db.Aberturas.FindAsync(ids[2]); a2!.Versao = 1;
+            await db.SaveChangesAsync();
+            return 0;
+        });
+        foreach (var e in Eps) File.Delete(Path.Combine(f.Media, e) + ".fp");   // o ffmpeg falso passa a falhar: só as impressões guardadas servem
+
+        Assert.Equal(2, await servico.ExecutarUmaVezAsync());   // as duas 'auto'; a 'pulo' não conta nem muda
+
+        var l = (await Linhas(f)).ToDictionary(a => a.FilmeId);
+        Assert.Equal((OrigemAbertura.Pulo, 1.0, 2.0), (l[ids[0]].Origem, l[ids[0]].InicioSegundos, l[ids[0]].FimSegundos));
+        Assert.NotEqual(5.0, l[ids[1]].InicioSegundos);   // resultado novo trocou a marcação antiga
+        Assert.Equal(AnaliseDeAberturaService.VersaoAlgoritmo, l[ids[1]].Versao);
+    }
+
+    [Fact]
+    public async Task Reanalise_que_nao_acha_nada_nao_apaga_a_marcacao_antiga_mas_marca_a_versao()
+    {
+        var (f, servico, _) = await CenarioComProbe(null, Eps);
+        for (var i = 0; i < Eps.Length; i++) GravarImpressao(Path.Combine(f.Media, Eps[i]), Aleatorio(Itens(300), i));   // nada em comum
+        await servico.ExecutarUmaVezAsync();
+        var id = await f.IdDeAsync(Eps[1]);
+        await f.NoEscopoAsync(async sp =>
+        {
+            var db = sp.GetRequiredService<AppDbContext>();
+            var a = await db.Aberturas.FindAsync(id); a!.Versao = 1; a.InicioSegundos = 5; a.FimSegundos = 50;
+            await db.SaveChangesAsync();
+            return 0;
+        });
+
+        await servico.ExecutarUmaVezAsync();
+
+        var depois = (await Linhas(f)).Single(a => a.FilmeId == id);
+        Assert.Equal((5.0, 50.0, AnaliseDeAberturaService.VersaoAlgoritmo), (depois.InicioSegundos, depois.FimSegundos, depois.Versao));
+    }
+
+    [Fact]
+    public void Vizinhos_mais_2_so_quando_mais_1_nao_achou()
+    {
+        var abertura = Aleatorio(Itens(40), 1);
+        var comAbertura = ComAbertura(abertura, 20, 10);
+        var outra = ComAbertura(abertura, 35, 11);
+        var semAbertura = Aleatorio(Itens(300), 5);
+
+        var t = AnaliseDeAberturaService.MelhorTrecho(0, [comAbertura, semAbertura, outra], 10);   // +1 não tem; +2 tem
+        Assert.NotNull(t);
+        Assert.InRange(t!.InicioB, 34, 36);
+
+        Assert.Null(AnaliseDeAberturaService.MelhorTrecho(0, [comAbertura, semAbertura, Aleatorio(Itens(300), 6)], 10));
+    }
+
+    [Theory]
+    [InlineData("auto", "auto", true)] [InlineData("auto", "capitulo", true)] [InlineData("auto", "pulo", true)]
+    [InlineData("capitulo", "auto", false)] [InlineData("capitulo", "capitulo", true)] [InlineData("capitulo", "pulo", true)]
+    [InlineData("pulo", "auto", false)] [InlineData("pulo", "capitulo", false)] [InlineData("pulo", "pulo", true)]
+    public void Precedencia_das_origens(string atual, string nova, bool pode) =>
+        Assert.Equal(pode, OrigemAbertura.PodeSobrescrever(atual, nova));
+
+    [Fact]
+    public void Precisa_analisar_so_sem_linha_ou_auto_antiga_ou_nao_achou_com_episodio_novo()
+    {
+        var ontem = DateTime.UtcNow.AddDays(-1);
+        FilmeResponse Ep(DateTime adicionado) => new(1, "t", null, "x", false, adicionado, null, null);
+        AberturaEpisodio L(string origem, int versao, double? ini = 1) => new() { Origem = origem, Versao = versao, InicioSegundos = ini, AnalisadoEm = DateTime.UtcNow };
+        var eps = new[] { Ep(ontem) };
+        const int V = AnaliseDeAberturaService.VersaoAlgoritmo;
+
+        Assert.True(AnaliseDeAberturaService.PrecisaAnalisar(null, eps));
+        Assert.True(AnaliseDeAberturaService.PrecisaAnalisar(L("auto", 1), eps));
+        Assert.False(AnaliseDeAberturaService.PrecisaAnalisar(L("auto", V), eps));
+        Assert.False(AnaliseDeAberturaService.PrecisaAnalisar(L("pulo", 1), eps));
+        Assert.False(AnaliseDeAberturaService.PrecisaAnalisar(L("capitulo", 1), eps));
+        Assert.False(AnaliseDeAberturaService.PrecisaAnalisar(L("auto", V, null), eps));
+        Assert.True(AnaliseDeAberturaService.PrecisaAnalisar(L("auto", V, null), [Ep(DateTime.UtcNow.AddMinutes(1))]));
+    }
+
+    [Fact]
+    public void Impressao_vira_bytes_e_volta_igual()
+    {
+        var itens = new[] { 0, 1, -1, int.MaxValue, int.MinValue, 123456789 };
+        Assert.Equal(itens, ArmazemDeImpressoes.Decodificar(ArmazemDeImpressoes.Codificar(itens)));
+    }
+
+    [Fact]
+    public async Task Banco_antigo_ganha_versao_e_origem_nas_aberturas_com_os_padroes()
+    {
+        var arq = Path.Combine(TestesComuns.CriarPastaTemp(), "velho.db");
+        var cs = $"Data Source={arq}";
+        using (var c = new Microsoft.Data.Sqlite.SqliteConnection(cs))
+        {
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = """
+                CREATE TABLE "Filmes" ("Id" INTEGER PRIMARY KEY, "Titulo" TEXT NOT NULL, "ArquivoPath" TEXT NULL, "Assistido" INTEGER NOT NULL, "DataAdicionado" TEXT NOT NULL);
+                CREATE TABLE "Aberturas" ("FilmeId" INTEGER NOT NULL PRIMARY KEY, "InicioSegundos" REAL NULL, "FimSegundos" REAL NULL, "AnalisadoEm" TEXT NOT NULL);
+                INSERT INTO "Filmes" VALUES (1, 'x', 'a.mkv', 0, '2026-01-01');
+                INSERT INTO "Aberturas" VALUES (1, 10.0, 90.0, '2026-01-02');
+                """;
+            cmd.ExecuteNonQuery();
+        }
+
+        using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlite(cs).Options);
+        DbInitializer.Executar(db);
+        DbInitializer.Executar(db);
+
+        var a = await db.Aberturas.AsNoTracking().SingleAsync();
+        Assert.Equal((10.0, 90.0, 1, "auto"), (a.InicioSegundos, a.FimSegundos, a.Versao, a.Origem));
+        Assert.Equal(0, await db.Impressoes.CountAsync());
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
     }
 
     [Fact]
@@ -189,8 +349,8 @@ public class AberturaComFfmpegRealTests : IDisposable
 
         Assert.NotNull(t);
         // o fim é o que importa pro botão (pra onde pular); o começo do ruído sintético "vaza" um pouco antes da abertura
-        Assert.InRange(t!.InicioA, 5, 11);
-        Assert.InRange(t.FimA, 48, 52);
-        Assert.InRange(t.InicioB - t.InicioA, 14, 16);   // B começa a abertura 15 s depois de A
+        Assert.InRange(t!.InicioA, 0, 11);   // ruído estacionário casa com ruído estacionário: o folgado estende até o teto de 8 s
+        Assert.InRange(t.FimA, 48, 59);   // o folgado estende até 8 s além do que o estrito achou
+        Assert.InRange(t.InicioB - t.InicioA, 14, 16);   // (o deslocamento entre os episódios não muda com a extensão)   // B começa a abertura 15 s depois de A
     }
 }

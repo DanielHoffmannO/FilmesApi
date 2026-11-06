@@ -20,10 +20,15 @@ public static class DetectorDeAbertura
 
     private const int LimiarDeBitsDiferentes = 6;   // de 32: mesmo som com ruído/dublagem diferente passa, outro som não
     private const int FalhasToleradas = 3;           // itens ruins seguidos que não quebram a corrida
+    // Critério FOLGADO: só estende as bordas de um trecho que o estrito já achou (nunca cria trecho: por acaso, 2,5–2,8 s entre séries diferentes)
+    private const int LimiarFolgado = 10;
+    private const int FalhasFolgadas = 8;
+    private const double ExtensaoMaxSegundos = 8;   // por lado: ruído estacionário casa com ruído estacionário e o folgado correria o arquivo inteiro
     private const double DeslocamentoMaxSegundos = 180;   // abertura começa em pontos diferentes (com/sem "anteriormente")
 
-    /// <summary>A melhor corrida em comum com pelo menos <paramref name="minimoSegundos"/>, ou null.</summary>
-    public static TrechoComum? Encontrar(int[] a, int[] b, double minimoSegundos = 15)
+    /// <summary>A melhor corrida em comum com pelo menos <paramref name="minimoSegundos"/>, ou null. Acha pelo critério estrito
+    /// (≤ 6 bits, 3 falhas) e depois estende as duas bordas pelo folgado (≤ 10 bits, 8 falhas).</summary>
+    public static TrechoComum? Encontrar(int[] a, int[] b, double minimoSegundos = 10)
     {
         var minimoItens = (int)Math.Ceiling(minimoSegundos / SegundosPorItem);
         var maxDesloc = (int)(DeslocamentoMaxSegundos / SegundosPorItem);
@@ -45,9 +50,25 @@ public static class DetectorDeAbertura
             if (ini is not null) Considerar(a, ini.Value, ultimoBom + 1, d, minimoItens, ref melhor);
         }
 
-        if (melhor is not { } m) return null;
+        if (melhor is not { } m0) return null;
+        var m = Estender(a, b, m0);
         return new TrechoComum(m.Ini * SegundosPorItem, m.Fim * SegundosPorItem,
             (m.Ini + m.Desloc) * SegundosPorItem, (m.Fim + m.Desloc) * SegundosPorItem);
+    }
+
+    /// <summary>Anda pra fora das duas pontas enquanto o critério folgado continua casando (tolera <see cref="FalhasFolgadas"/> itens
+    /// ruins seguidos e termina no último que casou). Não muda o deslocamento nem cria trecho novo.</summary>
+    private static (int Ini, int Fim, int Desloc) Estender(int[] a, int[] b, (int Ini, int Fim, int Desloc) m)
+    {
+        bool Casa(int i) => i >= 0 && i < a.Length && i + m.Desloc >= 0 && i + m.Desloc < b.Length
+                            && BitOperations.PopCount((uint)(a[i] ^ b[i + m.Desloc])) <= LimiarFolgado;
+        var (ini, fim) = (m.Ini, m.Fim);
+        var max = (int)(ExtensaoMaxSegundos / SegundosPorItem);
+        for (int i = m.Ini - 1, falhas = 0; i >= Math.Max(0, m.Ini - max) && i + m.Desloc >= 0 && falhas <= FalhasFolgadas; i--)
+            if (Casa(i)) { ini = i; falhas = 0; } else falhas++;
+        for (int i = m.Fim, falhas = 0; i < Math.Min(a.Length, m.Fim + max) && i + m.Desloc < b.Length && falhas <= FalhasFolgadas; i++)
+            if (Casa(i)) { fim = i + 1; falhas = 0; } else falhas++;
+        return (ini, fim, m.Desloc);
     }
 
     private static void Considerar(int[] a, int ini, int fim, int desloc, int minimoItens, ref (int Ini, int Fim, int Desloc)? melhor)

@@ -8,17 +8,35 @@ public static class ImpressaoDeAudio
     /// <summary>Quanto do começo do episódio se analisa: a abertura cabe aí com folga e o resto do arquivo nem é lido.</summary>
     public const int JanelaSegundos = 480;
 
+    /// <summary>Quanto do FIM do episódio se analisa (os créditos).</summary>
+    public const int JanelaFimSegundos = 300;
+
+    /// <summary>Que pedaço do arquivo ler: <c>InicioSegundos</c> (-ss; null = do começo) e <c>DuracaoSegundos</c> (-t), ou os últimos
+    /// <c>DuracaoSegundos</c> do arquivo (<c>DoFim</c>, -sseof).</summary>
+    public record Trecho(double? InicioSegundos, double DuracaoSegundos, bool DoFim = false)
+    {
+        public static Trecho Inicio => new(null, JanelaSegundos);
+        public static Trecho Fim => new(null, JanelaFimSegundos, DoFim: true);
+    }
+
     /// <summary>Os inteiros da impressão, ou null se o ffmpeg falhou (sem chromaprint no build, sem áudio, arquivo ilegível).
     /// Cancelamento relança. Roda em prioridade baixa pra não atrapalhar a TV.</summary>
-    public static async Task<int[]?> ObterAsync(string ffmpeg, string arquivo, CancellationToken ct, int timeoutSegundos = 120)
+    public static Task<int[]?> ObterAsync(string ffmpeg, string arquivo, CancellationToken ct, int timeoutSegundos = 120) =>
+        ObterAsync(ffmpeg, arquivo, Trecho.Inicio, ct, timeoutSegundos);
+
+    public static async Task<int[]?> ObterAsync(string ffmpeg, string arquivo, Trecho trecho, CancellationToken ct, int timeoutSegundos = 120)
     {
         var psi = new ProcessStartInfo(ffmpeg)
         {
             RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
         };
-        foreach (var a in new[] { "-hide_banner", "-nostdin", "-v", "error", "-t", JanelaSegundos.ToString(), "-i", arquivo,
-                                  "-map", "0:a:0", "-vn", "-ac", "1", "-f", "chromaprint", "-fp_format", "raw", "-" })
-            psi.ArgumentList.Add(a);
+        var args = new List<string> { "-hide_banner", "-nostdin", "-v", "error" };
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        if (trecho.DoFim) args.AddRange(["-sseof", (-trecho.DuracaoSegundos).ToString("0.###", inv)]);
+        else if (trecho.InicioSegundos is double ss && ss > 0) args.AddRange(["-ss", ss.ToString("0.###", inv)]);
+        if (!trecho.DoFim) args.AddRange(["-t", trecho.DuracaoSegundos.ToString("0.###", inv)]);
+        args.AddRange(["-i", arquivo, "-map", "0:a:0", "-vn", "-ac", "1", "-f", "chromaprint", "-fp_format", "raw", "-"]);
+        foreach (var a in args) psi.ArgumentList.Add(a);
 
         try
         {

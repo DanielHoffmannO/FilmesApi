@@ -64,6 +64,26 @@ public static class DbInitializer
             );
             """);
 
+        // Versão do algoritmo e origem da marcação (colunas novas; linhas antigas valem 1/'auto')
+        var colunasAberturas = db.Database.SqlQueryRaw<string>("""SELECT name AS "Value" FROM pragma_table_info('Aberturas');""").ToList();
+        if (!colunasAberturas.Contains("Versao"))
+            db.Database.ExecuteSqlRaw("""ALTER TABLE "Aberturas" ADD COLUMN "Versao" INTEGER NOT NULL DEFAULT 1;""");
+        if (!colunasAberturas.Contains("Origem"))
+            db.Database.ExecuteSqlRaw("""ALTER TABLE "Aberturas" ADD COLUMN "Origem" TEXT NOT NULL DEFAULT 'auto';""");
+        db.Database.ExecuteSqlRaw("""
+            CREATE TABLE IF NOT EXISTS "Impressoes" (
+                "FilmeId" INTEGER NOT NULL,
+                "Janela" TEXT NOT NULL,
+                "InicioSegundos" REAL NOT NULL,
+                "ArquivoBytes" INTEGER NOT NULL,
+                "Dados" BLOB NOT NULL,
+                "GeradoEm" TEXT NOT NULL,
+                CONSTRAINT "PK_Impressoes" PRIMARY KEY ("FilmeId", "Janela"),
+                CONSTRAINT "FK_Impressoes_Filmes_FilmeId" FOREIGN KEY ("FilmeId")
+                    REFERENCES "Filmes" ("Id") ON DELETE CASCADE
+            );
+            """);
+
         // Bancos antigos podem ter ArquivoPath duplicado (scan rodado 2x antes do índice único).
         // Remove as duplicatas (mantém o menor Id; o FK em cascata leva o progresso junto) e
         // então cria o índice — mesmo nome/definição que o EnsureCreated de um banco novo gera.

@@ -12,6 +12,7 @@ public class AppDbContext : DbContext
     public DbSet<PreferenciaSerie> PreferenciasSerie => Set<PreferenciaSerie>();
     public DbSet<PreferenciaEpisodio> PreferenciasEpisodio => Set<PreferenciaEpisodio>();
     public DbSet<PreferenciaTemporada> PreferenciasTemporada => Set<PreferenciaTemporada>();
+    public DbSet<ImpressaoSalva> Impressoes => Set<ImpressaoSalva>();
     public DbSet<AberturaEpisodio> Aberturas => Set<AberturaEpisodio>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -44,6 +45,13 @@ public class AppDbContext : DbContext
         {
             e.ToTable("PreferenciasTemporada");
             e.HasKey(p => new { p.ChaveSerie, p.Temporada });
+        });
+
+        modelBuilder.Entity<ImpressaoSalva>(e =>
+        {
+            e.ToTable("Impressoes");
+            e.HasKey(i => new { i.FilmeId, i.Janela });
+            e.HasOne(i => i.Filme).WithMany().HasForeignKey(i => i.FilmeId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<AberturaEpisodio>(e =>

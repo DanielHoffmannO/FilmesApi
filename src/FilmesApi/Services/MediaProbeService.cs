@@ -27,7 +27,11 @@ public record FaixaLegenda(int IdxRelativo, string Codec, string? Idioma, string
 /// pixel corretas. Ver <see cref="CompatibilidadeVideo.SarPrecisaCorrecao"/>.</summary>
 public record MediaInfo(
     string? VideoCodec, int Largura, int Altura, bool Video10Bit, string? SampleAspectRatio,
-    double? DuracaoSegundos, IReadOnlyList<FaixaAudio> Audios, IReadOnlyList<FaixaLegenda> Legendas);
+    double? DuracaoSegundos, IReadOnlyList<FaixaAudio> Audios, IReadOnlyList<FaixaLegenda> Legendas,
+    IReadOnlyList<CapituloArquivo>? Capitulos = null);
+
+/// <summary>Capítulo embutido no arquivo (Crunchyroll traz "Opening", "Episode", "Credits"); fonte exata da abertura/créditos.</summary>
+public record CapituloArquivo(double InicioSegundos, double FimSegundos, string? Titulo);
 
 /// <summary>
 /// Uma única leitura de ffprobe (<c>-show_streams -show_format</c>) por arquivo, cacheada por
@@ -79,7 +83,7 @@ public class MediaProbeService : IDisposable
         try
         {
             var json = await RodarAsync(
-                ["-v", "error", "-show_streams", "-show_format", "-of", "json", path],
+                ["-v", "error", "-show_streams", "-show_format", "-show_chapters", "-of", "json", path],
                 TimeSpan.FromSeconds(30), path, CancellationToken.None);
             if (json is null) return null;
 
@@ -190,11 +194,20 @@ public class MediaProbeService : IDisposable
             && double.TryParse(d.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var seg) && seg > 0)
             duracao = seg;
 
-        return new MediaInfo(videoCodec, largura, altura, video10Bit, sampleAspectRatio, duracao, audios, legendas);
+        var capitulos = new List<CapituloArquivo>();
+        if (root.TryGetProperty("chapters", out var caps) && caps.ValueKind == JsonValueKind.Array)
+            foreach (var c in caps.EnumerateArray())
+                if (Seg(c, "start_time") is double ini && Seg(c, "end_time") is double fim)
+                    capitulos.Add(new CapituloArquivo(ini, fim, Tag(c, "title")));
+
+        return new MediaInfo(videoCodec, largura, altura, video10Bit, sampleAspectRatio, duracao, audios, legendas, capitulos);
     }
 
     private static string? Str(JsonElement e, string prop) =>
         e.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    private static double? Seg(JsonElement e, string prop) =>
+        Str(e, prop) is { } t && double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : null;
 
     private static int Int(JsonElement e, string prop) =>
         e.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : 0;
