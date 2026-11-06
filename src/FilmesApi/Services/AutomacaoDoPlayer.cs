@@ -128,9 +128,10 @@ public class AutomacaoDoPlayer(IServiceScopeFactory escopos, PlayerStateService 
             // que já estão guardadas — o resto da temporada o serviço de fundo completa quando o servidor está ocioso
             var pos = eps.FindIndex(e => e.Id == r.FilmeId);
             var impressoes = new int[eps.Count][];
+            var caminhos = new string?[eps.Count];
             for (var i = 0; i < eps.Count; i++)
             {
-                var cam = i == pos ? null : await filmes.ResolverCaminhoAsync(eps[i].Id);
+                var cam = caminhos[i] = i == pos ? null : await filmes.ResolverCaminhoAsync(eps[i].Id);
                 impressoes[i] = cam is null ? []
                     : Math.Abs(i - pos) <= RaioDeVizinhos
                         ? (await ArmazemDeImpressoes.ObterAsync(db, ffmpeg, eps[i].Id, cam, ArmazemDeImpressoes.JanelaInicio, 0, ImpressaoDeAudio.Trecho.Inicio, ct)).Itens
@@ -146,12 +147,12 @@ public class AutomacaoDoPlayer(IServiceScopeFactory escopos, PlayerStateService 
             }
 
             var gravadas = new List<int> { r.FilmeId };
-            await GravarPuloAsync(db, r.FilmeId, validado.InicioA, validado.FimA);
+            await GravarPuloAsync(db, r.FilmeId, validado.InicioA, validado.FimA, AnaliseDeAberturaService.TamanhoDe(caminho));
             for (var i = 0; i < eps.Count; i++)   // o trecho vira MODELO pros outros episódios da temporada
             {
                 if (i == pos || impressoes[i].Length == 0) continue;
                 if (AprendizadoDePulo.ProcurarModelo(janela, inicioJanela, validado, impressoes[i], minimoPulo) is var (ini, fim)
-                    && await GravarPuloAsync(db, eps[i].Id, ini, fim)) gravadas.Add(eps[i].Id);
+                    && await GravarPuloAsync(db, eps[i].Id, ini, fim, AnaliseDeAberturaService.TamanhoDe(caminhos[i]))) gravadas.Add(eps[i].Id);
             }
             logger.LogInformation("Abertura aprendida na temporada {T} de {Serie}: {N} episódio(s) marcado(s) ({Ini:F0}s a {Fim:F0}s no episódio pulado).",
                 temporada, filme.Serie, gravadas.Count, validado.InicioA, validado.FimA);
@@ -166,7 +167,7 @@ public class AutomacaoDoPlayer(IServiceScopeFactory escopos, PlayerStateService 
         finally { _umPorVez.Release(); }
     }
 
-    private static async Task<bool> GravarPuloAsync(AppDbContext db, int filmeId, double inicio, double fim)
+    private static async Task<bool> GravarPuloAsync(AppDbContext db, int filmeId, double inicio, double fim, long bytes)
     {
         var linha = await db.Aberturas.FindAsync(filmeId);
         if (linha is not null && !OrigemMarca.PodeSobrescrever(linha.Origem, OrigemMarca.Pulo)) return false;
@@ -174,6 +175,7 @@ public class AutomacaoDoPlayer(IServiceScopeFactory escopos, PlayerStateService 
         linha.InicioSegundos = Math.Round(inicio, 1);
         linha.FimSegundos = Math.Round(fim, 1);
         linha.Origem = OrigemMarca.Pulo;
+        linha.ArquivoBytes = bytes;
         linha.Versao = AnaliseDeAberturaService.VersaoAlgoritmo;
         linha.AnalisadoEm = DateTime.UtcNow;
         await db.SaveChangesAsync();

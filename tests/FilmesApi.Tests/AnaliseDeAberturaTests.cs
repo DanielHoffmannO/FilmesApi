@@ -102,6 +102,38 @@ public class AnaliseDeAberturaTests : IDisposable
     }
 
     [Fact]
+    public async Task Arquivo_trocado_descarta_capitulo_e_pulo_mas_nao_linha_antiga_sem_tamanho()
+    {
+        var (f, servico, _) = await CenarioComProbe(FfprobeComCapitulos(Opening2a90), Eps);
+        var abertura = Aleatorio(Itens(60), 1);
+        for (var i = 0; i < Eps.Length; i++) GravarImpressao(Path.Combine(f.Media, Eps[i]), ComAbertura(abertura, 20, 10));
+        await servico.ExecutarUmaVezAsync();
+        var ids = new List<int>();
+        foreach (var e in Eps) ids.Add(await f.IdDeAsync(e));
+        var gravadas = await Linhas(f);
+        Assert.All(gravadas, a => Assert.Equal(2048, a.ArquivoBytes));   // o tamanho do arquivo ficou na linha
+
+        // 0: capítulo, arquivo trocado; 1: pulo, arquivo trocado; 2: capítulo de linha antiga (sem tamanho)
+        File.WriteAllText(Path.Combine(f.Media, Eps[0]), new string('y', 4096));
+        File.WriteAllText(Path.Combine(f.Media, Eps[1]), new string('y', 4096));
+        await f.NoEscopoAsync(async sp =>
+        {
+            var db = sp.GetRequiredService<AppDbContext>();
+            var l1 = await db.Aberturas.FindAsync(ids[1]); l1!.Origem = OrigemMarca.Pulo; l1.InicioSegundos = 300; l1.FimSegundos = 340;
+            var l2 = await db.Aberturas.FindAsync(ids[2]); l2!.ArquivoBytes = 0; l2.InicioSegundos = 7; l2.FimSegundos = 8;
+            await db.SaveChangesAsync();
+            return 0;
+        });
+
+        await servico.ExecutarUmaVezAsync();
+
+        var l = (await Linhas(f)).ToDictionary(a => a.FilmeId);
+        Assert.Equal((OrigemMarca.Capitulo, 2.0, 4096L), (l[ids[0]].Origem, l[ids[0]].InicioSegundos, l[ids[0]].ArquivoBytes));   // refeita sobre o arquivo novo
+        Assert.Equal((OrigemMarca.Capitulo, 2.0), (l[ids[1]].Origem, l[ids[1]].InicioSegundos));   // o pulo antigo foi descartado
+        Assert.Equal(7.0, l[ids[2]].InicioSegundos);   // sem tamanho guardado: não dá pra saber, fica
+    }
+
+    [Fact]
     public async Task Episodio_sem_arquivo_nao_impede_os_seguintes_de_usar_o_capitulo()
     {
         string[] eps = [.. Eps, "Hora de Aventura/Hora.de.Aventura.S01E04.mkv"];

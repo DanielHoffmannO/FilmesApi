@@ -71,6 +71,7 @@ public static class DbInitializer
                 "AnalisadoEm" TEXT NOT NULL,
                 "Versao" INTEGER NOT NULL DEFAULT 1,
                 "Origem" TEXT NOT NULL DEFAULT 'auto',
+                "ArquivoBytes" INTEGER NOT NULL DEFAULT 0,
                 CONSTRAINT "FK_Creditos_Filmes_FilmeId" FOREIGN KEY ("FilmeId")
                     REFERENCES "Filmes" ("Id") ON DELETE CASCADE
             );
@@ -82,6 +83,12 @@ public static class DbInitializer
             db.Database.ExecuteSqlRaw("""ALTER TABLE "Aberturas" ADD COLUMN "Versao" INTEGER NOT NULL DEFAULT 1;""");
         if (!colunasAberturas.Contains("Origem"))
             db.Database.ExecuteSqlRaw("""ALTER TABLE "Aberturas" ADD COLUMN "Origem" TEXT NOT NULL DEFAULT 'auto';""");
+        // tamanho do arquivo na hora da marcação: trocar o arquivo invalida 'capitulo'/'pulo' (0 = linha antiga, desconhecido)
+        if (!colunasAberturas.Contains("ArquivoBytes"))
+            db.Database.ExecuteSqlRaw("""ALTER TABLE "Aberturas" ADD COLUMN "ArquivoBytes" INTEGER NOT NULL DEFAULT 0;""");
+        var colunasCreditos = db.Database.SqlQueryRaw<string>("""SELECT name AS "Value" FROM pragma_table_info('Creditos');""").ToList();
+        if (!colunasCreditos.Contains("ArquivoBytes"))
+            db.Database.ExecuteSqlRaw("""ALTER TABLE "Creditos" ADD COLUMN "ArquivoBytes" INTEGER NOT NULL DEFAULT 0;""");
         db.Database.ExecuteSqlRaw("""
             CREATE TABLE IF NOT EXISTS "Impressoes" (
                 "FilmeId" INTEGER NOT NULL,

@@ -14,6 +14,9 @@ public class AberturaEpisodio : IMarcacao
     /// menor entra na fila de reanálise em segundo plano.</summary>
     public int Versao { get; set; } = 1;
 
+    /// <summary>Tamanho do arquivo quando a marcação foi feita (0 = não sabemos: linha antiga). Se o arquivo for trocado, 'capitulo' e 'pulo' são descartadas e refeitas.</summary>
+    public long ArquivoBytes { get; set; }
+
     /// <summary>De onde veio: <c>auto</c> (comparação de áudio), <c>capitulo</c> (capítulo "Opening" do arquivo) ou <c>pulo</c> (o Daniel pulou ali).
     /// Precedência pulo &gt; capitulo &gt; auto: uma origem mais fraca nunca sobrescreve uma mais forte.</summary>
     public string Origem { get; set; } = OrigemMarca.Auto;
@@ -29,6 +32,7 @@ public class CreditosEpisodio : IMarcacao
     public DateTime AnalisadoEm { get; set; } = DateTime.UtcNow;
     public int Versao { get; set; } = 1;
     public string Origem { get; set; } = OrigemMarca.Auto;
+    public long ArquivoBytes { get; set; }
 }
 
 /// <summary>O que a abertura e os créditos têm em comum: de onde veio a marcação, que versão do algoritmo a fez e quando. Base de
