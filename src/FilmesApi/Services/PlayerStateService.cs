@@ -5,7 +5,7 @@ public record RajadaDePulo(int FilmeId, double PosAntes, double PosFinal);
 
 /// <summary>O que o servidor sabe do episódio em exibição e a TV usa sozinha (pulo da abertura): abertura conhecida, interruptores da temporada.</summary>
 public record ContextoDoFilme(double? AberturaInicio, double? AberturaFim, bool PularAbertura, bool ProximoAutomatico,
-    double? InicioCreditos, string? SerieChave, int? Temporada);
+    double? InicioCreditos, string? SerieChave, int? Temporada, int ContagemProximoSegundos = 5);
 
 /// <summary>
 /// Estado global do "player da TV", controlado remotamente pelo celular (controle.html).
@@ -65,6 +65,7 @@ public class PlayerStateService(Func<DateTime>? agora = null)
     private int? _proximoFilmeId;
     private string? _proximoRotulo;
     private int _aceitarProximoVersion;
+    private bool _proximoCancelado;   // o Daniel cancelou o próximo automático NESTE episódio: não repete
 
     public object Snapshot()
     {
@@ -94,6 +95,8 @@ public class PlayerStateService(Func<DateTime>? agora = null)
                 abertura = _contexto?.AberturaInicio is double ini && _contexto.AberturaFim is double fim
                     ? new { inicio = ini, fim, pular = _contexto.PularAbertura, pulada = _aberturaPulada } : null,
                 proximoAutomatico = _contexto?.ProximoAutomatico ?? false,
+                proximoContagem = _contexto?.ContagemProximoSegundos ?? 5,
+                proximoCancelado = _proximoCancelado,
                 inicioCreditos = _contexto?.InicioCreditos,
                 aviso = _avisoVersao == 0 ? null : new { versao = _avisoVersao, tipo = _avisoTipo, texto = _avisoTexto, acao = _avisoAcao, ate = _avisoAte },
             };
@@ -109,7 +112,7 @@ public class PlayerStateService(Func<DateTime>? agora = null)
         {
             _filmeId = filmeId; _playing = true; _posSegundos = 0; _duracaoSegundos = 0; _legendaIdx = -1; _legendaManual = false;
             _proximoFilmeId = null; _proximoRotulo = null;
-            _contexto = null; _aberturaPulada = false; _rajada = null;
+            _contexto = null; _aberturaPulada = false; _rajada = null; _proximoCancelado = false;
         }
     }
 
@@ -120,6 +123,19 @@ public class PlayerStateService(Func<DateTime>? agora = null)
     }
 
     public int? FilmeId { get { lock (_lock) return _filmeId; } }
+
+    /// <summary>Apertaram "próximo episódio" já no fim? Ver <see cref="ProximoManual.JaAcabou"/> (usa a posição/duração reportadas pela TV, os
+    /// créditos conhecidos do contexto e a oferta de próximo em andamento).</summary>
+    public bool JaAcabou(double restanteMaxSegundos)
+    {
+        lock (_lock) return ProximoManual.JaAcabou(_posSegundos, _duracaoSegundos, _contexto?.InicioCreditos, _proximoFilmeId is not null, restanteMaxSegundos);
+    }
+
+    /// <summary>O Daniel cancelou o "Indo para o próximo": a TV desiste da contagem e não repete neste episódio.</summary>
+    public void CancelarProximoAutomatico()
+    {
+        lock (_lock) { _proximoCancelado = true; _proximoFilmeId = null; _proximoRotulo = null; }
+    }
     public double PosicaoSegundos { get { lock (_lock) return _posSegundos; } }
 
     /// <summary>O salto da abertura já aconteceu neste episódio (a TV não repete, mesmo que o Daniel volte pra dentro dela).</summary>
@@ -248,7 +264,7 @@ public class PlayerStateService(Func<DateTime>? agora = null)
         {
             _filmeId = null; _playing = false; _pararVersion++; _posSegundos = 0; _duracaoSegundos = 0; _legendaIdx = -1; _legendaManual = false;
             _proximoFilmeId = null; _proximoRotulo = null;
-            _contexto = null; _aberturaPulada = false; _rajada = null;
+            _contexto = null; _aberturaPulada = false; _rajada = null; _proximoCancelado = false;
         }
     }
 }

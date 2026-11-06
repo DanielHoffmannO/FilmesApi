@@ -123,6 +123,10 @@ public class FilmeService
         return a is { InicioSegundos: double ini, FimSegundos: double fim } ? (ini, fim) : null;
     }
 
+    /// <summary>Onde começam os créditos do episódio (segundos), ou null se não foi achado/analisado.</summary>
+    public async Task<double?> ObterCreditosAsync(int id) =>
+        (await _db.Creditos.AsNoTracking().FirstOrDefaultAsync(x => x.FilmeId == id))?.InicioSegundos;
+
     public Task<bool> ExisteAsync(int id) => _db.Filmes.AnyAsync(f => f.Id == id);
 
     /// <summary>Próximo episódio da mesma série na ordem (temporada, episódio). null quando

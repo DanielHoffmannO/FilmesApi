@@ -243,6 +243,14 @@ public class ReproducaoController : ControllerBase
             ? Ok(new { inicioSegundos = inicio, fimSegundos = fim })
             : NotFound(new { mensagem = "abertura não encontrada" });
 
+    /// <summary>Onde começam os créditos do episódio (o fim é o fim do arquivo), pro botão "Próximo episódio" do controle e pro próximo
+    /// automático. 404 se ainda não foi achado.</summary>
+    [HttpGet("{id:int}/creditos")]
+    public async Task<IActionResult> Creditos(int id) =>
+        await _service.ObterCreditosAsync(id) is double inicio
+            ? Ok(new { inicioSegundos = inicio })
+            : NotFound(new { mensagem = "créditos não encontrados" });
+
     /// <summary>Faixas de legenda embutidas no arquivo (as de texto viram .vtt via o endpoint abaixo).</summary>
     [HttpGet("{id:int}/legendas")]
     public async Task<IActionResult> Legendas(int id, CancellationToken ct)
