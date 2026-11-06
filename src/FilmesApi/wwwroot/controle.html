@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Controle da TV</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📱%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="/css/base.css">
@@ -11,7 +11,8 @@
    fica só "achar o filme e mandar pra TV" + o controle remoto embaixo.
    Reset, header, .filter-btn, #grid, .row/.grupo-hd e as cores em variável (--accent etc.)
    vêm de css/base.css (compartilhado com index.html). Aqui só o que é específico desta tela. */
-body{padding-bottom:96px}
+/* a barra fixa muda de altura (botões que quebram, aviso de próximo): o JS mede e publica em --remote-h */
+body{padding-bottom:calc(var(--remote-h, 0px) + 16px + env(safe-area-inset-bottom))}
 header a{font-size:13px}
 main{padding:16px 24px;max-width:640px;margin:0 auto}
 .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
@@ -23,25 +24,56 @@ main{padding:16px 24px;max-width:640px;margin:0 auto}
 .grupo-body{padding-left:12px}
 .msg{text-align:center;color:#777;padding:60px 20px;font-size:15px}
 
-/* ─── barra de controle remoto — igual à que existia no index.html ─── */
-.remote{position:fixed;left:0;right:0;bottom:0;background:var(--bg-2);border-top:1px solid #222;padding:10px 16px;display:none;flex-direction:column;gap:8px;z-index:50}
+/* ─── barra de controle remoto ─── */
+.remote{position:fixed;left:0;right:0;bottom:0;background:var(--bg-2);border-top:1px solid #222;padding:10px 16px calc(10px + env(safe-area-inset-bottom));display:none;flex-direction:column;gap:8px;z-index:50}
 .remote.active{display:flex}
 .remote-l1{display:flex;align-items:baseline;gap:10px}
-.remote .titulo{font-size:12px;color:#ccc;flex:1;min-width:0}
+.remote .titulo{background:none;border:none;padding:0;text-align:left;font-size:12px;color:#ccc;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .remote-time{font-size:11px;color:#aaa;font-variant-numeric:tabular-nums;white-space:nowrap}
-.remote-prog{height:8px;background:var(--border);border-radius:4px;cursor:pointer;overflow:hidden}
-.remote-prog-fill{height:100%;background:var(--accent);width:0;transition:width .3s linear}
-.remote-l2{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.remote button{background:#222;color:#eee;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;cursor:pointer}
+.remote-prog{position:relative;height:8px;background:var(--border);border-radius:4px;cursor:pointer;overflow:hidden}
+.remote-prog-fill{position:relative;height:100%;background:var(--accent);width:0;transition:width .3s linear}
+.remote-prog .faixa{position:absolute;top:0;bottom:0;background:rgba(255,255,255,.22);display:none}
+.remote-l2{display:flex;align-items:center;gap:10px}
+.remote-l2 button{flex:1}
+.remote-l2 button.direita{flex:1}
+.remote-l2 button.direita.vermelho{flex:2;background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.remote-l3{display:flex;align-items:center;gap:10px}
+.remote-l3 input[type=range]{flex:1;min-width:0}
+.remote button{background:#222;color:#eee;border:1px solid var(--border);border-radius:6px;padding:9px 12px;font-size:13px;cursor:pointer}
 .remote button:active{background:#333}
-.remote button.on{border-color:var(--accent);color:var(--accent)}
 .remote button:disabled{opacity:.35;cursor:default}
 .remote button:disabled:active{background:#222}
-.remote input[type=range]{width:100px}
+.remote .titulo:active{background:none}
 .remote-proximo{display:none;align-items:center;gap:10px;background:var(--bg-3);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:12px;color:#ccc}
 .remote-proximo.on{display:flex}
 .remote-proximo span{flex:1;min-width:0}
 .remote-proximo button{background:var(--accent);border-color:var(--accent);color:#fff;padding:6px 10px;font-size:12px;white-space:nowrap}
+
+/* ─── folha "Idioma e legenda" (sobe de trás da barra) e avisos ─── */
+.folha-scrim{position:fixed;inset:0;z-index:55}
+.folha{position:fixed;left:0;right:0;bottom:var(--remote-h, 0px);z-index:56;background:var(--bg-2);border-top:1px solid #333;border-radius:12px 12px 0 0;padding:14px 16px;max-height:60vh;overflow:auto;box-shadow:0 -8px 24px rgba(0,0,0,.5)}
+.folha[hidden],.folha-scrim[hidden]{display:none}
+.folha-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;font-size:14px;font-weight:600}
+.folha-hd button,.opt,.sw,.chip,.toast button{background:#222;color:#eee;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px}
+.folha-hd button{padding:4px 10px}
+.folha h3{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 6px}
+.opcoes{display:flex;flex-wrap:wrap;gap:8px}
+.opt{padding:9px 14px}
+.opt.on{border-color:var(--accent);color:var(--accent)}
+.folha .vazio{color:var(--muted);font-size:13px}
+.usar-serie{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;padding-top:12px;border-top:1px solid #222;font-size:13px}
+.toast{position:fixed;left:16px;right:16px;bottom:calc(var(--remote-h, 0px) + 12px);z-index:60;background:#2a2a2a;border:1px solid #444;border-radius:8px;padding:10px 12px;font-size:13px;display:flex;gap:10px;align-items:center;box-shadow:0 4px 16px rgba(0,0,0,.5)}
+.toast span{flex:1}
+.toast button{padding:5px 10px}
+
+/* ─── chips de padrão da série e interruptores por temporada ─── */
+.chips{display:inline-flex;gap:6px;margin-left:auto}
+.chip{padding:3px 8px;font-size:11px;color:var(--muted);min-height:28px;white-space:nowrap}
+.chip.on{color:#ddd}
+.sws{display:inline-flex;gap:6px;margin-left:auto}
+.sw{min-width:36px;min-height:36px;padding:0 6px;font-size:15px;opacity:.55}
+.sw.on{opacity:1;border-color:var(--accent);color:var(--accent)}
+.serie-opcoes{display:flex;justify-content:flex-end;padding:4px 12px}
 </style>
 </head>
 <body>
@@ -61,12 +93,18 @@ main{padding:16px 24px;max-width:640px;margin:0 auto}
   <div id="grid"></div>
 </main>
 
+<div class="folha-scrim" id="folhaScrim" hidden onclick="fecharFolha()"></div>
+<div class="folha" id="folha" hidden>
+  <div class="folha-hd"><span id="folhaTitulo"></span><button onclick="fecharFolha()" aria-label="Fechar">✕</button></div>
+  <div id="folhaCorpo"></div>
+</div>
+
 <div class="remote" id="remote">
   <div class="remote-l1">
-    <span class="titulo" id="remoteTitulo"></span>
+    <button class="titulo" id="remoteTitulo" onclick="abrirFolhaAgora()" title="Idioma e legenda"></button>
     <span class="remote-time" id="remoteTime"></span>
   </div>
-  <div class="remote-prog" id="remoteProg" onclick="remoteScrub(event)"><div class="remote-prog-fill" id="remoteProgFill"></div></div>
+  <div class="remote-prog" id="remoteProg" onclick="remoteScrub(event)"><div class="faixa" id="remoteFaixaAbertura"></div><div class="remote-prog-fill" id="remoteProgFill"></div></div>
   <div class="remote-proximo" id="remoteProximo">
     <span id="remoteProximoTxt"></span>
     <button onclick="remoteAceitarProximo()">▶ Assistir agora</button>
@@ -74,13 +112,12 @@ main{padding:16px 24px;max-width:640px;margin:0 auto}
   <div class="remote-l2">
     <button onclick="remoteSeek(-SEEK_STEP_S)">« 30s</button>
     <button onclick="remotePlayPause()" id="remotePlayPauseBtn">⏸</button>
-    <button onclick="remoteSeek(SEEK_STEP_S)">30s »</button>
-    <button onclick="remotePularAbertura()" id="remotePularBtn" style="display:none">⏩ Pular abertura</button>
-    <button onclick="remoteProximoEp()" id="remoteProximoEpBtn" style="display:none">⏭ Próximo ep</button>
-    <button onclick="remoteCC()" id="remoteCCBtn" style="display:none">CC</button>
-    <button onclick="remoteAudio()" id="remoteAudioBtn" style="display:none">🗣️</button>
-    <input type="range" id="remoteVolume" min="0" max="1" step="0.05" oninput="remoteVolume(this.value)">
-    <button onclick="remoteParar()">⏹ Parar</button>
+    <button onclick="remoteDireita()" id="remoteDireitaBtn" class="direita">30s »</button>
+  </div>
+  <div class="remote-l3">
+    <button onclick="remoteProximoEp()" id="remoteProximoEpBtn" title="Próximo episódio" style="display:none">⏭</button>
+    <input type="range" id="remoteVolume" min="0" max="1" step="0.05" oninput="remoteVolume(this.value)" aria-label="Volume">
+    <button onclick="remoteParar()" title="Parar" aria-label="Parar">⏹</button>
   </div>
 </div>
 
@@ -99,8 +136,6 @@ let filtroTipo = 'all';         // all | filme | serie
 // Elementos consultados em 2+ lugares — pegos uma vez só.
 const els = {
   remote: document.getElementById('remote'),
-  remoteCCBtn: document.getElementById('remoteCCBtn'),
-  remoteAudioBtn: document.getElementById('remoteAudioBtn'),
   remoteProximoEpBtn: document.getElementById('remoteProximoEpBtn'),
 };
 
@@ -162,9 +197,17 @@ async function render() {
     for (const f of soltos) html += rowHtml(f);
   }
 
-  const audiosDasSeries = t.series.length ? await carregarAudiosDasSeries() : {};
+  if (t.series.length) {
+    [padroes, prefsTemporadas] = await Promise.all([
+      fetchJsonOuNull('/api/series/padroes').then(m => m || {}),
+      fetchJsonOuNull('/api/series/temporadas').then(m => m || {}),
+    ]);
+  }
   for (const s of t.series) {
-    html += serieHtml(s, '', seletorAudioSerieHtml(s.chave, audiosDasSeries[s.chave]), ep => rowHtml(ep, rotuloComTitulo(ep)));
+    html += serieHtml(s, '', '', ep => rowHtml(ep, rotuloComTitulo(ep)), {
+      sufixoSerie: `<span class="chips" data-chips="${attr(s.chave)}">${chipsHtml(s.chave)}</span>`,
+      temporadaExtra: n => interruptoresHtml(s.chave, n),
+    });
   }
 
   msg.style.display = html ? 'none' : 'block';
@@ -215,16 +258,32 @@ async function remoteScrub(e) {
   pollRemote();
 }
 
-// "Pular abertura": o servidor acha onde ela fica (/abertura, análise em segundo plano; 404 = ainda não achou) e o botão
-// só aparece enquanto a posição está dentro dela.
+// Botão da direita da barra, contextual: "30s »" normalmente; "Pular abertura" (vermelho) dentro da abertura conhecida.
+// O servidor acha a abertura em segundo plano (/abertura; 404 = ainda não achou).
 let remoteAbertura = null;
 async function remoteCarregarAbertura(id) {
   remoteAbertura = await fetchJsonOuNull(`${API}/${id}/abertura`);
 }
-function atualizarBotaoPular(pos) {
+function dentroDaAbertura(pos) {
   const a = remoteAbertura;
-  const dentro = a && pos >= a.inicioSegundos - 5 && pos < a.fimSegundos - 1;
-  document.getElementById('remotePularBtn').style.display = dentro ? '' : 'none';
+  return !!a && pos >= a.inicioSegundos - 5 && pos < a.fimSegundos - 1;
+}
+function atualizarBotaoDireita(pos, dur) {
+  const btn = document.getElementById('remoteDireitaBtn');
+  const pular = dentroDaAbertura(pos);
+  btn.classList.toggle('vermelho', pular);
+  btn.textContent = pular ? '⏩ Pular abertura' : '30s »';
+  const faixa = document.getElementById('remoteFaixaAbertura');
+  const a = remoteAbertura;
+  faixa.style.display = a && dur ? 'block' : 'none';
+  if (a && dur) {
+    faixa.style.left = (100 * a.inicioSegundos / dur) + '%';
+    faixa.style.width = (100 * (a.fimSegundos - a.inicioSegundos) / dur) + '%';
+  }
+}
+function remoteDireita() {
+  if (dentroDaAbertura((ultimoEstadoRemoto && ultimoEstadoRemoto.posSegundos) || 0)) return remotePularAbertura();
+  return remoteSeek(SEEK_STEP_S);
 }
 async function remotePularAbertura() {
   if (!remoteAbertura) return;
@@ -232,7 +291,6 @@ async function remotePularAbertura() {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ pos: remoteAbertura.fimSegundos })
   });
-  document.getElementById('remotePularBtn').style.display = 'none';
   pollRemote();
 }
 
@@ -277,85 +335,185 @@ async function atualizarBotaoProximoEp(filmeId) {
   if (filmeId === ultimoEstadoRemoto?.filmeId) btn.disabled = !prox;
 }
 
-// CC: cicla entre desligado → faixa 0 → faixa 1 → … → desligado, mandando pra TV. O botão
-// mostra o idioma atual (ex. "CC: POR"), igual ao botão de dublagem — não é só um toggle
-// cego, dá pra saber qual faixa está ativa sem perguntar pra TV.
-// Só recarrega quando pollRemote detecta troca de filme (trocouFilme) — mesmo sinal que já
-// existe pra filmeAtualRemoto, em vez de um 2º controle de "id de quem já busquei" à parte.
+// ─── Faixas do que está tocando e padrões por série ─────────────────────────
+// Só recarrega quando pollRemote detecta troca de filme. `idx` de áudio é o GLOBAL do ffprobe (bate com -map);
+// o de legenda é relativo. Trocar a dublagem manda a TV regerar o HLS/remux (não é instantâneo).
 let remoteLegendas = [];
+let remoteAudios = [];
+let padroes = {};            // chave da série -> { audio, legenda }
+let prefsTemporadas = {};    // chave da série -> { "1": { pularAbertura, proximoAutomatico } }
+
 async function remoteCarregarLegendas(id) {
   try { remoteLegendas = (await fetch(`${API}/${id}/legendas`).then(r => r.json())).filter(x => x.convertivel); }
   catch { remoteLegendas = []; }
-  atualizarBotaoCC();
+  if (folhaAberta()) desenharFolha();
 }
-function atualizarBotaoCC() {
-  els.remoteCCBtn.style.display = remoteLegendas.length ? '' : 'none';
-  const atual = ultimoEstadoRemoto ? ultimoEstadoRemoto.legendaIdx : -1;
-  const faixa = remoteLegendas.find(x => x.idx === atual);
-  els.remoteCCBtn.textContent = faixa ? `CC: ${(faixa.idioma || '?').toUpperCase()}` : 'CC: off';
-}
-async function remoteCC() {
-  if (!remoteLegendas.length) return;
-  const atual = (ultimoEstadoRemoto && ultimoEstadoRemoto.legendaIdx);
-  const idxAtual = remoteLegendas.findIndex(x => x.idx === atual);
-  const prox = idxAtual + 1 >= remoteLegendas.length ? -1 : remoteLegendas[idxAtual + 1].idx;
-  await fetch(`${PLAYER_API}/legenda`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ idx: prox })
-  });
-  // Reflete local sem esperar o próximo poll (mesmo padrão da dublagem).
-  if (ultimoEstadoRemoto) ultimoEstadoRemoto = { ...ultimoEstadoRemoto, legendaIdx: prox };
-  atualizarBotaoCC();
-  pollRemote();
-}
-
-// Dublagem: ao contrário da legenda (puramente client-side), trocar de faixa de áudio
-// manda a TV regerar o HLS/remux inteiro com a faixa nova — não é instantâneo, a TV mostra
-// "Preparando..." de novo por alguns segundos. Só aparece com 2+ faixas (trocar com 1 só
-// não faz sentido). `idx` aqui é o índice GLOBAL do ffprobe (bate com -map), diferente do
-// `idx` relativo da legenda.
-let remoteAudios = [];
 async function remoteCarregarAudios(id) {
   try { remoteAudios = await fetch(`${API}/${id}/audios`).then(r => r.json()); }
   catch { remoteAudios = []; }
-  atualizarBotaoAudio();
-}
-function atualizarBotaoAudio() {
-  els.remoteAudioBtn.style.display = remoteAudios.length > 1 ? '' : 'none';
-  const atual = remoteAudios.find(x => x.atual);
-  els.remoteAudioBtn.textContent = '🗣️ ' + (atual && atual.idioma ? atual.idioma.toUpperCase() : '?');
-}
-async function remoteAudio() {
-  if (remoteAudios.length < 2) return;
-  const idxAtual = remoteAudios.findIndex(x => x.atual);
-  const prox = remoteAudios[(idxAtual + 1) % remoteAudios.length];
-  await fetch(`${PLAYER_API}/audio`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ idx: prox.idx })
-  });
-  // Reflete local sem esperar o próximo /audios (só vale até trocar de filme de novo, quando
-  // remoteCarregarAudios busca a lista de verdade pro filme novo).
-  remoteAudios = remoteAudios.map(x => ({ ...x, atual: x.idx === prox.idx }));
-  atualizarBotaoAudio();
-  pollRemote();
-  oferecerAudioDaSerie(prox.idioma);
+  if (folhaAberta()) desenharFolha();
 }
 
-// Trocou a dublagem de um episódio: pergunta UMA vez por série (nesta página) se vale pra série toda.
-const serieJaPerguntada = new Set();
-async function oferecerAudioDaSerie(idioma) {
-  const chave = filmeAtualRemoto && filmeAtualRemoto.serieChave;
-  const nome = { por: 'Português', eng: 'Inglês' }[idioma];
-  if (!chave || !nome || serieJaPerguntada.has(chave)) return;
-  const atuais = await carregarAudiosDasSeries();
-  if (atuais[chave] === idioma) return;
-  serieJaPerguntada.add(chave);
-  if (!confirm(`Usar ${nome} em toda a série?`)) return;
-  await fetch(`/api/series/${encodeURIComponent(chave)}/audio`, {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idioma })
-  });
-  render();
+const NOME_IDIOMA = { por: 'Português', eng: 'Inglês', spa: 'Espanhol', fra: 'Francês', deu: 'Alemão', ita: 'Italiano', jpn: 'Japonês' };
+const rotuloIdioma = i => NOME_IDIOMA[i] || (i ? i.toUpperCase() : 'Desconhecido');
+const curtoAudio = a => a ? ({ por: 'PT', eng: 'EN' }[a] || a.toUpperCase()) : 'auto';
+const curtoLegenda = l => l === 'off' ? 'sem' : l ? ({ por: 'PT', eng: 'EN' }[l] || l.toUpperCase()) : 'auto';
+
+function chipsHtml(chave) {
+  const p = padroes[chave] || {};
+  return `<button class="chip${p.audio ? ' on' : ''}" data-pref-serie="${attr(chave)}" title="Idioma e legenda padrão da série">🗣 ${curtoAudio(p.audio)}</button>` +
+         `<button class="chip${p.legenda ? ' on' : ''}" data-pref-serie="${attr(chave)}" title="Idioma e legenda padrão da série">CC ${curtoLegenda(p.legenda)}</button>`;
 }
+function atualizarChips() {
+  document.querySelectorAll('[data-chips]').forEach(el => { el.innerHTML = chipsHtml(el.dataset.chips); });
+}
+
+function interruptoresHtml(chave, n) {
+  const p = (prefsTemporadas[chave] || {})[n] || {};
+  const sw = (campo, icone, titulo) =>
+    `<button class="sw${p[campo] ? ' on' : ''}" data-sw="${campo}" data-serie="${attr(chave)}" data-temp="${n}" aria-pressed="${!!p[campo]}" title="${titulo}">${icone}</button>`;
+  return `<span class="sws">${sw('pularAbertura', '⏩', 'Pular a abertura sozinho')}${sw('proximoAutomatico', '⏭', 'Ir pro próximo episódio sozinho')}</span>`;
+}
+
+document.getElementById('grid').addEventListener('click', async e => {
+  const chip = e.target.closest('[data-pref-serie]');
+  if (chip) { e.stopPropagation(); abrirFolhaSerie(chip.dataset.prefSerie); return; }
+  const sw = e.target.closest('.sw');
+  if (!sw) return;
+  e.stopPropagation();   // (captura) o clique não chega ao cabeçalho da série/temporada, que abriria/fecharia
+  const { serie, temp, sw: campo } = sw.dataset;
+  const novo = !sw.classList.contains('on');
+  const r = await fetch(`/api/series/${encodeURIComponent(serie)}/temporadas/${temp}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [campo]: novo })
+  }).catch(() => null);
+  if (!r || !r.ok) { toast('Não consegui salvar. Tente de novo.'); return; }
+  ((prefsTemporadas[serie] ||= {})[temp] ||= {})[campo] = novo;
+  document.querySelectorAll(`.sw[data-sw="${campo}"]`).forEach(b => {
+    if (b.dataset.serie === serie && b.dataset.temp === temp) { b.classList.toggle('on', novo); b.setAttribute('aria-pressed', novo); }
+  });
+}, true);
+
+async function salvarPadrao(chave, tipo, valor) {   // tipo: 'audio' | 'legenda'
+  const r = await fetch(`/api/series/${encodeURIComponent(chave)}/${tipo}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idioma: valor || null })
+  }).catch(() => null);
+  if (!r || !r.ok) { toast('Não consegui salvar o padrão da série.'); return false; }
+  const p = padroes[chave] ||= {};
+  if (valor) p[tipo] = valor; else delete p[tipo];
+  if (!p.audio && !p.legenda) delete padroes[chave];
+  atualizarChips();
+  return true;
+}
+
+// Avisos curtos acima da barra (nada de confirm()/alert()).
+let toastTimer = null;
+function toast(texto, acao) {
+  document.getElementById('toast')?.remove();
+  const el = document.createElement('div');
+  el.className = 'toast'; el.id = 'toast';
+  el.innerHTML = `<span>${esc(texto)}</span>` + (acao ? `<button>${esc(acao.rotulo)}</button>` : '');
+  if (acao) el.querySelector('button').onclick = () => { el.remove(); acao.fazer(); };
+  document.body.appendChild(el);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.remove(), 8000);
+}
+
+// ─── Folha "Idioma e legenda": abre ao tocar no título (o que está tocando) ou num chip da série (padrão) ───
+let folha = null;   // { modo: 'agora' } | { modo: 'serie', chave, nome }
+const folhaAberta = () => !document.getElementById('folha').hidden;
+
+function abrirFolhaAgora() { if (!filmeAtualRemoto) return; folha = { modo: 'agora' }; mostrarFolha(); }
+function abrirFolhaSerie(chave) {
+  const nome = document.querySelector(`.grupo[data-serie="${CSS.escape(chave)}"] > .grupo-hd`)?.firstChild?.nextSibling?.textContent?.trim() || 'série';
+  folha = { modo: 'serie', chave, nome };
+  mostrarFolha();
+}
+function mostrarFolha() {
+  document.getElementById('folha').hidden = false;
+  document.getElementById('folhaScrim').hidden = false;
+  desenharFolha();
+}
+function fecharFolha() {
+  document.getElementById('folha').hidden = true;
+  document.getElementById('folhaScrim').hidden = true;
+}
+
+const opcao = (grupo, valor, rotulo, ligada) =>
+  `<button class="opt${ligada ? ' on' : ''}" data-fo="${grupo}" data-v="${attr(String(valor))}">${esc(rotulo)}</button>`;
+
+function desenharFolha() {
+  const corpo = document.getElementById('folhaCorpo');
+  const titulo = document.getElementById('folhaTitulo');
+  if (folha.modo === 'serie') {
+    const p = padroes[folha.chave] || {};
+    titulo.textContent = 'Padrão · ' + folha.nome;
+    corpo.innerHTML =
+      '<h3>Áudio</h3><div class="opcoes">' +
+        [['', 'Automático'], ['por', 'Português'], ['eng', 'Inglês']].map(([v, t]) => opcao('s-audio', v, t, (p.audio || '') === v)).join('') +
+      '</div><h3>Legenda</h3><div class="opcoes">' +
+        [['', 'Automática'], ['off', 'Desligada'], ['por', 'Português'], ['eng', 'Inglês']].map(([v, t]) => opcao('s-legenda', v, t, (p.legenda || '') === v)).join('') +
+      '</div>';
+    return;
+  }
+
+  const f = filmeAtualRemoto;
+  titulo.textContent = 'Idioma e legenda';
+  const legAtual = ultimoEstadoRemoto ? ultimoEstadoRemoto.legendaIdx : -1;
+  let html = '<h3>Áudio</h3><div class="opcoes">' + (remoteAudios.length > 1
+    ? remoteAudios.map(a => opcao('audio', a.idx, a.idioma ? rotuloIdioma(a.idioma) : (a.titulo || 'Faixa ' + a.idx), a.atual)).join('')
+    : '<span class="vazio">Só uma faixa de áudio.</span>') + '</div>';
+  html += '<h3>Legenda</h3><div class="opcoes">' + (remoteLegendas.length
+    ? opcao('legenda', -1, 'Desligada', legAtual === -1) + remoteLegendas.map(l =>
+        opcao('legenda', l.idx, l.idioma ? rotuloIdioma(l.idioma) + (l.titulo ? ' · ' + l.titulo : '') : (l.titulo || 'Faixa ' + l.idx), legAtual === l.idx)).join('')
+    : '<span class="vazio">Este arquivo não tem legenda.</span>') + '</div>';
+  if (f && f.ehEpisodio && f.serieChave) {
+    const ligado = !!padroes[f.serieChave];
+    html += `<div class="usar-serie"><span>Usar em toda a série</span><button class="opt${ligado ? ' on' : ''}" data-fo="usar-serie" data-v="${ligado ? 0 : 1}" aria-pressed="${ligado}">${ligado ? 'Ligado' : 'Desligado'}</button></div>`;
+  }
+  corpo.innerHTML = html;
+}
+
+// Grava, como padrão da série, o que está escolhido AGORA no que toca (áudio e legenda).
+async function gravarEscolhaComoPadraoDaSerie() {
+  const chave = filmeAtualRemoto && filmeAtualRemoto.serieChave;
+  if (!chave) return;
+  const audio = remoteAudios.find(a => a.atual);
+  const legIdx = ultimoEstadoRemoto ? ultimoEstadoRemoto.legendaIdx : -1;
+  const leg = remoteLegendas.find(l => l.idx === legIdx);
+  if (audio && audio.idioma && NOME_IDIOMA[audio.idioma]) await salvarPadrao(chave, 'audio', audio.idioma);
+  await salvarPadrao(chave, 'legenda', legIdx === -1 || !leg ? 'off' : (NOME_IDIOMA[leg.idioma] ? leg.idioma : null));
+}
+
+document.getElementById('folhaCorpo').addEventListener('click', async e => {
+  const b = e.target.closest('.opt');
+  if (!b) return;
+  const { fo, v } = b.dataset;
+  if (fo === 's-audio') await salvarPadrao(folha.chave, 'audio', v);
+  else if (fo === 's-legenda') await salvarPadrao(folha.chave, 'legenda', v);
+  else if (fo === 'audio') {
+    const idx = Number(v);
+    await fetch(`${PLAYER_API}/audio`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idx }) });
+    remoteAudios = remoteAudios.map(a => ({ ...a, atual: a.idx === idx }));
+    if (padroes[filmeAtualRemoto?.serieChave]) await gravarEscolhaComoPadraoDaSerie();
+    pollRemote();
+  } else if (fo === 'legenda') {
+    const idx = Number(v);
+    await fetch(`${PLAYER_API}/legenda`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idx }) });
+    if (ultimoEstadoRemoto) ultimoEstadoRemoto = { ...ultimoEstadoRemoto, legendaIdx: idx };
+    if (padroes[filmeAtualRemoto?.serieChave]) await gravarEscolhaComoPadraoDaSerie();
+    pollRemote();
+  } else if (fo === 'usar-serie') {
+    const chave = filmeAtualRemoto.serieChave;
+    if (v === '1') await gravarEscolhaComoPadraoDaSerie();
+    else { await salvarPadrao(chave, 'audio', null); await salvarPadrao(chave, 'legenda', null); }
+  }
+  desenharFolha();
+});
+
+// A barra muda de altura (botões, aviso de próximo): publica a altura real pra lista não ficar atrás dela.
+new ResizeObserver(() => {
+  document.documentElement.style.setProperty('--remote-h', (els.remote.classList.contains('active') ? els.remote.offsetHeight : 0) + 'px');
+}).observe(els.remote);
 
 async function pollRemote() {
   if (remoteTimer) { clearTimeout(remoteTimer); remoteTimer = null; }
@@ -370,11 +528,12 @@ async function pollRemote() {
     if (estado.filmeId === null) {
       bar.classList.remove('active');
       filmeAtualRemoto = null;
-      els.remoteCCBtn.style.display = 'none';
-      els.remoteAudioBtn.style.display = 'none';
       els.remoteProximoEpBtn.style.display = 'none';
       remoteAbertura = null;
-      document.getElementById('remotePularBtn').style.display = 'none';
+      document.getElementById('remoteDireitaBtn').classList.remove('vermelho');
+      document.getElementById('remoteDireitaBtn').textContent = '30s »';
+      document.getElementById('remoteFaixaAbertura').style.display = 'none';
+      fecharFolha();
       // Só re-renderiza se realmente parou de tocar algo (transição real) -- no primeiro poll
       // da página (estadoAnterior undefined) "nada tocando" já é exatamente o que o render()
       // inicial (linha ~303) desenhou, então um 2º fetch de /tela aqui seria só desperdício.
@@ -390,13 +549,13 @@ async function pollRemote() {
         atualizarBotaoProximoEp(estado.filmeId);
       }
       const f = filmeAtualRemoto;
-      document.getElementById('remoteTitulo').textContent = f ? `📺 ${rotuloComTitulo(f) || f.titulo}` : '📺 Reproduzindo…';
+      document.getElementById('remoteTitulo').textContent = (f ? `📺 ${rotuloComTitulo(f) || f.titulo}` : '📺 Reproduzindo…') + ' ▾';
       document.getElementById('remotePlayPauseBtn').textContent = estado.playing ? '⏸' : '▶';
       document.getElementById('remoteVolume').value = estado.volume;
       const pos = estado.posSegundos || 0, dur = estado.duracaoSegundos || 0;
       document.getElementById('remoteProgFill').style.width = dur ? Math.min(100, 100 * pos / dur) + '%' : '0';
       document.getElementById('remoteTime').textContent = dur ? `${mmss(pos)} / ${mmss(dur)}` : (pos ? mmss(pos) : '');
-      atualizarBotaoPular(pos);
+      atualizarBotaoDireita(pos, dur);
       if (trocouFilme) render();
     }
     const proxBox = document.getElementById('remoteProximo');

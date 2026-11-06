@@ -114,26 +114,34 @@ function grupoHtml(classe, dados, aberto, onclick, tituloHtml, corpoHtml) {
 
 // Corpo de uma série (index/controle): seletor de áudio no topo, depois as temporadas
 // (cada uma um .grupo recuado, fechado) ou, com uma só, os episódios direto. `linhaHtml(ep)`
-// devolve a linha do episódio. A linha "Faltam: E01–E08" por temporada entraria aqui, no corpo
-// de cada temporada.
-function corpoDaSerieHtml(episodios, audioHtml, linhaHtml) {
+// devolve a linha do episódio. `opcoes` (opcional, só o controle usa): `temporadaExtra(numero)` devolve o
+// html ao fim do cabeçalho de cada temporada numerada (ou, na série de uma temporada só, numa linha acima dos
+// episódios). A linha "Faltam: E01–E08" por temporada entraria aqui, no corpo de cada temporada.
+function corpoDaSerieHtml(episodios, audioHtml, linhaHtml, opcoes) {
+  var extra = (opcoes && opcoes.temporadaExtra) || function () { return ''; };
   var linhas = function (eps) { return eps.map(linhaHtml).join(''); };
   var grupos = agruparPorTemporada(episodios);
-  if (!grupos) return audioHtml + linhas(episodios);
+  if (!grupos) {
+    var t = episodios.length && episodios[0].temporada;
+    var unica = t > 0 ? extra(t) : '';
+    return audioHtml + (unica ? '<div class="serie-opcoes">' + unica + '</div>' : '') + linhas(episodios);
+  }
   return audioHtml + grupos.map(function (g) {
     var vistos = textoVistos(g.episodios);
     return grupoHtml(' temporada', 'data-temp="' + attr(g.chave) + '"', temporadaEstaAberta(g.chave), 'cliqueTemporada(this)',
       esc(g.rotulo) + ' <span class="count">(' + contagemEpisodios(g.episodios.length) + ')</span>' +
-        (vistos ? ' <span class="count">' + vistos + '</span>' : ''),
+        (vistos ? ' <span class="count">' + vistos + '</span>' : '') + (g.numero > 0 ? extra(g.numero) : ''),
       linhas(g.episodios));
   }).join('');
 }
 
 // O .grupo inteiro de uma série (index/controle). `prefixoHtml` vem antes do nome (o pôster, no index).
-function serieHtml(s, prefixoHtml, audioHtml, linhaHtml) {
+// `opcoes.sufixoSerie` (html) vai ao fim do cabeçalho (os chips de padrão do controle); o resto de `opcoes` vai pro corpo.
+function serieHtml(s, prefixoHtml, audioHtml, linhaHtml, opcoes) {
   return grupoHtml('', 'data-serie="' + attr(s.chave) + '"', serieEstaAberta(s.chave), 'cliqueSerie(this)',
-    prefixoHtml + esc(s.nome) + ' <span class="count">(' + contagemEpisodios(s.episodios.length) + ')</span>',
-    corpoDaSerieHtml(s.episodios, audioHtml, linhaHtml));
+    prefixoHtml + esc(s.nome) + ' <span class="count">(' + contagemEpisodios(s.episodios.length) + ')</span>' +
+      ((opcoes && opcoes.sufixoSerie) || ''),
+    corpoDaSerieHtml(s.episodios, audioHtml, linhaHtml, opcoes));
 }
 
 // Reflete `sanfona` no DOM (classe collapsed + caret) sem refazer a lista — o scroll não pula.
