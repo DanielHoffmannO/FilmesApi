@@ -124,31 +124,38 @@ input[type=range].vol::-moz-range-thumb{width:16px;height:16px;border-radius:50%
 input[type=range].vol:focus-visible{outline:2px solid var(--acc);outline-offset:-6px;border-radius:8px}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
 
-/* ─── folha "Idioma e legenda" (sobe de trás da barra) e avisos ─── */
-.folha-scrim{position:fixed;inset:0;z-index:55}
-.folha{position:fixed;left:0;right:0;bottom:var(--remote-h, 0px);z-index:56;background:var(--bg-2);border-top:1px solid #333;border-radius:12px 12px 0 0;padding:14px 16px;max-height:60vh;overflow:auto;box-shadow:0 -8px 24px rgba(0,0,0,.5)}
-.folha[hidden],.folha-scrim[hidden]{display:none}
-.folha-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;font-size:14px;font-weight:600}
-.folha-hd button,.opt,.sw,.chip,.toast button{background:#222;color:#eee;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px}
-.folha-hd button{padding:4px 10px}
-.folha h3{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 6px}
-.opcoes{display:flex;flex-wrap:wrap;gap:8px}
-.opt{padding:9px 14px}
-.opt.on{border-color:var(--accent);color:var(--accent)}
-.folha .vazio{color:var(--muted);font-size:13px}
-.usar-serie{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;padding-top:12px;border-top:1px solid #222;font-size:13px}
-.toast{position:fixed;left:16px;right:16px;bottom:calc(var(--remote-h, 0px) + 12px);z-index:60;background:#2a2a2a;border:1px solid #444;border-radius:8px;padding:10px 12px;font-size:13px;display:flex;gap:10px;align-items:center;box-shadow:0 4px 16px rgba(0,0,0,.5)}
-.toast span{flex:1}
-.toast button{padding:5px 10px}
-
-/* ─── chips de padrão da série e interruptores por temporada ─── */
-.chips{display:inline-flex;gap:6px;margin-left:auto}
-.chip{padding:3px 8px;font-size:11px;color:var(--muted);min-height:28px;white-space:nowrap}
-.chip.on{color:#ddd}
-.sws{display:inline-flex;gap:6px;margin-left:auto}
-.sw{min-width:36px;min-height:36px;padding:0 6px;font-size:15px;opacity:.55}
-.sw.on{opacity:1;border-color:var(--accent);color:var(--accent)}
-.serie-opcoes{display:flex;justify-content:flex-end;padding:4px 12px}
+/* ─── folha "Idioma e legenda" e avisos ─── */
+.folha-scrim{position:fixed;inset:0;z-index:55;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .2s}
+.folha-scrim.on{opacity:1;pointer-events:auto}
+.folha{position:fixed;left:0;right:0;bottom:0;z-index:56;max-width:600px;margin:0 auto;background:var(--s1);border-radius:22px 22px 0 0;border-top:1px solid var(--line);padding:10px 20px calc(24px + env(safe-area-inset-bottom));max-height:86vh;overflow-y:auto;transform:translateY(105%);visibility:hidden;transition:transform .2s ease-out,visibility 0s .2s;outline:0}
+.folha.on{transform:none;visibility:visible;transition:transform .2s ease-out,visibility 0s}
+.alca{width:38px;height:4px;border-radius:2px;background:var(--s3);margin:0 auto 14px}
+.folha h2{font-size:18px;font-weight:650}
+.folha .sub{color:var(--mut);font-size:13px;margin:2px 0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rot{font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut2);font-weight:600;margin:16px 0 8px}
+.seg2{display:flex;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:3px;overflow-x:auto;scrollbar-width:none}
+.seg2::-webkit-scrollbar{display:none}
+.seg2 button{flex:1 0 auto;padding:0 14px;min-height:44px;border-radius:8px;font-size:14px;color:var(--mut);white-space:nowrap;transition:background .15s,color .15s}
+.seg2 button.on{background:var(--s3);color:#fff;font-weight:550}
+.op{display:flex;align-items:center;width:100%;min-height:46px;border-bottom:1px solid var(--line);font-size:15px;text-align:left}
+.op span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.op svg{color:var(--acc);width:19px;height:19px}
+.op.mais{color:var(--mut);border-bottom:0}
+.op.mais svg{color:var(--mut)}
+.folha .vazio{color:var(--mut);font-size:13.5px;padding:10px 0}
+.lin{display:flex;align-items:center;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.lin div{flex:1}
+.lin small{display:block;color:var(--mut);font-size:12.5px;margin-top:1px}
+.sw{position:relative;width:46px;height:28px;border-radius:14px;background:var(--s3);flex:none;transition:background .15s}
+.sw::before{content:"";position:absolute;inset:-9px -4px}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#aaa;transition:transform .15s,background .15s}
+.sw[aria-checked=true]{background:var(--acc)}
+.sw[aria-checked=true]::after{transform:translateX(18px);background:#fff}
+.toast{position:fixed;left:16px;right:16px;bottom:calc(var(--remote-h, 0px) + 12px);z-index:60;max-width:568px;margin:0 auto;background:var(--s3);border-radius:12px;padding:6px 6px 6px 16px;min-height:48px;font-size:13.5px;display:flex;gap:8px;align-items:center;box-shadow:0 6px 20px rgba(0,0,0,.5);animation:toast-in .18s ease-out}
+.toast span{flex:1;min-width:0}
+.toast button{color:var(--acc-txt);font-weight:600;font-size:13.5px;padding:0 12px;min-height:40px;border-radius:8px}
+.toast button:active{background:var(--s2)}
+@keyframes toast-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 </style>
 </head>
 <body>
@@ -168,9 +175,11 @@ input[type=range].vol:focus-visible{outline:2px solid var(--acc);outline-offset:
   <div id="grid"></div>
 </main>
 
-<div class="folha-scrim" id="folhaScrim" hidden onclick="fecharFolha()"></div>
-<div class="folha" id="folha" hidden>
-  <div class="folha-hd"><span id="folhaTitulo"></span><button onclick="fecharFolha()" aria-label="Fechar">✕</button></div>
+<div class="folha-scrim" id="folhaScrim" onclick="fecharFolha()"></div>
+<div class="folha" id="folha" role="dialog" aria-modal="true" aria-labelledby="folhaTitulo" tabindex="-1">
+  <div class="alca"></div>
+  <h2 id="folhaTitulo">Idioma e legenda</h2>
+  <div class="sub" id="folhaSub"></div>
   <div id="folhaCorpo"></div>
 </div>
 
@@ -606,12 +615,12 @@ async function salvarPadrao(chave, tipo, valor) {   // tipo: 'audio' | 'legenda'
   return true;
 }
 
-// Avisos curtos acima da barra (nada de confirm()/alert()).
+// Avisos curtos acima da barra (nada de confirm()/alert()); somem sozinhos.
 let toastTimer = null;
 function toast(texto, acao) {
   document.getElementById('toast')?.remove();
   const el = document.createElement('div');
-  el.className = 'toast'; el.id = 'toast';
+  el.className = 'toast'; el.id = 'toast'; el.setAttribute('role', 'status');
   el.innerHTML = `<span>${esc(texto)}</span>` + (acao ? `<button>${esc(acao.rotulo)}</button>` : '');
   if (acao) el.querySelector('button').onclick = () => { el.remove(); acao.fazer(); };
   document.body.appendChild(el);
@@ -619,57 +628,85 @@ function toast(texto, acao) {
   toastTimer = setTimeout(() => el.remove(), 8000);
 }
 
-// ─── Folha "Idioma e legenda": abre ao tocar no título (o que está tocando) ou num chip da série (padrão) ───
-let folha = null;   // { modo: 'agora' } | { modo: 'serie', chave, nome }
-const folhaAberta = () => !document.getElementById('folha').hidden;
+// ─── Folha "Idioma e legenda": abre ao tocar no título (o que está tocando) ou no ⋯ de uma série (padrão da série) ───
+let folha = null;   // { modo: 'agora', todas } | { modo: 'serie', chave, nome }
+const folhaAberta = () => document.getElementById('folha').classList.contains('on');
+const LEGENDAS_VISIVEIS = 4;
 
-function abrirFolhaAgora() { if (!filmeAtualRemoto) return; folha = { modo: 'agora' }; mostrarFolha(); }
+function abrirFolhaAgora() { if (!filmeAtualRemoto) return; folha = { modo: 'agora', todas: false }; mostrarFolha(); }
 function abrirFolhaSerie(chave) {
   const nome = document.querySelector(`.grupo[data-serie="${CSS.escape(chave)}"] .serie b`)?.textContent?.trim() || 'série';
   folha = { modo: 'serie', chave, nome };
   mostrarFolha();
 }
 function mostrarFolha() {
-  document.getElementById('folha').hidden = false;
-  document.getElementById('folhaScrim').hidden = false;
+  document.getElementById('folhaScrim').classList.add('on');
+  const f = document.getElementById('folha');
+  f.classList.add('on');
   desenharFolha();
+  f.focus({ preventScroll: true });
 }
 function fecharFolha() {
-  document.getElementById('folha').hidden = true;
-  document.getElementById('folhaScrim').hidden = true;
+  document.getElementById('folhaScrim').classList.remove('on');
+  document.getElementById('folha').classList.remove('on');
 }
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && folhaAberta()) fecharFolha(); });
 
-const opcao = (grupo, valor, rotulo, ligada) =>
-  `<button class="opt${ligada ? ' on' : ''}" data-fo="${grupo}" data-v="${attr(String(valor))}">${esc(rotulo)}</button>`;
+const segOpcao = (grupo, valor, rotulo, ligada) =>
+  `<button role="radio" aria-checked="${ligada}" class="${ligada ? 'on' : ''}" data-fo="${grupo}" data-v="${attr(String(valor))}">${esc(rotulo)}</button>`;
+const linhaOpcao = (grupo, valor, rotulo, ligada) =>
+  `<button class="op" role="radio" aria-checked="${ligada}" data-fo="${grupo}" data-v="${attr(String(valor))}"><span>${esc(rotulo)}</span>${ligada ? ico('check') : ''}</button>`;
+
+// Rótulos em português (nomeDoIdioma); se duas faixas dão o mesmo nome, o título da faixa desempata ("Português · SDH").
+function rotulosDasFaixas(faixas) {
+  const nomes = faixas.map(x => nomeDoIdioma(x.idioma, x.titulo));
+  return faixas.map((x, i) => nomes.indexOf(nomes[i]) !== nomes.lastIndexOf(nomes[i]) && x.titulo && !nomes[i].includes(x.titulo) ? nomes[i] + ' · ' + x.titulo : nomes[i]);
+}
 
 function desenharFolha() {
   const corpo = document.getElementById('folhaCorpo');
-  const titulo = document.getElementById('folhaTitulo');
+  const sub = document.getElementById('folhaSub');
   if (folha.modo === 'serie') {
     const p = padroes[folha.chave] || {};
-    titulo.textContent = 'Padrão · ' + folha.nome;
+    sub.textContent = 'Padrão de ' + folha.nome;
     corpo.innerHTML =
-      '<h3>Áudio</h3><div class="opcoes">' +
-        [['', 'Automático'], ['por', 'Português'], ['eng', 'Inglês']].map(([v, t]) => opcao('s-audio', v, t, (p.audio || '') === v)).join('') +
-      '</div><h3>Legenda</h3><div class="opcoes">' +
-        [['', 'Automática'], ['off', 'Desligada'], ['por', 'Português'], ['eng', 'Inglês']].map(([v, t]) => opcao('s-legenda', v, t, (p.legenda || '') === v)).join('') +
+      '<div class="rot">Áudio</div><div class="seg2" role="radiogroup" aria-label="Áudio">' +
+        [['', 'Automático'], ['por', 'Português'], ['eng', 'Inglês']].map(([v, t]) => segOpcao('s-audio', v, t, (p.audio || '') === v)).join('') +
+      '</div><div class="rot">Legenda</div><div role="radiogroup" aria-label="Legenda">' +
+        [['', 'Automática'], ['off', 'Desligada'], ['por', 'Português'], ['eng', 'Inglês']].map(([v, t]) => linhaOpcao('s-legenda', v, t, (p.legenda || '') === v)).join('') +
       '</div>';
     return;
   }
 
   const f = filmeAtualRemoto;
-  titulo.textContent = 'Idioma e legenda';
+  sub.textContent = f ? (f.ehEpisodio ? [f.serie, f.temporada != null ? 'T' + f.temporada : '', codigoEp(f)].filter(Boolean).join(' · ') : f.titulo) : '';
+
+  // áudio: controle segmentado (português, inglês, espanhol, resto em ordem alfabética)
+  const audios = ordenarPorIdioma(remoteAudios, a => ({ idioma: a.idioma, titulo: a.titulo }));
+  const rotAudios = rotulosDasFaixas(audios);
+  let html = '<div class="rot">Áudio</div>' + (audios.length > 1
+    ? '<div class="seg2" role="radiogroup" aria-label="Áudio">' + audios.map((a, i) => segOpcao('audio', a.idx, rotAudios[i], !!a.atual)).join('') + '</div>'
+    : `<div class="vazio">${audios.length ? esc(rotAudios[0]) + ' (única faixa de áudio)' : 'Sem faixas de áudio.'}</div>`);
+
+  // legenda: lista de linhas (4 visíveis + "Mais N idiomas")
   const legAtual = ultimoEstadoRemoto ? ultimoEstadoRemoto.legendaIdx : -1;
-  let html = '<h3>Áudio</h3><div class="opcoes">' + (remoteAudios.length > 1
-    ? remoteAudios.map(a => opcao('audio', a.idx, a.idioma ? rotuloIdioma(a.idioma) : (a.titulo || 'Faixa ' + a.idx), a.atual)).join('')
-    : '<span class="vazio">Só uma faixa de áudio.</span>') + '</div>';
-  html += '<h3>Legenda</h3><div class="opcoes">' + (remoteLegendas.length
-    ? opcao('legenda', -1, 'Desligada', legAtual === -1) + remoteLegendas.map(l =>
-        opcao('legenda', l.idx, l.idioma ? rotuloIdioma(l.idioma) + (l.titulo ? ' · ' + l.titulo : '') : (l.titulo || 'Faixa ' + l.idx), legAtual === l.idx)).join('')
-    : '<span class="vazio">Este arquivo não tem legenda.</span>') + '</div>';
+  const legs = ordenarPorIdioma(remoteLegendas, l => ({ idioma: l.idioma, titulo: l.titulo }));
+  const rotLegs = rotulosDasFaixas(legs);
+  html += '<div class="rot">Legenda</div>';
+  if (!legs.length) html += '<div class="vazio">Este arquivo não tem legenda.</div>';
+  else {
+    const linhas = [['-1', 'Desligada', legAtual === -1], ...legs.map((l, i) => [String(l.idx), rotLegs[i], legAtual === l.idx])];
+    const escolhida = linhas.findIndex(l => l[2]);
+    const todas = folha.todas || linhas.length <= LEGENDAS_VISIVEIS + 1 || escolhida >= LEGENDAS_VISIVEIS;   // a escolhida nunca fica escondida
+    const visiveis = todas ? linhas : linhas.slice(0, LEGENDAS_VISIVEIS);
+    html += '<div role="radiogroup" aria-label="Legenda">' + visiveis.map(l => linhaOpcao('legenda', l[0], l[1], l[2])).join('') + '</div>';
+    if (!todas) html += `<button class="op mais" data-fo="mais"><span>Mais ${linhas.length - LEGENDAS_VISIVEIS} idiomas</span>${ico('caret').replace('<path d="M9 6l6 6l-6 6"/>', '<path d="M6 9l6 6l6-6"/>')}</button>`;
+  }
+
   if (f && f.ehEpisodio && f.serieChave) {
     const ligado = !!padroes[f.serieChave];
-    html += `<div class="usar-serie"><span>Usar em toda a série</span><button class="opt${ligado ? ' on' : ''}" data-fo="usar-serie" data-v="${ligado ? 0 : 1}" aria-pressed="${ligado}">${ligado ? 'Ligado' : 'Desligado'}</button></div>`;
+    html += `<div class="lin"><div id="rotUsarSerie">Usar em toda a série<small>Áudio e legenda como padrão</small></div>
+      <button class="sw" role="switch" aria-checked="${ligado}" aria-labelledby="rotUsarSerie" data-fo="usar-serie" data-v="${ligado ? 0 : 1}"></button></div>`;
   }
   corpo.innerHTML = html;
 }
@@ -686,10 +723,11 @@ async function gravarEscolhaComoPadraoDaSerie() {
 }
 
 document.getElementById('folhaCorpo').addEventListener('click', async e => {
-  const b = e.target.closest('.opt');
+  const b = e.target.closest('[data-fo]');
   if (!b) return;
   const { fo, v } = b.dataset;
-  if (fo === 's-audio') await salvarPadrao(folha.chave, 'audio', v);
+  if (fo === 'mais') folha.todas = true;
+  else if (fo === 's-audio') await salvarPadrao(folha.chave, 'audio', v);
   else if (fo === 's-legenda') await salvarPadrao(folha.chave, 'legenda', v);
   else if (fo === 'audio') {
     const idx = Number(v);
