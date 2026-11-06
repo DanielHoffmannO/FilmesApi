@@ -35,6 +35,8 @@ builder.Services.AddSingleton<PreferenciasTemporadaService>();
 builder.Services.AddSingleton<HlsTranscodeService>();
 builder.Services.AddSingleton<SubtitleService>();
 builder.Services.AddSingleton<PlayerStateService>();
+builder.Services.AddSingleton<AutomacaoDoPlayer>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<AutomacaoDoPlayer>());
 builder.Services.AddSingleton(sp => LimitadorDeDownloads.Da(sp.GetRequiredService<IConfiguration>()));
 builder.Services.AddHostedService<ScanPeriodicoService>();
 builder.Services.AddHostedService<PreAquecerContinuarService>();
