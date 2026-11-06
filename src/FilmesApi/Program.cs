@@ -37,6 +37,7 @@ builder.Services.AddSingleton<PlayerStateService>();
 builder.Services.AddSingleton(sp => LimitadorDeDownloads.Da(sp.GetRequiredService<IConfiguration>()));
 builder.Services.AddHostedService<ScanPeriodicoService>();
 builder.Services.AddHostedService<PreAquecerContinuarService>();
+builder.Services.AddHostedService<AnaliseDeAberturaService>();
 builder.Services.AddSingleton<LimpezaCacheService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<LimpezaCacheService>());
 builder.Services.AddSingleton<NomesPersonalizadosService>();

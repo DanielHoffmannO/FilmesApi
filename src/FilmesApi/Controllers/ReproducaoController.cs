@@ -233,6 +233,14 @@ public class ReproducaoController : ControllerBase
         }
     }
 
+    /// <summary>Onde fica a abertura do episódio, pro botão "Pular abertura" do controle. 404 se ainda não foi achada
+    /// (a análise roda em segundo plano — <see cref="AnaliseDeAberturaService"/>).</summary>
+    [HttpGet("{id:int}/abertura")]
+    public async Task<IActionResult> Abertura(int id) =>
+        await _service.ObterAberturaAsync(id) is var (inicio, fim)
+            ? Ok(new { inicioSegundos = inicio, fimSegundos = fim })
+            : NotFound(new { mensagem = "abertura não encontrada" });
+
     /// <summary>Faixas de legenda embutidas no arquivo (as de texto viram .vtt via o endpoint abaixo).</summary>
     [HttpGet("{id:int}/legendas")]
     public async Task<IActionResult> Legendas(int id, CancellationToken ct)

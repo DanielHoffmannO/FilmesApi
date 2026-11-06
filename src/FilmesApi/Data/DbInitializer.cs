@@ -41,6 +41,17 @@ public static class DbInitializer
             );
             """);
 
+        db.Database.ExecuteSqlRaw("""
+            CREATE TABLE IF NOT EXISTS "Aberturas" (
+                "FilmeId" INTEGER NOT NULL CONSTRAINT "PK_Aberturas" PRIMARY KEY,
+                "InicioSegundos" REAL NULL,
+                "FimSegundos" REAL NULL,
+                "AnalisadoEm" TEXT NOT NULL,
+                CONSTRAINT "FK_Aberturas_Filmes_FilmeId" FOREIGN KEY ("FilmeId")
+                    REFERENCES "Filmes" ("Id") ON DELETE CASCADE
+            );
+            """);
+
         // Bancos antigos podem ter ArquivoPath duplicado (scan rodado 2x antes do índice único).
         // Remove as duplicatas (mantém o menor Id; o FK em cascata leva o progresso junto) e
         // então cria o índice — mesmo nome/definição que o EnsureCreated de um banco novo gera.
