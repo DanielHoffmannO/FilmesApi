@@ -55,12 +55,14 @@ public class AnaliseDeAberturaService(IServiceScopeFactory escopos, FfmpegOption
             var creditos = (await db.Creditos.AsNoTracking().ToListAsync(ct)).ToDictionary(c => c.FilmeId);
             var pendentes = TemporadasPendentes(await filmes.ListarAsync(), jaFeitos, creditos);
 
+            string? pausa = null;
             foreach (var temporada in pendentes)
             {
-                if (!transcode.Ocioso || DateTime.UtcNow > fim) break;
+                if (!transcode.Ocioso) { pausa = "servidor ocupado (transcode/remux ativo)"; break; }
+                if (DateTime.UtcNow > fim) { pausa = "orçamento da rodada esgotado"; break; }
                 analisados += await AnalisarTemporadaAsync(temporada, jaFeitos, creditos, filmes, escopo.ServiceProvider, db, ct);
             }
-            medicao?.Ok(pendentes.Count == 0 ? "nada pendente" : $"{analisados} episódio(s) analisado(s), {pendentes.Count} temporada(s) na fila");
+            medicao?.Ok(Resumo(analisados, pendentes.Count, ProgressoDaVersao(await filmes.ListarAsync(), jaFeitos), pausa));
             if (analisados > 0) logger.LogInformation("Aberturas: {N} episódio(s) analisado(s).", analisados);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -69,6 +71,24 @@ public class AnaliseDeAberturaService(IServiceScopeFactory escopos, FfmpegOption
             logger.LogWarning(ex, "Análise de aberturas falhou — tenta de novo no próximo intervalo.");
         }
         return analisados;
+    }
+
+    /// <summary>Quantos episódios (de temporadas com 2+) já têm a marcação de abertura na versão atual do algoritmo, e quantos há ao todo.</summary>
+    internal static (int Feitos, int Total) ProgressoDaVersao(IReadOnlyList<FilmeResponse> catalogo, IReadOnlyDictionary<int, AberturaEpisodio> jaFeitos)
+    {
+        int feitos = 0, total = 0;
+        foreach (var eps in catalogo.Where(f => f.EhEpisodio && !f.EhExtra && f.Temporada is not null && f.Episodio is not null && !string.IsNullOrEmpty(f.SerieChave))
+                     .GroupBy(f => (f.SerieChave, f.Temporada)).Select(g => g.ToList()).Where(g => g.Count >= 2))
+            foreach (var f in eps) { total++; if (!PrecisaAnalisar(jaFeitos.GetValueOrDefault(f.Id), eps)) feitos++; }
+        return (feitos, total);
+    }
+
+    /// <summary>A linha do card "Tarefas" do /api/status: o que esta rodada fez, o progresso real da versão atual e por que parou, se parou.</summary>
+    internal static string Resumo(int analisados, int temporadasPendentes, (int Feitos, int Total) progresso, string? pausa)
+    {
+        var texto = $"v{VersaoAlgoritmo}: {progresso.Feitos} de {progresso.Total} episódios; {temporadasPendentes} temporada(s) pendente(s)";
+        if (analisados > 0) texto = $"{analisados} analisado(s) agora · " + texto;
+        return pausa is null ? texto : texto + $" · pausado: {pausa}";
     }
 
     /// <summary>Esse episódio entra na análise? Sem linha; ou linha 'auto' de versão antiga; ou "não achou" antes de chegar episódio novo na

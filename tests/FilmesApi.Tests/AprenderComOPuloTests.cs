@@ -154,6 +154,30 @@ public class AprendizadoDePuloTests
     }
 
     [Fact]
+    public void Abertura_de_7_s_estilo_Futurama_valida_com_o_pulo_e_o_modelo_acha_nos_outros_episodios()
+    {
+        var abertura = Aleatorio(Itens(7), 1);   // abaixo do mínimo da varredura (10 s): só o aprendizado pelo pulo (mínimo 4 s) cobre
+        var janela = Aleatorio(Itens(20), 2).Concat(abertura).Concat(Aleatorio(Itens(40), 3)).ToArray();   // janela começa em 0: abertura aos 20–27 s
+        var vizinho = Aleatorio(Itens(35), 4).Concat(abertura).Concat(Aleatorio(Itens(200), 5)).ToArray();
+        var r = new RajadaDePulo(1, 18, 30);   // ele pulou de 18 s a 30 s
+
+        var validado = AprendizadoDePulo.Validar(janela, 0, r, [vizinho], 4);
+
+        Assert.NotNull(validado);
+        Assert.InRange(validado!.InicioA, 18, 21);
+        Assert.InRange(validado.Duracao, 5.5, 10);
+        var outros = new[] { Aleatorio(Itens(70), 6).Concat(abertura).Concat(Aleatorio(Itens(200), 7)).ToArray(),
+                             Aleatorio(Itens(10), 8).Concat(abertura).Concat(Aleatorio(Itens(200), 9)).ToArray() };
+        var inicios = new[] { 70.0, 10.0 };
+        for (var i = 0; i < outros.Length; i++)
+        {
+            var achado = AprendizadoDePulo.ProcurarModelo(janela, 0, validado, outros[i], minimoPuloSegundos: 4);
+            Assert.NotNull(achado);
+            Assert.InRange(achado!.Value.Inicio, inicios[i] - 3, inicios[i] + 1);
+        }
+    }
+
+    [Fact]
     public void Cena_pulada_sem_audio_em_comum_nao_e_abertura()
     {
         var janela = Aleatorio(Itens(120), 2);
