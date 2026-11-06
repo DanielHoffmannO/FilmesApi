@@ -189,6 +189,7 @@ video { width: 100%; height: auto; background: #000; }
   // uma duracao pequena de mais durante a conversao e o backend marca "assistido" na marra —
   // mesmo bug que ja existia no index.html antes de duracaoConfiavel existir la.
   var duracaoConfiavel = false;
+  var aberturaPuladaDe = null;      // id do episódio em que a TV já pulou a abertura sozinha (1x por reprodução)
   var reproducaoConcluida = false;  // apos 'ended', nao deixa um save tardio recriar a retomada
   var proximoPendente = null;       // proximo episodio oferecido apos o 'ended'
   var proximoTimer = null;
@@ -1128,11 +1129,26 @@ video { width: 100%; height: auto; background: #000; }
     if (estado.seekAbsVersion !== anterior.seekAbsVersion) {
       try { v.currentTime = Math.max(0, estado.seekAbsPos); } catch (e) {}
     }
+    // Pulo automático da abertura (temporada com o interruptor ligado). A checagem é aqui, na TV, com o currentTime dela (o report de
+    // posição ao servidor é a cada 2 s e voltaria pelo poll: errar o início da abertura por vários segundos); o poll de 1,5 s é a granularidade.
+    var alvoAbertura = decidirSaltoAbertura(estado.abertura, v.currentTime, aberturaPuladaDe === filmeAtual);
+    if (alvoAbertura !== null) {
+      aberturaPuladaDe = filmeAtual;
+      try { v.currentTime = alvoAbertura; } catch (e) {}
+      send('POST', PLAYER + '/abertura-pulada');
+      avisoNoPlayer('Abertura pulada');
+    }
     if (estado.legendaVersion !== anterior.legendaVersion) { legendaManualLocal = true; ativarLegenda(estado.legendaIdx); }
     if (estado.audioVersion !== anterior.audioVersion) aplicarAudioRemoto(estado.audioIdx);
     // Celular confirmou a oferta de proximo episodio que esta TV mesma colocou no ar —
     // mesmo caminho que o OK local do D-pad usaria (irProximo -> tocar -> Selecionar).
     if (estado.aceitarProximoVersion !== anterior.aceitarProximoVersion && proximoPendente) irProximo();
+  }
+
+  // Uma linha curta no player (sem foco novo de teclado); some sozinha se ninguem a trocou por outra mensagem.
+  function avisoNoPlayer(texto) {
+    els.pmsg.innerHTML = texto;
+    setTimeout(function () { if (els.pmsg.innerHTML === texto) els.pmsg.innerHTML = ''; }, 4000);
   }
 
   // Ao contrario da legenda (so troca o <track> ativo, sem tocar no servidor), a dublagem
