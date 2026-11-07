@@ -60,6 +60,7 @@ main{max-width:640px;margin:0 auto}
 .ep .n{width:34px;flex:none;color:var(--mut2);font-size:12.5px;font-variant-numeric:tabular-nums}
 .ep .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14.5px}
 .ep.vi .t{color:var(--mut)}
+.ep .ini{position:absolute;left:0;bottom:0;height:2px;background:var(--acc);opacity:.7;border-radius:0 2px 2px 0}
 .ep.tc{background:var(--acc-soft)}
 .ep.tc::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--acc)}
 .ep.tc .t{color:#fff;font-weight:550}
@@ -271,18 +272,25 @@ function ckHtml(f) {
   return `<button class="ck${f.assistido ? ' on' : ''}" aria-label="${rot}" aria-pressed="${!!f.assistido}" onclick="event.stopPropagation(); toggleAssistido(${f.id})">${ico(f.assistido ? 'check' : 'circle')}</button>`;
 }
 
+// episódio/filme que já foi aberto (tem posição salva) mas não terminado: um fio fino de progresso embaixo da linha
+function fioDoIniciado(f) {
+  if (f.assistido || !(f.posicaoSegundos > 0)) return '';
+  const pct = f.duracaoSegundos > 0 ? Math.max(4, Math.min(96, 100 * f.posicaoSegundos / f.duracaoSegundos)) : 8;
+  return `<i class="ini" style="width:${pct.toFixed(0)}%"></i>`;
+}
+
 function linhaEp(f) {
   const tc = tocandoAgora(f);
   const titulo = f.tituloEpisodio || (f.episodio != null ? 'Episódio ' + f.episodio : f.titulo);
   return `<div class="ep${tc ? ' tc' : ''}${f.assistido ? ' vi' : ''}" onclick="enviarParaTv(${f.id})">
-      <span class="n">${esc(codigoEp(f))}</span><span class="t">${esc(titulo)}</span>${tc ? ico('tv', 'pl') : ''}${ckHtml(f)}
+      <span class="n">${esc(codigoEp(f))}</span><span class="t">${esc(titulo)}</span>${tc ? ico('tv', 'pl') : ''}${ckHtml(f)}${fioDoIniciado(f)}
     </div>`;
 }
 
 function linhaFilme(f) {
   const tc = tocandoAgora(f);
   return `<div class="ep filme${tc ? ' tc' : ''}${f.assistido ? ' vi' : ''}" onclick="enviarParaTv(${f.id})">
-      <span class="t"><b>${esc(f.titulo)}</b>${f.anoLancamento ? `<small>${f.anoLancamento}</small>` : ''}</span>${tc ? ico('tv', 'pl') : ''}${ckHtml(f)}
+      <span class="t"><b>${esc(f.titulo)}</b>${f.anoLancamento ? `<small>${f.anoLancamento}</small>` : ''}</span>${tc ? ico('tv', 'pl') : ''}${ckHtml(f)}${fioDoIniciado(f)}
     </div>`;
 }
 
