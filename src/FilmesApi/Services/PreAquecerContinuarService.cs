@@ -2,7 +2,7 @@ namespace FilmesApi.Services;
 
 /// <summary>
 /// Deixa pronto, antes de abrir, o remux dos 3 primeiros da fila do controle (<see cref="FilaContinuar"/>: o que está pela metade ou o próximo episódio): a TV sem HLS
-/// espera o remux inteiro terminar antes de tocar (533 MB ≈ 25 s; um filme de 4,8 GB ≈ 4 min de "Preparando áudio").
+/// espera o remux inteiro terminar antes de tocar (medido nesta placa: 151–174 s para ~600 MB, AAC por software em 1 thread, o disco não é o gargalo; um filme de 4,8 GB ≈ 4 min de "Preparando áudio").
 /// Só quando o servidor está ocioso e o arquivo cabe no teto do cache sem expulsar nada (<see cref="PoliticaPreAquecimento"/>);
 /// o job cede o lugar se alguém precisar do encoder. <c>PreAquecerContinuarMinutos</c> (padrão 5; 0 desliga).
 /// </summary>
