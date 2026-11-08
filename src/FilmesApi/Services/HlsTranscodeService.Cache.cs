@@ -11,7 +11,7 @@ public partial class HlsTranscodeService
         if (_remuxCacheMaxBytes == long.MaxValue) return;
         try
         {
-            foreach (var (nome, bytes) in DespejarExcedenteRemux(_remuxCachePath, _remuxCacheMaxBytes, DateTime.UtcNow))
+            foreach (var (nome, bytes) in DespejarExcedenteRemux(_remuxCachePath, _remuxCacheMaxBytes, DateTime.UtcNow, EhAssistido()))
                 _logger.LogInformation("Cache de remux acima do teto: despejando {Nome} ({Mb} MB).", nome, bytes / 1024 / 1024);
         }
         catch (Exception ex)
@@ -20,12 +20,43 @@ public partial class HlsTranscodeService
         }
     }
 
+    /// <summary>De onde o despejo por teto sabe o que é assistido (o serviço de cache não tem banco). Ligado no Program.cs; sem ele, ninguém é assistido.</summary>
+    internal Func<IReadOnlySet<int>> ObterAssistidos { get; set; } = () => new HashSet<int>();
+
+    private Func<int, bool> EhAssistido()
+    {
+        IReadOnlySet<int> conjunto;
+        try { conjunto = ObterAssistidos(); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Não consegui ler os assistidos; o despejo segue só por LRU."); conjunto = new HashSet<int>(); }
+        return conjunto.Contains;
+    }
+
+    /// <summary>Bytes de remux de episódios já assistidos e fora da margem de uso: o que o despejo por teto expulsaria primeiro.</summary>
+    internal long BytesDeRemuxAssistidoDespejavel()
+    {
+        try
+        {
+            if (!Directory.Exists(_remuxCachePath)) return 0;
+            var visto = EhAssistido();
+            var corte = DateTime.UtcNow - CachesDeDisco.MargemDeUsoNaExpulsao;
+            long total = 0;
+            foreach (var caminho in Directory.EnumerateFiles(_remuxCachePath, NomesDeCache.PadraoRemux))
+            {
+                var fi = new FileInfo(caminho);
+                var ponto = fi.Name.IndexOf('.');
+                if (ponto > 0 && int.TryParse(fi.Name[..ponto], out var id) && visto(id) && fi.LastWriteTimeUtc < corte) total += fi.Length;
+            }
+            return total;
+        }
+        catch (IOException) { return 0; }
+    }
+
     /// <summary>Despeja os .mp4 mais antigos de <paramref name="pasta"/> até o total cair a 90%
     /// do teto. Pula o que foi acessado há menos de 30 min (pode estar tocando). Devolve o que
     /// apagou. O tamanho é lido UMA vez, antes de apagar: <c>FileInfo.Delete()</c> invalida o
     /// cache do próprio FileInfo e ler <c>.Length</c> depois lança FileNotFoundException — era o
     /// que abortava a limpeza (com warning no log) logo na 1ª remoção de cada rodada.</summary>
-    internal static List<(string Nome, long Bytes)> DespejarExcedenteRemux(string pasta, long tetoBytes, DateTime agoraUtc)
+    internal static List<(string Nome, long Bytes)> DespejarExcedenteRemux(string pasta, long tetoBytes, DateTime agoraUtc, Func<int, bool>? assistido = null)
     {
         var despejados = new List<(string Nome, long Bytes)>();
         if (!Directory.Exists(pasta)) return despejados;
@@ -40,7 +71,9 @@ public partial class HlsTranscodeService
             }
             catch (IOException) { }   // sumiu entre listar e medir (outro job apagou/renomeou)
         }
-        arquivos.Sort((a, b) => a.Mtime.CompareTo(b.Mtime));
+        // assistidos primeiro (mais antigos antes), depois o resto por LRU
+        bool Visto(string nome) => assistido is not null && int.TryParse(nome[..Math.Max(0, nome.IndexOf('.'))], out var id) && assistido(id);
+        arquivos = arquivos.OrderByDescending(a => Visto(a.Nome)).ThenBy(a => a.Mtime).ToList();
 
         var total = arquivos.Sum(a => a.Bytes);
         if (total <= tetoBytes) return despejados;
@@ -99,16 +132,10 @@ public partial class HlsTranscodeService
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* best-effort */ }
     }
 
-    /// <summary>O ponto único de "o episódio virou assistido": larga o cache dele. Chamado por TODO caminho que
-    /// põe Assistido=true (<c>ConcluirAsync</c>, <c>MarcarAssistidoAsync</c> e o <c>SalvarAsync</c> perto do fim —
-    /// quem sai nos créditos sem disparar <c>ended</c> também passa por aqui). Já visto quase nunca volta, e o cache
-    /// é a maior fonte de escrita no disco; rever só custa um transcode novo.</summary>
-    public void AoVirarAssistido(int filmeId) => DescartarCaches(filmeId);
-
-    /// <summary>Cancela o job de HLS/remux em andamento do filme (se houver) e apaga o cache pronto dos dois.
-    /// Usado ao trocar de dublagem (precisa regerar) e quando o episódio termina ou é marcado como assistido:
-    /// já visto, quase nunca volta, e cada GB que não fica em cache é um GB a menos gravado no disco (o cache
-    /// de HLS/remux é a maior fonte de escrita do servidor). Rever o episódio depois só custa um transcode novo.</summary>
+    /// <summary>Cancela o job de HLS/remux em andamento do filme (se houver) e apaga o cache pronto dos dois. Só para a troca de
+    /// dublagem, onde regerar é obrigatório. Terminar/marcar um episódio como assistido NÃO chama isto: o cache dele fica até a
+    /// carência da <see cref="LimpezaCacheService"/> passar (contada desde o último acesso) ou até o despejo por teto, que tira os
+    /// assistidos primeiro. Apagar na hora quebrava pausa/seek/retomada nos créditos e refazia o remux de quem abria o episódio e saía.</summary>
     public void DescartarCaches(int filmeId)
     {
         if (_jobCancelHls.TryGetValue(filmeId, out var ctsHls))
@@ -145,7 +172,7 @@ public partial class HlsTranscodeService
 
     /// <summary>
     /// Se o cache HLS total passou do teto (<c>HlsCacheMaxGB</c>), despeja diretórios até
-    /// voltar pra ~90% do teto. Ordem de despejo: primeiro os remux stream-copy (pura
+    /// voltar pra ~90% do teto. Ordem de despejo: primeiro os assistidos, depois os remux stream-copy (pura
     /// duplicata do original), depois por acesso mais antigo (LRU). Nunca despeja um cache
     /// com job vivo nem um acessado nos últimos 30 min (alguém provavelmente assistindo).
     /// </summary>
@@ -182,9 +209,11 @@ public partial class HlsTranscodeService
 
             var alvo = (long)(_cacheMaxBytes * CachesDeDisco.FracaoAlvoAoExpulsar);
             var corte = DateTime.UtcNow - CachesDeDisco.MargemDeUsoNaExpulsao;
+            var visto = EhAssistido();
             var candidatos = caches
                 .Where(c => c.Acesso < corte && !_jobs.ContainsKey(c.Id))
-                .OrderByDescending(c => c.Remux)     // remux (duplicata) sai primeiro
+                .OrderByDescending(c => visto(c.Id))   // assistido sai primeiro
+                .ThenByDescending(c => c.Remux)      // depois remux (duplicata)
                 .ThenBy(c => c.Acesso)               // depois, menos recentemente assistido
                 .ToList();
 

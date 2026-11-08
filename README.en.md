@@ -188,8 +188,8 @@ aborts), `DownloadsSimultaneos` (`2`, `0` no limit; `GET /api/filmes/{id}/downlo
 **Cache cleanup:** `LimpezaCacheMinutos` (`60`, `0` = off; how often the sweep runs),
 `LimpezaCacheCarenciaMinutos` (`120`; a watched episode's cache is deleted after sitting idle this long),
 `LimpezaCacheAtrasoInicialSegundos` (`120`), `HlsValidadeDias` (`14`; HLS of *unwatched* items idle longer than this is deleted —
-remux of unwatched items never expires by age). Anything that becomes "watched" goes through a single funnel that cancels the job
-and deletes its HLS/remux; the sweep catches leftovers (orphans, `*.tmp`, `*.audio` without `.mp4`, empty HLS folders).
+remux of unwatched items never expires by age). Finishing an episode does NOT delete its cache right away: it stays until the grace period (counted from the last access) passes or the size cap
+evicts it (watched items go first); the sweep catches leftovers (orphans, `*.tmp`, `*.audio` without `.mp4`, empty HLS folders).
 `GET /api/status` has a `cache` block with watched / unwatched / orphan / idle-over-7-days bytes per cache.
 
 **Warm-up and queue:** `PreAquecerContinuarMinutos` (`5`, `0` = off) pre-builds the remux of the first 3 items of the remote's

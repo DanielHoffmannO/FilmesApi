@@ -160,7 +160,6 @@ public class FilmeService
         if (filme is null) return false;
         filme.DefinirAssistido(!filme.Assistido);
         await _db.SaveChangesAsync();
-        if (filme.Assistido) _transcode.AoVirarAssistido(id);
         return true;
     }
 

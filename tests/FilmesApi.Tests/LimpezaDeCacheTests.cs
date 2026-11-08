@@ -216,7 +216,7 @@ public class LimpezaDeCacheTests : IDisposable
     }
 
     [Fact]
-    public async Task Salvar_progresso_perto_do_fim_marca_assistido_e_descarta_o_cache()
+    public async Task Salvar_progresso_perto_do_fim_marca_assistido_e_o_cache_continua_ate_a_carencia()
     {
         var f = new ScanFixture();
         _fixtures.Add(f);
@@ -227,9 +227,10 @@ public class LimpezaDeCacheTests : IDisposable
         // créditos: sai do player sem disparar 'ended' nem /concluir — só o salvarProgresso final
         await f.NoEscopoAsync(async sp => await sp.GetRequiredService<ProgressoService>().SalvarAsync(id, 3595, 3600));
 
-        Assert.False(Directory.Exists(dirHls));
-        Assert.False(File.Exists(remux));
-        Assert.False(File.Exists(remux + ".audio"));
+        Assert.True(Directory.Exists(dirHls));
+        Assert.True(File.Exists(remux));
+        Assert.True(File.Exists(remux + ".audio"));
+        Assert.True((await f.NoEscopoAsync(async sp => await sp.GetRequiredService<FilmeService>().ObterAsync(id)))!.Assistido);   // marcou, só não apagou
     }
 
     [Fact]

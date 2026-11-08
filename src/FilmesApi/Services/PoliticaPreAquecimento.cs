@@ -1,7 +1,7 @@
 namespace FilmesApi.Services;
 
 /// <summary>As decisões (puras) do pré-aquecimento do remux do que o dono mais abre: o "continuar assistindo" número 1.
-/// O remux de um episódio de 533 MB leva ~25 s e o de um filme de 4,8 GB ~4 min com a TV mostrando "Preparando áudio";
+/// O remux leva minutos: medido nesta placa, 151 a 174 s para ~600 MB (AAC por software, 1 thread; o disco lê ~30 MB/s e não é o gargalo) e ~4 min para um filme de 4,8 GB com a TV mostrando "Preparando áudio";
 /// com o arquivo pronto antes, a espera some. Só vale a pena se não atrapalhar nada — daí as regras abaixo.</summary>
 internal static class PoliticaPreAquecimento
 {

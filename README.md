@@ -248,8 +248,7 @@ Ao pedir um filme, o servidor decide o caminho:
 
 O resultado fica em **cache por filme** (`{CachePath}/hls/{id}/`), com despejo LRU quando passa de
 `HlsCacheMaxGB`. **Quando o episódio termina ou é marcado como assistido, o cache de HLS e de remux
-dele é apagado** na hora: já visto quase nunca volta, e esse cache é a maior fonte de escrita em disco do
-servidor (rever o episódio depois só custa um transcode novo). O quanto foi gravado desde que o servidor
+dele fica por algumas horas** (`LimpezaCacheCarenciaMinutos`, contados desde o último acesso — pausar, voltar um trecho ou rever logo depois ainda acha o arquivo) e só então sai; se o cache passar do teto, os assistidos são os primeiros despejados. Apagar na hora quebrava a pausa/retomada nos créditos. O quanto foi gravado desde que o servidor
 subiu aparece em `/api/status` e na página de status. Só **1 transcodificação por vez** por padrão
 (`MaxConcurrentTranscodeJobs`).
 
@@ -268,7 +267,7 @@ visto. A data vem da coluna `Filmes.AssistidoEm` (preenchida quando algo vira as
 isso só entra na fila depois do próximo episódio terminado).
 
 **Limpeza do cache.** Tudo que vira assistido (fim do vídeo, "marcar assistido", ou perto do fim no `salvarProgresso`)
-passa por um ponto só, `AoVirarAssistido`, que cancela o job e apaga o HLS e o remux do episódio. Uma varredura periódica
+NÃO apaga mais o cache na hora: o cache dele sai pela varredura periódica abaixo ou pelo despejo por teto (assistidos primeiro). A varredura
 (`LimpezaCacheMinutos`) pega o que escapou: assistido parado além da carência, cache órfão (filme que não existe mais),
 sobras (`*.tmp`, `*.audio` sem `.mp4`, pasta de HLS vazia) e, só no HLS, não assistido parado além de `HlsValidadeDias`. Além
 disso continua valendo o teto por LRU (`HlsCacheMaxGB`/`RemuxCacheMaxGB`). O bloco `cache` do `/api/status` mostra, por tipo,

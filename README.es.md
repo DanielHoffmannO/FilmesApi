@@ -189,8 +189,8 @@ nunca aborta), `DownloadsSimultaneos` (`2`, `0` sin límite; `GET /api/filmes/{i
 **Limpieza de caché:** `LimpezaCacheMinutos` (`60`, `0` = apagada; cada cuánto corre el barrido),
 `LimpezaCacheCarenciaMinutos` (`120`; la caché de un episodio visto se borra tras estar parada este tiempo),
 `LimpezaCacheAtrasoInicialSegundos` (`120`), `HlsValidadeDias` (`14`; el HLS de lo *no visto* parado más que esto se borra — el
-remux de lo no visto nunca caduca por edad). Todo lo que pasa a "visto" va por un único embudo que cancela el job y borra su
-HLS/remux; el barrido recoge lo que sobra (huérfanos, `*.tmp`, `*.audio` sin `.mp4`, carpetas HLS vacías).
+remux de lo no visto nunca caduca por edad). Terminar un episodio NO borra su caché al instante: queda hasta que pase la carencia (desde el último acceso) o hasta que el tope
+lo expulse (los vistos salen primero); el barrido recoge lo que sobra (huérfanos, `*.tmp`, `*.audio` sin `.mp4`, carpetas HLS vacías).
 `GET /api/status` trae un bloque `cache` con bytes de visto / no visto / huérfano / parado más de 7 días por caché.
 
 **Precalentamiento y cola:** `PreAquecerContinuarMinutos` (`5`, `0` = apagado) deja listo el remux de los 3 primeros de la cola

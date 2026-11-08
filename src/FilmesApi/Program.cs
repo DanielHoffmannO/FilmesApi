@@ -94,6 +94,11 @@ using (var scope = app.Services.CreateScope())
 
 // Poda do cache HLS fora do caminho de boot: varre até 20 GB de arquivos calculando
 // tamanho, e em SD card isso segurava o start antes de aceitar a primeira request.
+app.Services.GetRequiredService<HlsTranscodeService>().ObterAssistidos = () =>
+{
+    using var escopo = app.Services.CreateScope();
+    return escopo.ServiceProvider.GetRequiredService<AppDbContext>().Filmes.AsNoTracking().Where(f => f.Assistido).Select(f => f.Id).ToHashSet();
+};
 _ = Task.Run(() =>
 {
     try { app.Services.GetRequiredService<HlsTranscodeService>().LimparCacheExcedente(); }

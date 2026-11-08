@@ -73,7 +73,7 @@ public class CacheDeDiscoTests
     // ─── apagar o cache do que já foi visto ─────────────────────────────────────────
 
     [Fact]
-    public async Task Terminar_o_episodio_apaga_o_cache_de_hls_e_de_remux_dele_e_so_dele()
+    public async Task Terminar_o_episodio_NAO_apaga_o_cache_na_hora()
     {
         using var f = new ScanFixture();
         f.Arquivo("Series/Show.S01E01.mkv");
@@ -85,14 +85,14 @@ public class CacheDeDiscoTests
 
         Assert.True(await f.NoEscopoAsync(sp => sp.GetRequiredService<ProgressoService>().ConcluirAsync(id1)));
 
-        Assert.False(Directory.Exists(c1.DirHls));
-        Assert.False(File.Exists(c1.Remux));
-        Assert.True(Directory.Exists(c2.DirHls));   // o outro episódio não perde nada
+        Assert.True(Directory.Exists(c1.DirHls));   // fica: pausa/seek/retomada nos créditos e rever logo depois ainda acham o arquivo
+        Assert.True(File.Exists(c1.Remux));
+        Assert.True(Directory.Exists(c2.DirHls));
         Assert.True(File.Exists(c2.Remux));
     }
 
     [Fact]
-    public async Task Marcar_como_assistido_apaga_o_cache_mas_desmarcar_nao()
+    public async Task Marcar_ou_desmarcar_como_assistido_nao_mexe_no_cache()
     {
         using var f = new ScanFixture();
         f.Arquivo("Series/Show.S01E01.mkv");
@@ -101,13 +101,88 @@ public class CacheDeDiscoTests
         var cache = f.CriarCache(id);
 
         await f.NoEscopoAsync(sp => sp.GetRequiredService<FilmeService>().MarcarAssistidoAsync(id));   // → assistido
-        Assert.False(Directory.Exists(cache.DirHls));
-        Assert.False(File.Exists(cache.Remux));
+        Assert.True(Directory.Exists(cache.DirHls));
+        Assert.True(File.Exists(cache.Remux));
 
-        var novo = f.CriarCache(id);
         await f.NoEscopoAsync(sp => sp.GetRequiredService<FilmeService>().MarcarAssistidoAsync(id));   // → desmarcou
-        Assert.True(Directory.Exists(novo.DirHls));
-        Assert.True(File.Exists(novo.Remux));
+        Assert.True(Directory.Exists(cache.DirHls));
+        Assert.True(File.Exists(cache.Remux));
+    }
+
+    [Fact]
+    public async Task Assistido_so_sai_na_varredura_depois_da_carencia_contada_desde_o_ultimo_acesso()
+    {
+        using var f = new ScanFixture();
+        f.Arquivo("Series/Show.S01E01.mkv");
+        await f.ScanAsync();
+        var id = await f.IdDeAsync("Series/Show.S01E01.mkv");
+        var cache = f.CriarCache(id);
+        await f.NoEscopoAsync(sp => sp.GetRequiredService<ProgressoService>().ConcluirAsync(id));
+        var limpeza = f.Servico<LimpezaCacheService>();
+
+        File.SetLastWriteTimeUtc(cache.Remux, DateTime.UtcNow.AddMinutes(-10));   // terminou, mas o último acesso foi há 10 min
+        File.SetLastWriteTimeUtc(Path.Combine(cache.DirHls, "playlist.m3u8"), DateTime.UtcNow.AddMinutes(-10));
+        await limpeza.ExecutarUmaVezAsync();
+        Assert.True(File.Exists(cache.Remux));   // dentro da carência (120 min): quem volta 10 min depois ainda acha o arquivo
+
+        File.SetLastWriteTimeUtc(cache.Remux, DateTime.UtcNow.AddMinutes(-130));
+        File.SetLastWriteTimeUtc(Path.Combine(cache.DirHls, "playlist.m3u8"), DateTime.UtcNow.AddMinutes(-130));
+        await limpeza.ExecutarUmaVezAsync();
+        Assert.False(File.Exists(cache.Remux));
+        Assert.False(Directory.Exists(cache.DirHls));
+    }
+
+    [Fact]
+    public async Task Cache_de_remux_acima_do_teto_despeja_o_assistido_antes_do_nao_assistido()
+    {
+        using var f = new ScanFixture();
+        var pasta = f.CacheRemux;
+        Directory.CreateDirectory(pasta);
+        // 1 = não assistido (o MAIS antigo), 2 = assistido (mais novo), 3 = assistido acessado há 5 min (protegido), 4 = não assistido
+        string Mp4(int id, TimeSpan idade)
+        {
+            var c = Path.Combine(pasta, id + ".mp4");
+            File.WriteAllBytes(c, new byte[1000]);
+            File.SetLastWriteTimeUtc(c, DateTime.UtcNow - idade);
+            return c;
+        }
+        var (a1, a2, a3, a4) = (Mp4(1, TimeSpan.FromHours(9)), Mp4(2, TimeSpan.FromHours(3)), Mp4(3, TimeSpan.FromMinutes(5)), Mp4(4, TimeSpan.FromHours(6)));
+        var assistidos = new HashSet<int> { 2, 3 };
+
+        // total 4000 > teto 2500; alvo 2250 → precisa apagar 2: o assistido (2) e, só então, o não assistido mais antigo (1)
+        var despejados = HlsTranscodeService.DespejarExcedenteRemux(pasta, 2500, DateTime.UtcNow, assistidos.Contains);
+
+        Assert.Equal(["2.mp4", "1.mp4"], despejados.Select(x => x.Nome));
+        Assert.True(File.Exists(a3));   // assistido mas usado há 5 min: protegido pela margem de 30 min
+        Assert.True(File.Exists(a4));
+        Assert.False(File.Exists(a1));
+        Assert.False(File.Exists(a2));
+    }
+
+    [Fact]
+    public async Task Cache_de_hls_acima_do_teto_despeja_o_assistido_antes_do_nao_assistido_e_respeita_job_e_margem()
+    {
+        using var f = new ScanFixture(configExtra: new() { ["HlsCacheMaxGB"] = (2500.0 / 1073741824.0).ToString(System.Globalization.CultureInfo.InvariantCulture) });
+        var transcode = f.Servico<HlsTranscodeService>();
+        void Hls(int id, TimeSpan idade)
+        {
+            var dir = Path.Combine(f.CacheHls, id.ToString());
+            Directory.CreateDirectory(dir);
+            File.WriteAllBytes(Path.Combine(dir, "seg_0.ts"), new byte[1000]);
+            var pl = Path.Combine(dir, "playlist.m3u8");
+            File.WriteAllText(pl, "#EXTM3U");
+            File.SetLastWriteTimeUtc(pl, DateTime.UtcNow - idade);
+        }
+        Hls(1, TimeSpan.FromHours(9)); Hls(2, TimeSpan.FromHours(3)); Hls(3, TimeSpan.FromMinutes(5)); Hls(4, TimeSpan.FromHours(6));
+        transcode.ObterAssistidos = () => new HashSet<int> { 2, 3 };
+
+        transcode.LimparCacheExcedente();
+
+        Assert.False(Directory.Exists(Path.Combine(f.CacheHls, "2")));   // assistido sai primeiro
+        Assert.False(Directory.Exists(Path.Combine(f.CacheHls, "1")));   // depois o não assistido mais antigo
+        Assert.True(Directory.Exists(Path.Combine(f.CacheHls, "3")));    // assistido mas dentro da margem de 30 min
+        Assert.True(Directory.Exists(Path.Combine(f.CacheHls, "4")));
+        await Task.CompletedTask;
     }
 
     [Fact]
