@@ -10,8 +10,15 @@ namespace FilmesApi.Controllers;
 public class ProgressoController : ControllerBase
 {
     private readonly ProgressoService _progresso;
+    private readonly PlayerStateService _player;
+    private readonly ILogger<ProgressoController> _logger;
 
-    public ProgressoController(ProgressoService progresso) => _progresso = progresso;
+    public ProgressoController(ProgressoService progresso, PlayerStateService player, ILogger<ProgressoController> logger)
+    {
+        _progresso = progresso;
+        _player = player;
+        _logger = logger;
+    }
 
     /// <summary>Ponto de retomada do filme. 204 se não há nada guardado.</summary>
     [HttpGet("{id:int}/progresso")]
@@ -28,13 +35,20 @@ public class ProgressoController : ControllerBase
         if (double.IsNaN(req.Posicao) || double.IsInfinity(req.Posicao) || req.Posicao < 0)
             return BadRequest(new { mensagem = "posicao inválida" });
 
-        return await _progresso.SalvarAsync(id, req.Posicao, req.Duracao) ? NoContent() : NotFound();
+        if (!await _progresso.SalvarAsync(id, req.Posicao, req.Duracao)) return NotFound();
+        if (ProgressoService.DecidirSalvamento(req.Posicao, req.Duracao, jaTemProgresso: false) == ProgressoService.DecisaoSalvarProgresso.DescartarEMarcarAssistido)
+            RegistroDeMarcacao.Registrar(_logger, HttpContext, _player, id, "progresso", req.Posicao, req.Duracao);
+        return NoContent();
     }
 
     /// <summary>Reprodução chegou ao fim: marca assistido e limpa a retomada.</summary>
     [HttpPost("{id:int}/concluir")]
     public async Task<IActionResult> Concluir(int id)
-        => await _progresso.ConcluirAsync(id) ? NoContent() : NotFound();
+    {
+        if (!await _progresso.ConcluirAsync(id)) return NotFound();
+        RegistroDeMarcacao.Registrar(_logger, HttpContext, _player, id, "concluir");
+        return NoContent();
+    }
 
     /// <summary>Tira o filme de "continuar assistindo" sem marcar como assistido — botão "x"
     /// no index.html.</summary>

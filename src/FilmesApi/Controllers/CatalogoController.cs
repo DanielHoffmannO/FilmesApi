@@ -9,8 +9,15 @@ namespace FilmesApi.Controllers;
 public class CatalogoController : ControllerBase
 {
     private readonly FilmeService _service;
+    private readonly PlayerStateService _player;
+    private readonly ILogger<CatalogoController> _logger;
 
-    public CatalogoController(FilmeService service) => _service = service;
+    public CatalogoController(FilmeService service, PlayerStateService player, ILogger<CatalogoController> logger)
+    {
+        _service = service;
+        _player = player;
+        _logger = logger;
+    }
 
     /// <summary>Catálogo já filtrado (tipo: all/filme/serie; visto: all/assistido/nao-assistido;
     /// busca: texto livre) e agrupado (filmes soltos / pasta filme+extras / série com
@@ -43,7 +50,11 @@ public class CatalogoController : ControllerBase
     /// <summary>Alterna o filme entre assistido e não-assistido.</summary>
     [HttpPut("{id:int}/assistido")]
     public async Task<IActionResult> MarcarAssistido(int id)
-        => await _service.MarcarAssistidoAsync(id) ? NoContent() : NotFound();
+    {
+        if (!await _service.MarcarAssistidoAsync(id)) return NotFound();
+        if ((await _service.ObterAsync(id))?.Assistido == true) RegistroDeMarcacao.Registrar(_logger, HttpContext, _player, id, "manual");
+        return NoContent();
+    }
 
     /// <summary>Sincroniza o catálogo com a pasta de mídia (importa novos, remove órfãos).</summary>
     [HttpPost("scan")]
