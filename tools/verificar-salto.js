@@ -78,4 +78,13 @@ caso('A6 em números: sem o descarte o acumulado 0 contra 150 seria um recuo de 
   assert.strictEqual(reiniciou({ instancia: 'b', seekAcumulado: 0, seekVersion: 1 }, { instancia: 'a', seekAcumulado: 150, seekVersion: 5 }), true);
 });
 
+// ─── C2: os reflexos do <video> só valem pro vídeo do filme atual ───
+const certo = (atual, doVideo) => { ctx.a = atual; ctx.v = doVideo; return vm.runInContext('videoEhDoFilme(a, v)', ctx); };
+caso('video do filme atual (metadados carregados): reflexos valem', () => assert.strictEqual(certo(1709, 1709), true));
+caso('tocar(B) logo apos A: video ainda e o de A (ou nao carregou): o ended/pulo/proximo NAO valem', () => {
+  assert.strictEqual(certo(1709, 1744), false);    // o elemento ainda e o do episodio antigo
+  assert.strictEqual(certo(1709, null), false);    // tocar() zerou e o novo ainda nao carregou metadados
+});
+caso('sem filme atual: nada vale', () => { assert.strictEqual(certo(null, null), false); assert.strictEqual(certo(null, 5), false); assert.strictEqual(certo(undefined, undefined), false); });
+
 console.log(`\n${n} casos ok`);

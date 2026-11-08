@@ -211,6 +211,13 @@ function servidorReiniciou(estado, anterior) {
   return !!(estado && anterior && estado.instancia !== anterior.instancia);
 }
 
+// Os reflexos do <video> (ended, pause -> salvar progresso, pulo da abertura, próximo automático) só valem quando o vídeo que carregou
+// metadados é o do filme atual. Entre tocar(A) -> tocar(B) o elemento ainda pode ter o A (currentTime, 'ended'): sem isto o fim do A
+// marcaria o B como assistido. `filmeDoVideo` = id registrado no loadedmetadata (null depois de tocar()).
+function videoEhDoFilme(filmeAtual, filmeDoVideo) {
+  return filmeAtual !== null && filmeAtual !== undefined && filmeDoVideo === filmeAtual;
+}
+
 // ─── Nomes de idioma (controle.html): código cru do ffprobe -> rótulo em português ───
 
 var NOMES_IDIOMA = {

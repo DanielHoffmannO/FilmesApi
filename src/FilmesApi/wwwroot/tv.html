@@ -181,6 +181,7 @@ video { width: 100%; height: auto; background: #000; }
 
   // continuar de onde parou
   var filmeAtual = null;
+  var videoDoFilme = null;          // id do filme cujo <video> ja carregou metadados; so entao os reflexos do video (ended/pause/pulo/proximo) valem (videoEhDoFilme)
   var ultimoSalvo = 0;
   var posicaoRetomar = 0;
   var retomarTentativas = 0;
@@ -937,7 +938,14 @@ video { width: 100%; height: auto; background: #000; }
     var v = els.video;
     var pmsg = els.pmsg;
     pmsg.innerHTML = 'Preparando...';
+    // o video do episodio ANTIGO tem que parar de verdade antes de filmeAtual mudar: removeAttribute('src') sozinho NAO para a midia que ja toca
+    // (so load() reinicia), e o 'ended' dela passaria a marcar como assistido o episodio NOVO. Grava o progresso do antigo com o id dele primeiro.
+    if (filmeAtual !== null) salvarProgresso();
+    videoDoFilme = null;
+    try { v.pause(); } catch (e) {}
     v.removeAttribute('src');
+    try { v.load(); } catch (e) {}
+    ajusteDiag = 4;   // o log do ajuste do video vale por episodio (antes: 4 por carga da pagina, e a TV ficava muda no TvDiag)
 
     // dica dos controles so nos primeiros segundos, pra nao ficar sobre o video
     var phint = document.getElementById('phint');
@@ -1054,16 +1062,18 @@ video { width: 100%; height: auto; background: #000; }
     document.addEventListener('webkitfullscreenchange', aoMudarTelaCheia, false);
     v.addEventListener('webkitbeginfullscreen', function () { logDiag('video entrou em tela cheia nativa (webkitbeginfullscreen) — a legenda #psub nao aparece nesse modo'); }, false);
     v.addEventListener('webkitendfullscreen', function () { logDiag('video saiu da tela cheia nativa'); ajustarVideo(); }, false);
+    v.addEventListener('loadedmetadata', function () { videoDoFilme = filmeAtual; }, false);
     v.addEventListener('loadedmetadata', ajustarVideo, false);
     v.addEventListener('resize', ajustarVideo, false);   // o <video> dispara quando videoWidth/Height muda
     window.addEventListener('resize', ajustarVideo, false);
     v.addEventListener('timeupdate', renderLegenda, false);
     v.addEventListener('seeked', renderLegenda, false);
-    v.onpause = function () { salvarProgresso(); };
+    v.onpause = function () { if (videoEhDoFilme(filmeAtual, videoDoFilme)) salvarProgresso(); };
     v.onended = function () {
-      if (filmeAtual == null) return;
+      if (!videoEhDoFilme(filmeAtual, videoDoFilme)) return;   // 'ended' de um video que nao e o do filme atual nunca marca assistido
       reproducaoConcluida = true;
       var idFim = filmeAtual;
+      logDiag('concluir ' + idFim + ' via ended');
       send('POST', API + '/' + idFim + '/concluir');
       // temporada com o proximo automatico ligado (e nao cancelado): contagem curta e aviso no celular; senao, a de sempre
       var contagem = contagemNoFim(estadoRemotoAnterior, PROXIMO_COUNTDOWN_S);
@@ -1137,7 +1147,8 @@ video { width: 100%; height: auto; background: #000; }
     }
     // Pulo automático da abertura (temporada com o interruptor ligado). A checagem é aqui, na TV, com o currentTime dela (o report de
     // posição ao servidor é a cada 2 s e voltaria pelo poll: errar o início da abertura por vários segundos); o poll de 1,5 s é a granularidade.
-    var alvoAbertura = decidirSaltoAbertura(estado.abertura, v.currentTime, aberturaPuladaDe === filmeAtual);
+    var videoCerto = videoEhDoFilme(filmeAtual, videoDoFilme);   // currentTime so vale se o video carregado e o do filmeAtual
+    var alvoAbertura = videoCerto ? decidirSaltoAbertura(estado.abertura, v.currentTime, aberturaPuladaDe === filmeAtual) : null;
     if (alvoAbertura !== null) {
       aberturaPuladaDe = filmeAtual;
       try { v.currentTime = alvoAbertura; } catch (e) {}
@@ -1146,9 +1157,10 @@ video { width: 100%; height: auto; background: #000; }
     }
     // Proximo automatico: ao entrar nos creditos conhecidos vai pro proximo (contagem curta, com "cancelar" no celular). O episodio conta
     // como visto ja aqui (como o 'ended' faria) e o proximo comeca a ser preparado pelo ofereceProximo.
-    if (decidirProximoAutomatico(estado, v.currentTime, proximoAutoDe === filmeAtual)) {
+    if (videoCerto && decidirProximoAutomatico(estado, v.currentTime, proximoAutoDe === filmeAtual)) {
       proximoAutoDe = filmeAtual;
       reproducaoConcluida = true;
+      logDiag('concluir ' + filmeAtual + ' via creditos');
       send('POST', API + '/' + filmeAtual + '/concluir');
       send('POST', PLAYER + '/proximo-auto');
       ofereceProximo(filmeAtual, contagemDoProximo(estado, PROXIMO_COUNTDOWN_S));
