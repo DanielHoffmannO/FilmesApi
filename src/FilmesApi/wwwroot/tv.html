@@ -278,6 +278,25 @@ video { width: 100%; height: auto; background: #000; }
     } catch (e) {}
   }
 
+  // Diagnostico da pagina que recarrega sozinha (TV sem console): guarda no sessionStorage "tocando X em Ts" enquanto um episodio toca; se a
+  // pagina nascer com isso ainda la (e nao foi o fecharPlayer que limpou), ela recarregou/caiu DURANTE o episodio.
+  var TOCANDO_KEY = 'tvTocando';
+  var tocandoSalvoEm = 0;
+  function guardarTocando(id, pos) {
+    try { if (id == null) sessionStorage.removeItem(TOCANDO_KEY); else sessionStorage.setItem(TOCANDO_KEY, id + '|' + Math.floor(pos || 0)); } catch (e) {}
+  }
+  function diagRecarga() {
+    var tipo = null, anterior = null;
+    try { tipo = window.performance && performance.navigation ? performance.navigation.type : null; } catch (e) {}
+    try { anterior = sessionStorage.getItem(TOCANDO_KEY); sessionStorage.removeItem(TOCANDO_KEY); } catch (e) {}
+    if (anterior) {
+      var p = anterior.split('|');
+      logDiag('recarregada durante o episodio ' + p[0] + ' em ' + p[1] + 's (navigation.type=' + tipo + ')');
+    } else if (tipo === 1) {
+      logDiag('pagina recarregada (navigation.type=1) sem episodio tocando');
+    }
+  }
+
   window.onerror = function (msg, url, line, col, err) {
     logDiag('JS error: ' + msg + ' @ ' + url + ':' + line + ':' + col);
     return false;
@@ -945,6 +964,7 @@ video { width: 100%; height: auto; background: #000; }
     try { v.pause(); } catch (e) {}
     v.removeAttribute('src');
     try { v.load(); } catch (e) {}
+    diagStalled = false; diagWaiting = false;   // stalled/waiting: uma linha por episodio
     ajusteDiag = 4;   // o log do ajuste do video vale por episodio (antes: 4 por carga da pagina, e a TV ficava muda no TvDiag)
 
     // dica dos controles so nos primeiros segundos, pra nao ficar sobre o video
@@ -997,6 +1017,7 @@ video { width: 100%; height: auto; background: #000; }
   // por cima de qualquer HTML, e a legenda (#psub) some. Cabendo na tela aqui, nao precisa
   // expandir. Em JS e nao object-fit, porque TV antiga distorce a imagem com ele (ver
   // comentario do #player.on video). videoWidth/Height ja vem com a proporcao de pixel aplicada.
+  var diagStalled = false, diagWaiting = false;
   var ajusteDiag = 4;       // quantas vezes ainda loga o ajuste (diagnostico: TV sem console)
   function ajustarVideo() {
     var v = els.video, vw = v.videoWidth, vh = v.videoHeight;
@@ -1063,6 +1084,17 @@ video { width: 100%; height: auto; background: #000; }
     v.addEventListener('webkitbeginfullscreen', function () { logDiag('video entrou em tela cheia nativa (webkitbeginfullscreen) — a legenda #psub nao aparece nesse modo'); }, false);
     v.addEventListener('webkitendfullscreen', function () { logDiag('video saiu da tela cheia nativa'); ajustarVideo(); }, false);
     v.addEventListener('loadedmetadata', function () { videoDoFilme = filmeAtual; }, false);
+    // por que a pagina recarrega/falha: erro do <video> com codigo e posicao; stalled/waiting uma vez por episodio; posicao guardada pro diagRecarga
+    v.addEventListener('error', function () {
+      var err = v.error;
+      logDiag('<video> onerror: code=' + (err && err.code) + ' t=' + Math.floor(v.currentTime || 0) + 's filme ' + filmeAtual);
+    }, false);
+    v.addEventListener('stalled', function () { if (diagStalled || filmeAtual == null) return; diagStalled = true; logDiag('video stalled filme ' + filmeAtual + ' t=' + Math.floor(v.currentTime || 0) + 's'); }, false);
+    v.addEventListener('waiting', function () { if (diagWaiting || filmeAtual == null) return; diagWaiting = true; logDiag('video waiting filme ' + filmeAtual + ' t=' + Math.floor(v.currentTime || 0) + 's'); }, false);
+    v.addEventListener('timeupdate', function () {
+      var agora = new Date().getTime();
+      if (filmeAtual != null && !reproducaoConcluida && agora - tocandoSalvoEm > 3000) { tocandoSalvoEm = agora; guardarTocando(filmeAtual, v.currentTime); }
+    }, false);
     v.addEventListener('loadedmetadata', ajustarVideo, false);
     v.addEventListener('resize', ajustarVideo, false);   // o <video> dispara quando videoWidth/Height muda
     window.addEventListener('resize', ajustarVideo, false);
@@ -1073,6 +1105,7 @@ video { width: 100%; height: auto; background: #000; }
       if (!videoEhDoFilme(filmeAtual, videoDoFilme)) return;   // 'ended' de um video que nao e o do filme atual nunca marca assistido
       reproducaoConcluida = true;
       var idFim = filmeAtual;
+      guardarTocando(null);
       logDiag('concluir ' + idFim + ' via ended');
       send('POST', API + '/' + idFim + '/concluir');
       // temporada com o proximo automatico ligado (e nao cancelado): contagem curta e aviso no celular; senao, a de sempre
@@ -1218,6 +1251,7 @@ video { width: 100%; height: auto; background: #000; }
     pararWatchdog();
     destruirHls();
     removerLegendas();
+    guardarTocando(null);   // saida normal: a proxima carga de pagina nao e "recarregada durante o episodio"
     send('POST', PLAYER + '/parar');  // avisa o controle.html, mesma ideia do selecionar acima
     // grava o progresso e so entao recarrega a lista, senao o "continuar
     // assistindo" volta antes do PUT e fica desatualizado.
@@ -1335,6 +1369,7 @@ video { width: 100%; height: auto; background: #000; }
   // Fora do app (navegador da TV) nada disso existe e a funcao so loga o ambiente.
   function integrarTizen() {
     var ua = (navigator.userAgent || '');
+    diagRecarga();
     logDiag('ambiente: ' + ua + ' | tizen=' + !!window.tizen + ' webapis=' + !!window.webapis +
       ' avplay=' + !!(window.webapis && window.webapis.avplay));
     try {
