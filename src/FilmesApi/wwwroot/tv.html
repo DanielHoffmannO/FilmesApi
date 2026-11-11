@@ -184,6 +184,9 @@ video { width: 100%; height: auto; background: #000; }
   var videoDoFilme = null;          // id do filme cujo <video> ja carregou metadados; so entao os reflexos do video (ended/pause/pulo/proximo) valem (videoEhDoFilme)
   var ultimoSalvo = 0;
   var posicaoRetomar = 0;
+  var retomadaPedida = 0;           // a retomada que o /progresso pediu (posicaoRetomar zera ao aplicar); so a conferencia abaixo olha
+  var retomadaTimer = null;
+  var RETOMADA_CONFERE_MS = 20000;  // metadados carregaram mas o video nao anda a partir da retomada: recomeca do inicio
   var retomarTentativas = 0;
   // video.duration so e confiavel fora do HLS (stream/remux/original ja sao arquivo completo
   // com Content-Length; HLS cresce enquanto converte). Sem essa guarda, salvarProgresso manda
@@ -975,6 +978,8 @@ video { width: 100%; height: auto; background: #000; }
     filmeAtual = id;
     ultimoSalvo = 0;
     posicaoRetomar = 0;
+    retomadaPedida = 0;
+    if (retomadaTimer) { clearTimeout(retomadaTimer); retomadaTimer = null; }
     retomarTentativas = 0;
     duracaoConfiavel = false;
     reproducaoConcluida = false;
@@ -994,7 +999,7 @@ video { width: 100%; height: auto; background: #000; }
 
     // pega o ponto de retomada ANTES de setar o src (senao o loadedmetadata perde a corrida)
     get(API + '/' + id + '/progresso', function (err, d) {
-      if (!err && d && d.posicaoSegundos) posicaoRetomar = d.posicaoSegundos;
+      if (!err && d && d.posicaoSegundos) { posicaoRetomar = d.posicaoSegundos; retomadaPedida = posicaoRetomar; }
       if (temHls) pollStatusEtocar(id); else tocarSemHls(id);
     });
   }
@@ -1083,7 +1088,22 @@ video { width: 100%; height: auto; background: #000; }
     document.addEventListener('webkitfullscreenchange', aoMudarTelaCheia, false);
     v.addEventListener('webkitbeginfullscreen', function () { logDiag('video entrou em tela cheia nativa (webkitbeginfullscreen) — a legenda #psub nao aparece nesse modo'); }, false);
     v.addEventListener('webkitendfullscreen', function () { logDiag('video saiu da tela cheia nativa'); ajustarVideo(); }, false);
-    v.addEventListener('loadedmetadata', function () { videoDoFilme = filmeAtual; }, false);
+    v.addEventListener('loadedmetadata', function () {
+      videoDoFilme = filmeAtual;
+      // retomando do meio (progresso salvo, em geral pelo player do navegador): se 20 s depois o video nao saiu do lugar, a retomada travou —
+      // recomeca do inicio em vez de ficar parado (o jeito de destravar era apagar o "continuar assistindo")
+      if (retomadaPedida > RETOMAR_MIN_SEGUNDOS && !retomadaTimer) {
+        var idConfere = filmeAtual, t0 = v.currentTime;
+        retomadaTimer = setTimeout(function () {
+          retomadaTimer = null;
+          if (filmeAtual !== idConfere || v.paused) return;
+          if (v.currentTime > t0 + 1 && v.currentTime > 1) return;   // andou: a retomada funcionou
+          logDiag('retomada em ' + Math.floor(retomadaPedida) + 's do filme ' + idConfere + ' nao andou em ' + (RETOMADA_CONFERE_MS / 1000) + 's (t=' + Math.floor(v.currentTime) + 's readyState=' + v.readyState + '): recomecando do inicio');
+          retomadaPedida = 0;
+          tocar(idConfere, true, 0);
+        }, RETOMADA_CONFERE_MS);
+      }
+    }, false);
     // por que a pagina recarrega/falha: erro do <video> com codigo e posicao; stalled/waiting uma vez por episodio; posicao guardada pro diagRecarga
     v.addEventListener('error', function () {
       var err = v.error;
