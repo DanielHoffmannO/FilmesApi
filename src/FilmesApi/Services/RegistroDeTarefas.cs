@@ -33,8 +33,11 @@ public sealed class RegistroDeTarefas
     public IReadOnlyList<Tarefa> Snapshot()
     {
         lock (_trava)
-            return _ordem.Select(n => { var l = _tarefas[n];
-                return new Tarefa(n, l.Estado, l.Ultima, l.Duracao, l.Resumo, l.Erro, l.Execucoes, l.Falhas); }).ToList();
+            return _ordem.Select(n =>
+            {
+                var l = _tarefas[n];
+                return new Tarefa(n, l.Estado, l.Ultima, l.Duracao, l.Resumo, l.Erro, l.Execucoes, l.Falhas);
+            }).ToList();
     }
 
     private Linha Obter(string nome)

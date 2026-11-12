@@ -28,7 +28,9 @@ public static class ImpressaoDeAudio
     {
         var psi = new ProcessStartInfo(ffmpeg)
         {
-            RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
         };
         var args = new List<string> { "-hide_banner", "-nostdin", "-v", "error" };
         var inv = System.Globalization.CultureInfo.InvariantCulture;

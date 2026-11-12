@@ -25,6 +25,13 @@ jobs:
       - name: tv.html e util.js em ES5
         run: node tools/verificar-es5.js
 
+      # regras puras da TV/controle (pulo da abertura, próximo automático, temporadas, idiomas): testadas com node, sem dependência
+      - name: regras do front em node
+        run: |
+          node tools/verificar-salto.js
+          node tools/verificar-temporadas.js
+          node tools/verificar-idiomas.js
+
       - run: dotnet build FilmesApi.sln --no-restore --configuration Release
 
       # o teste de downmix 5.1 -> estéreo gera e sonda mídia de verdade

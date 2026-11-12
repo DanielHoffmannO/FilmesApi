@@ -6,7 +6,8 @@ namespace FilmesApi.Tests;
 
 public class RegistroDeTarefasTests
 {
-    [Fact] public void Declarada_aparece_sem_ter_rodado()
+    [Fact]
+    public void Declarada_aparece_sem_ter_rodado()
     {
         var r = new RegistroDeTarefas();
         r.Declarar("scan"); r.Declarar("metadados", ligada: false);
@@ -14,7 +15,8 @@ public class RegistroDeTarefasTests
         Assert.All(r.Snapshot(), t => Assert.Null(t.UltimaExecucao));
     }
 
-    [Fact] public void Ok_e_falha_contam_e_guardam_resultado()
+    [Fact]
+    public void Ok_e_falha_contam_e_guardam_resultado()
     {
         var r = new RegistroDeTarefas();
         r.Iniciar("scan").Ok("2 novos");
@@ -27,7 +29,8 @@ public class RegistroDeTarefasTests
         Assert.Equal(("ok", "1 novo", null), (t.Estado, t.Resumo, t.Erro));
     }
 
-    [Fact] public void Rodando_ate_concluir_e_medicao_so_conta_uma_vez()
+    [Fact]
+    public void Rodando_ate_concluir_e_medicao_so_conta_uma_vez()
     {
         var r = new RegistroDeTarefas();
         var m = r.Iniciar("limpeza-cache");
@@ -36,7 +39,8 @@ public class RegistroDeTarefasTests
         Assert.Equal(1, r.Snapshot()[0].Execucoes);
     }
 
-    [Fact] public async Task Scan_periodico_registra_a_execucao()
+    [Fact]
+    public async Task Scan_periodico_registra_a_execucao()
     {
         using var f = new ScanFixture();
         var r = new RegistroDeTarefas();

@@ -129,14 +129,15 @@ public class AnaliseDeAberturaService(IServiceScopeFactory escopos, FfmpegOption
         if (config.GetValue<bool?>("AberturaUsarCapitulos") ?? true)
         {
             var probe = sp.GetService<MediaProbeService>();
-            foreach (var i in probe is null ? [] : restantes.ToList())
-            {
-                if (caminhos[i] is null) continue;   // um episódio sem arquivo não impede os seguintes de usar o capítulo
-                var info = await ProbeSeguroAsync(probe, caminhos[i]!, ct);
-                if (CapituloDeAbertura.Abertura(info?.Capitulos) is not var (ini, fimCap)) continue;
-                feitos += await GravarAsync(db, eps[i].Id, Math.Round(ini, 1), Math.Round(fimCap, 1), OrigemMarca.Capitulo, TamanhoDe(caminhos[i]));
-                restantes.Remove(i);
-            }
+            if (probe is not null)
+                foreach (var i in restantes.ToList())
+                {
+                    if (caminhos[i] is null) continue;   // um episódio sem arquivo não impede os seguintes de usar o capítulo
+                    var info = await ProbeSeguroAsync(probe, caminhos[i]!, ct);
+                    if (CapituloDeAbertura.Abertura(info?.Capitulos) is not var (ini, fimCap)) continue;
+                    feitos += await GravarAsync(db, eps[i].Id, Math.Round(ini, 1), Math.Round(fimCap, 1), OrigemMarca.Capitulo, TamanhoDe(caminhos[i]));
+                    restantes.Remove(i);
+                }
         }
 
         // 2) comparação de áudio com os vizinhos (as impressões já guardadas não voltam ao disco)

@@ -241,9 +241,15 @@ public class AnaliseDeAberturaTests : IDisposable
     }
 
     [Theory]
-    [InlineData("auto", "auto", true)] [InlineData("auto", "capitulo", true)] [InlineData("auto", "pulo", true)]
-    [InlineData("capitulo", "auto", false)] [InlineData("capitulo", "capitulo", true)] [InlineData("capitulo", "pulo", true)]
-    [InlineData("pulo", "auto", false)] [InlineData("pulo", "capitulo", false)] [InlineData("pulo", "pulo", true)]
+    [InlineData("auto", "auto", true)]
+    [InlineData("auto", "capitulo", true)]
+    [InlineData("auto", "pulo", true)]
+    [InlineData("capitulo", "auto", false)]
+    [InlineData("capitulo", "capitulo", true)]
+    [InlineData("capitulo", "pulo", true)]
+    [InlineData("pulo", "auto", false)]
+    [InlineData("pulo", "capitulo", false)]
+    [InlineData("pulo", "pulo", true)]
     public void Precedencia_das_origens(string atual, string nova, bool pode) =>
         Assert.Equal(pode, OrigemMarca.PodeSobrescrever(atual, nova));
 
