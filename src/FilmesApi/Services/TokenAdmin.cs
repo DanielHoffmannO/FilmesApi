@@ -4,7 +4,7 @@ using System.Text;
 namespace FilmesApi.Services;
 
 /// <summary>
-/// Token opcional pras rotas que mexem no servidor (<c>/api/admin/*</c> e o scan manual <c>POST /api/filmes/scan</c>), que
+/// Token opcional pras rotas que mexem no servidor (<c>/api/admin/*</c>, o scan manual <c>POST /api/filmes/scan</c> e a varredura <c>POST /api/diagnostico/biblioteca/verificar</c>), que
 /// ficam abertas na rede local. <c>AdminToken</c> definido → exige o header <c>X-Admin-Token</c>; vazio → como sempre foi.
 /// NÃO vale pras rotas do player nem pro <c>/api/diag/log</c>: a TV e o celular não têm onde guardar um token.
 /// </summary>
@@ -15,7 +15,8 @@ internal static class TokenAdmin
     /// <summary>Esta requisição é uma das protegidas?</summary>
     public static bool Protegida(string metodo, PathString caminho) =>
         caminho.StartsWithSegments("/api/admin", StringComparison.OrdinalIgnoreCase)
-        || (HttpMethods.IsPost(metodo) && caminho.StartsWithSegments("/api/filmes/scan", StringComparison.OrdinalIgnoreCase));
+        || (HttpMethods.IsPost(metodo) && caminho.StartsWithSegments("/api/filmes/scan", StringComparison.OrdinalIgnoreCase))
+        || (HttpMethods.IsPost(metodo) && caminho.StartsWithSegments("/api/diagnostico/biblioteca/verificar", StringComparison.OrdinalIgnoreCase));   // varredura da saúde da biblioteca
 
     /// <summary>Sem token configurado (vazio) passa tudo. Com token, o header tem que bater EXATAMENTE — comparação em tempo
     /// constante, pra o tempo de resposta não ir revelando o token caractere a caractere.</summary>

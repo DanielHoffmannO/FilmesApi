@@ -25,6 +25,13 @@ th{color:#999;font-weight:600;font-size:12px}
 button{background:none;border:1px solid var(--border);color:#ccc;padding:6px 12px;border-radius:6px;cursor:pointer}
 button:hover{border-color:var(--accent);color:#fff}
 #msg{color:var(--muted);padding:30px 0;text-align:center}
+/* seção "Saúde da biblioteca" (js/diag-biblioteca.js) */
+.sev{font-size:12px;font-weight:600;white-space:nowrap}
+.sev-ruim{color:#ff6b6b}.sev-atencao{color:#ffb700}.sev-info{color:#8ab4f8}
+.cand{color:var(--ok);font-size:12px;font-weight:600}
+.sep{border:0;border-top:1px solid #222;margin:6px 0}
+#biblioteca summary{cursor:pointer}
+#biblioteca summary h2{display:inline-block}
 </style>
 </head>
 <body>
@@ -32,6 +39,7 @@ button:hover{border-color:var(--accent);color:#fff}
 <div class="sub"><a href="/">← catálogo</a> · <button onclick="carregar()">atualizar</button> <span id="resumo"></span></div>
 <div id="msg">Analisando o catálogo…</div>
 <div id="conteudo"></div>
+<div id="biblioteca"></div>
 <script src="/js/util.js"></script>
 <script>
 function tamanho(bytes) {
@@ -125,5 +133,6 @@ async function carregar() {
 }
 carregar();
 </script>
+<script src="/js/diag-biblioteca.js"></script>
 </body>
 </html>

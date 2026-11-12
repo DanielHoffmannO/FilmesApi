@@ -43,6 +43,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<ScanPeriodicoServi
 builder.Services.AddHostedService<PreAquecerContinuarService>();
 builder.Services.AddHostedService<AnaliseDeAberturaService>();
 builder.Services.AddHostedService<DubladoIaService>();
+builder.Services.AddSaudeBiblioteca();   // varredura diária da biblioteca (truncados, duplicatas…); ver SaudeBibliotecaService
 builder.Services.AddSingleton<LimpezaCacheService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<LimpezaCacheService>());
 builder.Services.AddSingleton<NomesPersonalizadosService>();
