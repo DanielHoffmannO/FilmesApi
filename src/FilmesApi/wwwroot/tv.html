@@ -186,6 +186,8 @@ video { width: 100%; height: auto; background: #000; }
   var posicaoRetomar = 0;
   var retomadaPedida = 0;           // a retomada que o /progresso pediu (posicaoRetomar zera ao aplicar); so a conferencia abaixo olha
   var retomadaTimer = null;
+  var retomadaMetaTimer = null;
+  var RETOMADA_META_MS = 45000;     // dada a URL, os metadados nao chegam: tambem recomeca do inicio
   var RETOMADA_CONFERE_MS = 20000;  // metadados carregaram mas o video nao anda a partir da retomada: recomeca do inicio
   var retomarTentativas = 0;
   // video.duration so e confiavel fora do HLS (stream/remux/original ja sao arquivo completo
@@ -566,6 +568,20 @@ video { width: 100%; height: auto; background: #000; }
     hls.loadSource(url);
   }
 
+  // Retomada pedida e a URL ja foi dada ao <video>: se os metadados nao chegam em 45 s (a TV ficou parada abrindo no meio), recomeca do inicio.
+  // Sem retomada (retomadaPedida = 0) nao arma nada.
+  function conferirMetadadosDaRetomada(id) {
+    if (!(retomadaPedida > RETOMAR_MIN_SEGUNDOS)) return;
+    if (retomadaMetaTimer) clearTimeout(retomadaMetaTimer);
+    retomadaMetaTimer = setTimeout(function () {
+      retomadaMetaTimer = null;
+      if (filmeAtual !== id || videoDoFilme === id) return;
+      logDiag('retomada em ' + Math.floor(retomadaPedida) + 's do filme ' + id + ': sem metadados em ' + (RETOMADA_META_MS / 1000) + 's (readyState=' + els.video.readyState + '): recomecando do inicio');
+      retomadaPedida = 0;
+      tocar(id, true, 0);
+    }, RETOMADA_META_MS);
+  }
+
   function tocarUrl(id, url, comAviso) {
     var v = els.video;
     var pmsg = els.pmsg;
@@ -574,6 +590,7 @@ video { width: 100%; height: auto; background: #000; }
     // Content-Length — duration nunca cresce depois, ao contrario do HLS.
     duracaoConfiavel = true;
     v.src = url + (seg ? '#t=' + seg : '');
+    conferirMetadadosDaRetomada(id);
     if (comAviso) {
       pmsg.innerHTML = 'Arquivo original (pode nao rodar em TV muito antiga).';
       setTimeout(function () {
@@ -655,6 +672,7 @@ video { width: 100%; height: auto; background: #000; }
         var v = els.video;
         var t = posicaoRetomar > RETOMAR_MIN_SEGUNDOS ? Math.floor(posicaoRetomar) : 0;
         var url = API + '/' + id + '/hls/playlist.m3u8';
+        conferirMetadadosDaRetomada(id);
         if (status === 'compativel') {
           duracaoConfiavel = true;  // arquivo completo, sem HLS — mesma razao do tocarUrl acima
           v.src = API + '/' + id + '/stream' + (t ? ('#t=' + t) : '');
@@ -980,6 +998,7 @@ video { width: 100%; height: auto; background: #000; }
     posicaoRetomar = 0;
     retomadaPedida = 0;
     if (retomadaTimer) { clearTimeout(retomadaTimer); retomadaTimer = null; }
+    if (retomadaMetaTimer) { clearTimeout(retomadaMetaTimer); retomadaMetaTimer = null; }
     retomarTentativas = 0;
     duracaoConfiavel = false;
     reproducaoConcluida = false;
