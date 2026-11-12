@@ -393,6 +393,7 @@ usam `__` (ex.: `ConnectionStrings__Default`).
 | `AberturaUsarCapitulos` | `true` | Usa o capítulo "Opening"/"Intro"/"Abertura"/"OP" do arquivo (exato; ≥ 5 s) antes da comparação de áudio. Precedência: pulo > capítulo > áudio. |
 | `ProximoRestanteSegundos` | `180` | Apertar "próximo episódio" com no máximo isto restando (e créditos desconhecidos) conta como "já acabou" e liga o próximo automático da temporada. |
 | `ProximoAutomaticoContagemSegundos` | `5` | Contagem do "Indo para o próximo" com o próximo automático ligado (sem ele continua a de 12 s do `tv.html`). |
+| `AindaAssistindoAposAvancos` | `3` | "Ainda está assistindo?": depois de N avanços **automáticos** seguidos pro próximo episódio (a contagem chegou a zero sem ninguém mexer), a TV não inicia o próximo: mostra "Ainda está assistindo? Aperte OK para continuar" e fica parada (sem transcodificar nada novo) até alguém interagir — qualquer tecla (menos Voltar) na TV ou o botão **Continuar** no controle. Comando do controle ou tecla na TV zera a conta. `0` desliga (avança pra sempre, como antes). |
 | `DownloadsSimultaneos` | `2` | Teto de downloads simultâneos em `GET /api/filmes/{id}/download` (arquivo original com nome decente e `Content-Disposition: attachment`; Range vale). Acima do teto: `429` com `Retry-After: 30`. `0` = sem limite. |
 | `HlsStallTimeoutMinutes` | `8` | Mata o ffmpeg se não gerar segmento novo neste intervalo. |
 | `TranscodeJobTimeoutHours` | `6` | Teto absoluto por job de ffmpeg. |
@@ -502,6 +503,8 @@ Estado único em memória (`PlayerStateService`) — pensado pra uma casa com um
 | `POST` | `/api/player/parar` | Fecha o player na TV. |
 | `POST` | `/api/player/proximo-oferece` | A própria TV avisa `{filmeId, rotulo}` quando começa a contagem de "próximo episódio". |
 | `POST` | `/api/player/proximo-aceita` | Celular confirma o próximo episódio oferecido pela TV, sem precisar ir até lá. |
+| `POST` | `/api/player/sono` | Timer de sono do controle: `{minutos, aoFimDoEpisodio}`. `minutos` > 0 = a TV para em N minutos (máx. 720); `aoFimDoEpisodio` = a TV não avança pro próximo e para ao fim (os dois = o que vier primeiro); `minutos: 0` sem `aoFimDoEpisodio` cancela; um pedido novo substitui o anterior. Vencido, o servidor faz o mesmo que `parar` e a TV mostra "Boa noite" (até uma tecla/comando). O estado vem em `/api/player/state`: `sono` (`ativo`, `restanteSegundos`, `ate`, `aoFim`, `disparou`, `versao`), `presenca` (`avancos`, `limite`, `devida`, `pendente`, `rotulo`) e `noFim` (`avancar`\|`dormir`\|`perguntar`: o que a TV faz no fim do episódio). Só em memória (reiniciar o servidor desarma). |
+| `POST` | `/api/player/sono-fim`, `/presenca-pergunta` `{rotulo}`, `/presenca-continuar`, `/interacao` | A TV avisa que o episódio acabou com o sono "ao fim" armado / que está perguntando "Ainda está assistindo?"; o botão **Continuar** do controle; a TV avisa uma tecla apertada. Interação humana = comando do controle (qualquer `POST /api/player/*` de uma pessoa, inclusive `selecionar`) ou tecla na TV; `POST /api/player/selecionar/{id}?auto=1` é o avanço que a TV fez sozinha (conta +1 em vez de zerar). Com o sono ao fim armado/disparado ou a pergunta devida/pendente, o `PreAquecerContinuarService` não aquece nada. |
 
 ### Diagnóstico
 

@@ -196,6 +196,14 @@ input[type=range].vol:focus-visible{outline:2px solid var(--acc);outline-offset:
   <div id="folhaCorpo"></div>
 </div>
 
+<div class="folha-scrim" id="sonoScrim" onclick="fecharSono()"></div>
+<div class="folha" id="sonoFolha" role="dialog" aria-modal="true" aria-labelledby="sonoTitulo" tabindex="-1">
+  <div class="alca"></div>
+  <h2 id="sonoTitulo">Dormir</h2>
+  <div class="sub" id="sonoSub"></div>
+  <div id="sonoCorpo"></div>
+</div>
+
 <div class="remote" id="remote">
   <div class="l1">
     <span data-ico="tv"></span>
@@ -212,6 +220,14 @@ input[type=range].vol:focus-visible{outline:2px solid var(--acc);outline-offset:
     <span class="tag ia" title="Este arquivo tem uma faixa de dublagem em português feita por IA">IA</span>
     <button class="iabtn" id="remoteIaBtn" onclick="remoteAlternarIa()"></button>
   </div>
+  <div class="remote-proximo" id="remoteSono">
+    <span id="remoteSonoTxt"></span>
+    <button style="background:var(--s3)" onclick="definirSono(0, false, 'Sono cancelado.')">Cancelar</button>
+  </div>
+  <div class="remote-proximo" id="remoteConfirma">
+    <span id="remoteConfirmaTxt">Ainda está assistindo?</span>
+    <button onclick="remoteContinuar()">Continuar</button>
+  </div>
   <div class="ctl">
     <button class="rb" onclick="remoteSeek(-SEEK_STEP_S)" aria-label="Voltar 30 segundos"><span data-ico="back"></span><em>30</em></button>
     <button class="big" onclick="remotePlayPause()" id="remotePlayPauseBtn" aria-label="Pausar"></button>
@@ -221,6 +237,7 @@ input[type=range].vol:focus-visible{outline:2px solid var(--acc);outline-offset:
     <button class="ib" onclick="remoteProximoEp()" id="remoteProximoEpBtn" aria-label="Próximo episódio" data-ico="next" style="display:none"></button>
     <span data-ico="vol" style="margin-left:6px;display:grid"></span>
     <input type="range" class="vol" id="remoteVolume" min="0" max="1" step="0.05" oninput="remoteVolume(this.value)" aria-label="Volume">
+    <button class="ib" id="remoteSonoBtn" onclick="abrirSono()" aria-label="Dormir"></button>
     <button class="ib" onclick="remoteParar()" aria-label="Parar" data-ico="stop"></button>
   </div>
 </div>
@@ -826,6 +843,86 @@ document.getElementById('folhaCorpo').addEventListener('click', async e => {
   desenharFolha();
 });
 
+// ─── Sono ("Parar em 15 / 30 / 60 min", "ao fim do episódio") e "Ainda está assistindo?" ─────────────────────────────────────
+// O servidor guarda tudo e devolve no /player/state: `sono` { ativo, restanteSegundos, aoFim, disparou, versao }, `presenca` { pendente, rotulo }. A TV aplica
+// (para o player e mostra "Boa noite"; depois de N avanços sozinha pergunta e fica parada); aqui só se arma, se vê a contagem e se responde ao aviso.
+IC.moon = '<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/>';
+document.getElementById('remoteSonoBtn').innerHTML = ico('moon');
+let sonoVisto = null;   // versão do último disparo que já vi (null = ainda não vi o 1º estado: não mostra "Boa noite" velho ao abrir a página)
+
+const fimDoQue = () => (filmeAtualRemoto && !filmeAtualRemoto.ehEpisodio ? 'filme' : 'episódio');
+function textoDoSono(s) {
+  const partes = [];
+  if (s.restanteSegundos != null) partes.push('Dormir em ' + mmss(s.restanteSegundos));
+  if (s.aoFim) partes.push(partes.length ? 'ou ao fim do ' + fimDoQue() : 'Dormir ao fim do ' + fimDoQue());
+  return partes.join(' · ');
+}
+
+// Chamado a cada poll: contagem regressiva e "Cancelar" na barra, o aviso "Ainda está assistindo?" e, uma vez, o "Boa noite" quando a TV para.
+function tratarSono(estado) {
+  const s = estado.sono, p = estado.presenca;
+  if (!s) return;
+  document.getElementById('remoteSono').classList.toggle('on', !!s.ativo);
+  if (s.ativo) document.getElementById('remoteSonoTxt').textContent = textoDoSono(s);
+  document.getElementById('remoteSonoBtn').style.color = s.ativo ? 'var(--acc-txt)' : '';
+  document.getElementById('remoteConfirma').classList.toggle('on', !!(p && p.pendente));
+  if (p && p.pendente) document.getElementById('remoteConfirmaTxt').textContent = 'Ainda está assistindo?' + (p.rotulo ? ' · ' + p.rotulo : '');
+  if (sonoVisto === null) sonoVisto = s.versao;
+  else if (s.versao !== sonoVisto) { sonoVisto = s.versao; if (s.disparou) toast('Boa noite — a TV parou.'); }   // versão que muda sem "disparou" = servidor reiniciou
+  if (folhaSonoAberta()) desenharSono();
+}
+
+// "Continuar" do aviso: o servidor zera a conta e manda a TV seguir pro próximo (como o OK dela).
+async function remoteContinuar() {
+  await fetch(`${PLAYER_API}/presenca-continuar`, { method: 'POST' }).catch(() => {});
+  pollRemote();
+}
+
+// minutos > 0: parar em N minutos; aoFim: parar ao fim do episódio; (0, false) cancela. Um pedido novo substitui o anterior.
+async function definirSono(minutos, aoFim, aviso) {
+  const r = await fetch(`${PLAYER_API}/sono`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minutos, aoFimDoEpisodio: aoFim })
+  }).catch(() => null);
+  if (!r || !r.ok) { toast('Não consegui armar o sono. Tente de novo.'); return; }
+  fecharSono();
+  toast(aviso);
+  pollRemote();
+}
+
+const folhaSonoAberta = () => document.getElementById('sonoFolha').classList.contains('on');
+function abrirSono() {
+  document.getElementById('sonoScrim').classList.add('on');
+  const f = document.getElementById('sonoFolha');
+  f.classList.add('on');
+  desenharSono();
+  f.focus({ preventScroll: true });
+}
+function fecharSono() {
+  document.getElementById('sonoScrim').classList.remove('on');
+  document.getElementById('sonoFolha').classList.remove('on');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && folhaSonoAberta()) fecharSono(); });
+
+function desenharSono() {
+  const s = (ultimoEstadoRemoto && ultimoEstadoRemoto.sono) || {};
+  document.getElementById('sonoSub').textContent = s.ativo ? textoDoSono(s) : 'A TV para sozinha quando chegar a hora.';
+  document.getElementById('sonoCorpo').innerHTML =
+    '<div class="rot">Parar em</div><div class="seg2" role="group" aria-label="Parar em">' +
+      [15, 30, 60].map(m => `<button data-sono="${m}" aria-label="Parar em ${m} minutos">${m} min</button>`).join('') + '</div>' +
+    '<div class="rot">Ou</div>' +
+    `<button class="op" data-sono="fim"><span>Parar ao fim do ${fimDoQue()}</span>${s.aoFim ? ico('check') : ''}</button>` +
+    (s.ativo ? '<button class="op" data-sono="cancelar"><span>Cancelar</span></button>' : '');
+}
+
+document.getElementById('sonoCorpo').addEventListener('click', e => {
+  const b = e.target.closest('[data-sono]');
+  if (!b) return;
+  const v = b.dataset.sono, s = (ultimoEstadoRemoto && ultimoEstadoRemoto.sono) || {};
+  if (v === 'cancelar') definirSono(0, false, 'Sono cancelado.');
+  else if (v === 'fim') s.aoFim && s.restanteSegundos == null ? definirSono(0, false, 'Sono cancelado.') : definirSono(0, true, `A TV para ao fim do ${fimDoQue()}.`);   // tocar de novo desarma
+  else definirSono(Number(v), false, `A TV para em ${v} min.`);
+});
+
 // A barra muda de altura (botões, aviso de próximo): publica a altura real pra lista não ficar atrás dela.
 new ResizeObserver(() => {
   document.documentElement.style.setProperty('--remote-h', (els.remote.classList.contains('active') ? els.remote.offsetHeight : 0) + 'px');
@@ -840,6 +937,7 @@ async function pollRemote() {
     const trocouFilme = !estadoAnterior || estadoAnterior.filmeId !== estado.filmeId;
     ultimoEstadoRemoto = estado;
     tratarAviso(estado.aviso, estado.instancia);
+    tratarSono(estado);
 
     const bar = els.remote;
     if (estado.filmeId === null) {

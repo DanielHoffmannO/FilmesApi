@@ -7,7 +7,7 @@ namespace FilmesApi.Services;
 /// o job cede o lugar se alguém precisar do encoder. <c>PreAquecerContinuarMinutos</c> (padrão 5; 0 desliga).
 /// </summary>
 public class PreAquecerContinuarService(IServiceScopeFactory escopos, IConfiguration config, ILogger<PreAquecerContinuarService> logger,
-    RegistroDeTarefas? tarefas = null) : BackgroundService
+    RegistroDeTarefas? tarefas = null, PlayerStateService? player = null) : BackgroundService
 {
     /// <summary>Quantos da frente da fila entram no pré-aquecimento (um aquecido por checagem).</summary>
     private const int Candidatos = 3;
@@ -32,6 +32,8 @@ public class PreAquecerContinuarService(IServiceScopeFactory escopos, IConfigura
     internal async Task<int?> ExecutarUmaVezAsync(CancellationToken ct = default)
     {
         var medicao = tarefas?.Iniciar("pre-aquecer");
+        // sono "ao fim" armado/disparado ou "Ainda está assistindo?" devido/pendente: o próximo episódio NÃO vai começar sozinho — nada de remux por palpite
+        if (player is { SegurandoAvanco: true }) { medicao?.Ok("sono ou \"Ainda está assistindo?\" — não aqueceu"); return null; }
         try
         {
             using var escopo = escopos.CreateScope();

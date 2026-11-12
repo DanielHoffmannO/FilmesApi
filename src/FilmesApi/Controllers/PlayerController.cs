@@ -9,6 +9,7 @@ namespace FilmesApi.Controllers;
 /// mexe localmente (D-pad), pra o celular ficar sincronizado não importa a origem.</summary>
 [ApiController]
 [Route("api/player")]
+[TypeFilter(typeof(InteracaoHumanaFilter))]   // comando de uma pessoa zera a conta do "Ainda está assistindo?" (SonoController.cs)
 public class PlayerController : ControllerBase
 {
     private readonly PlayerStateService _state;

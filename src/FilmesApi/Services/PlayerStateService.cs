@@ -13,7 +13,7 @@ public record ContextoDoFilme(double? AberturaInicio, double? AberturaFim, bool 
 /// mudam o que aparece na tela da TV, e o objetivo aqui é só controle remoto (play/pause,
 /// seek, volume, legenda) sem alterar em nada o player que já está estável.
 /// </summary>
-public class PlayerStateService(Func<DateTime>? agora = null)
+public partial class PlayerStateService(Func<DateTime>? agora = null, IConfiguration? config = null)
 {
     /// <summary>Toques de avanço com no máximo isto entre si formam UMA rajada.</summary>
     public static readonly TimeSpan JanelaDaRajada = TimeSpan.FromSeconds(6);
@@ -21,6 +21,7 @@ public class PlayerStateService(Func<DateTime>? agora = null)
     private static readonly TimeSpan EsperaDoPouso = TimeSpan.FromSeconds(2);
 
     private readonly Func<DateTime> _agora = agora ?? (() => DateTime.UtcNow);
+    private readonly IConfiguration? _config = config;   // só o sono/"Ainda está assistindo?" lê (PlayerStateService.Sono.cs)
     private readonly object _lock = new();
 
     /// <summary>Identifica ESTA instância do servidor: muda a cada restart. Os contadores (versões de aviso/seek, seekAcumulado) voltam a zero
@@ -74,6 +75,7 @@ public class PlayerStateService(Func<DateTime>? agora = null)
     {
         lock (_lock)
         {
+            AvaliarSono();   // o timer de sono venceu? (PlayerStateService.Sono.cs)
             return new
             {
                 instancia = Instancia,
@@ -101,6 +103,7 @@ public class PlayerStateService(Func<DateTime>? agora = null)
                 proximoAutomatico = _contexto?.ProximoAutomatico ?? false,
                 proximoContagem = _contexto?.ContagemProximoSegundos ?? 5,
                 proximoCancelado = _proximoCancelado,
+                sono = SnapshotDoSono(), presenca = SnapshotDaPresenca(), noFim = NoFimAtual(),   // timer de sono, "Ainda está assistindo?" e o que o fim do episódio faz
                 inicioCreditos = _contexto?.InicioCreditos,
                 aviso = _avisoVersao == 0 ? null : new { versao = _avisoVersao, tipo = _avisoTipo, texto = _avisoTexto, acao = _avisoAcao },
             };
@@ -117,6 +120,7 @@ public class PlayerStateService(Func<DateTime>? agora = null)
             _filmeId = filmeId; _playing = true; _posSegundos = 0; _duracaoSegundos = 0; _legendaIdx = -1; _legendaManual = false;
             _proximoFilmeId = null; _proximoRotulo = null;
             _contexto = null; _aberturaPulada = false; _rajada = null; _proximoCancelado = false;
+            AoTrocarDeFilme();
         }
     }
 
@@ -269,6 +273,7 @@ public class PlayerStateService(Func<DateTime>? agora = null)
             _filmeId = null; _playing = false; _pararVersion++; _posSegundos = 0; _duracaoSegundos = 0; _legendaIdx = -1; _legendaManual = false;
             _proximoFilmeId = null; _proximoRotulo = null;
             _contexto = null; _aberturaPulada = false; _rajada = null; _proximoCancelado = false;
+            AoTrocarDeFilme();
         }
     }
 }

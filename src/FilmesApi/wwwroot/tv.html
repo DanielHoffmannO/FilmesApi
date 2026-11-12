@@ -133,6 +133,32 @@ video { width: 100%; height: auto; background: #000; }
   background: rgba(0,0,0,.5);
   z-index: 3;
 }
+/* "Ainda esta assistindo?" (no player) e "Boa noite" (tela inteira, por cima de tudo): sem flexbox, so posicao absoluta */
+#pconfirma {
+  display: none;
+  position: absolute;
+  left: 10%; right: 10%; top: 32%;
+  padding: 28px 24px;
+  text-align: center;
+  font-size: 40px;
+  line-height: 1.4;
+  color: #fff;
+  background: rgba(0,0,0,.88);
+  border: 3px solid #e50914;
+  z-index: 4;
+}
+#pconfirma .pdica { display: block; margin-top: 12px; font-size: 24px; color: #bbb; }
+#boanoite {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  padding-top: 22%;
+  text-align: center;
+  font-size: 44px;
+  color: #555;
+  background: #000;
+  z-index: 300;
+}
 </style>
 </head>
 <body>
@@ -157,7 +183,9 @@ video { width: 100%; height: auto; background: #000; }
   <div id="psub"></div>
   <div id="pmsg"></div>
   <div id="phint">&#8592; &#8594; 15s &middot; OK pausa &middot; Vermelho = legenda &middot; &#8593; tela cheia &middot; Voltar = lista</div>
+  <div id="pconfirma"></div>
 </div>
+<div id="boanoite">Boa noite</div>
 
 <script src="/vendor/hls.min.js"></script>
 <script src="/js/util.js"></script>
@@ -924,6 +952,7 @@ video { width: 100%; height: auto; background: #000; }
     if (proximoTimer) { clearInterval(proximoTimer); proximoTimer = null; }
     proximoPendente = null;
     proximoOfertaId++;  // invalida qualquer resposta de /proximo ainda em voo (ver ofereceProximo)
+    esconderPergunta();  // "Ainda esta assistindo?" (bloco do sono, abaixo) era uma oferta sem contagem: some junto
   }
 
   function ofereceProximo(id, contagem) {
@@ -954,7 +983,7 @@ video { width: 100%; height: auto; background: #000; }
       var resta = contagem || PROXIMO_COUNTDOWN_S;
       function tick() {
         pmsg.innerHTML = 'Proximo: ' + esc(rotuloComTitulo(prox)) + ' &mdash; OK assiste, Voltar cancela  (' + resta + 's)';
-        if (resta-- <= 0) irProximo();
+        if (resta-- <= 0) { avancoSozinho = !!proximoPendente; irProximo(); avancoSozinho = false; }   // contagem acabou sem ninguem mexer: o tocar() avisa o servidor (?auto=1)
       }
       tick();
       proximoTimer = setInterval(tick, 1000);
@@ -1006,7 +1035,7 @@ video { width: 100%; height: auto; background: #000; }
     // Avisa o controle.html o que esta tocando agora, nao importa se foi selecionado
     // aqui no D-pad ou remotamente — fonte unica de verdade no servidor. Fire-and-forget,
     // nao atrasa nem interfere na reproducao local.
-    if (!ehRetry && posInicial == null) { legendaManualLocal = false; send('POST', PLAYER + '/selecionar/' + id); }
+    if (!ehRetry && posInicial == null) { legendaManualLocal = false; send('POST', PLAYER + '/selecionar/' + id + (avancoSozinho ? '?auto=1' : '')); }
     els.list.className = 'hide';
     els.player.className = 'on';
     els.video.style.width = ''; els.video.style.height = '';  // o ajuste do filme anterior nao vale pra este (ver ajustarVideo)
@@ -1183,6 +1212,7 @@ video { width: 100%; height: auto; background: #000; }
       guardarTocando(null);
       logDiag('concluir ' + idFim + ' via ended');
       send('POST', API + '/' + idFim + '/concluir');
+      if (seguraNoFim(idFim)) return;   // sono "ao fim do episodio" ou "Ainda esta assistindo?": sem oferta de proximo, sem pre-aquecer
       // temporada com o proximo automatico ligado (e nao cancelado): contagem curta e aviso no celular; senao, a de sempre
       var contagem = contagemNoFim(estadoRemotoAnterior, PROXIMO_COUNTDOWN_S);
       if (contagem === null) return;   // o Daniel cancelou o próximo automático neste episódio: fica parada no fim, sem oferta
@@ -1227,6 +1257,7 @@ video { width: 100%; height: auto; background: #000; }
   function aplicarEstadoRemoto(estado) {
     var anterior = estadoRemotoAnterior;
     estadoRemotoAnterior = estado;
+    sonoNaTv(estado);   // "Boa noite" / "Ainda esta assistindo?" (bloco do sono)
     if (!anterior) return;  // 1o poll: so guarda a base, nao reage a versao "zerada" do boot
     if (servidorReiniciou(estado, anterior)) return;  // servidor reiniciou: os contadores zeraram; esta leitura e a nova base
 
@@ -1265,7 +1296,7 @@ video { width: 100%; height: auto; background: #000; }
     }
     // Proximo automatico: ao entrar nos creditos conhecidos vai pro proximo (contagem curta, com "cancelar" no celular). O episodio conta
     // como visto ja aqui (como o 'ended' faria) e o proximo comeca a ser preparado pelo ofereceProximo.
-    if (videoCerto && decidirProximoAutomatico(estado, v.currentTime, proximoAutoDe === filmeAtual)) {
+    if (videoCerto && !avancoSegurado(estado) && decidirProximoAutomatico(estado, v.currentTime, proximoAutoDe === filmeAtual)) {
       proximoAutoDe = filmeAtual;
       reproducaoConcluida = true;
       logDiag('concluir ' + filmeAtual + ' via creditos');
@@ -1341,11 +1372,79 @@ video { width: 100%; height: auto; background: #000; }
     document.body.className = '';
   }
 
+  // ─── Sono e "Ainda esta assistindo?" ───────────────────────────────────────────────────────────────
+  // O servidor decide (PlayerStateService: `sono`, `presenca` e `noFim` no /player/state; a regra mora em SonoEPresenca.cs); a TV so obedece e avisa o que ve:
+  // tecla apertada (interacao), avanco que ela mesma fez (?auto=1 no selecionar), "estou perguntando" e "o episodio acabou com o sono ao fim armado".
+  var INTERACAO_THROTTLE_MS = 3000;  // no maximo um aviso de tecla a cada 3 s (seta segurada nao inunda o servidor)
+  var interacaoEnviadaEm = 0;
+  var avancoSozinho = false;         // o tocar() que vem agora e o avanco da contagem (so o tick liga e desliga, na mesma chamada): vai com ?auto=1
+  var boaNoiteDispensada = 0;        // versao do sono (estado.sono.versao) cuja mensagem "Boa noite" ja foi dispensada por tecla
+  var elPergunta = document.getElementById('pconfirma');
+  var elBoaNoite = document.getElementById('boanoite');
+
+  // Oferta de proximo SEM contagem: esperando alguem responder (ha proximoPendente e nenhum timer rodando)
+  function perguntando() { return !!proximoPendente && !proximoTimer; }
+
+  // O servidor mandou nao avancar sozinho no fim do episodio ('dormir' ou 'perguntar'); vale tambem pro avanco pelos creditos
+  function avancoSegurado(estado) { return !!(estado && estado.noFim && estado.noFim !== 'avancar'); }
+
+  function mostrarPergunta(rotulo) {
+    elPergunta.innerHTML = 'Ainda está assistindo?<br>Aperte OK para continuar' + (rotulo ? '<span class="pdica">Próximo: ' + esc(rotulo) + '</span>' : '');
+    elPergunta.style.display = 'block';
+  }
+  function esconderPergunta() { elPergunta.style.display = 'none'; }
+
+  // No 'ended', com o poll ja mostrando que o avanco esta segurado. true = tratado (sem oferta de proximo, sem pre-aquecer).
+  function seguraNoFim(idFim) {
+    var acao = estadoRemotoAnterior && estadoRemotoAnterior.noFim;
+    if (acao === 'dormir') { send('POST', PLAYER + '/sono-fim'); return true; }   // o servidor para o player e liga o "Boa noite"
+    if (acao === 'perguntar') { perguntarSeAindaAssiste(idFim); return true; }
+    return false;
+  }
+
+  // Igual a oferta de proximo (mesmo proximoPendente: OK/qualquer tecla na TV e o "Continuar" do celular chamam irProximo), mas sem contagem, sem pre-aquecer
+  // o proximo e sem iniciar nada: a TV fica parada no fim ate alguem interagir.
+  function perguntarSeAindaAssiste(id) {
+    cancelarProximo();
+    var meuToken = ++proximoOfertaId;   // 'ended' pode disparar 2x (ver ofereceProximo)
+    get(API + '/' + id + '/proximo', function (err, prox) {
+      if (err || !prox || filmeAtual !== id || meuToken !== proximoOfertaId) return;
+      proximoPendente = prox;
+      send('POST', PLAYER + '/presenca-pergunta', { rotulo: rotuloComTitulo(prox) });
+      mostrarPergunta(rotuloComTitulo(prox));
+    });
+  }
+
+  // A cada poll: mostra o "Boa noite" enquanto o servidor diz que o sono disparou (por versao: dispensado por tecla nao volta) e, se o sono "ao fim" foi
+  // armado com a contagem do proximo ja correndo, desiste da contagem e dispara.
+  function sonoNaTv(estado) {
+    var s = estado && estado.sono;
+    elBoaNoite.style.display = (s && s.disparou && s.versao !== boaNoiteDispensada) ? 'block' : 'none';
+    if (proximoTimer && filmeAtual !== null && estado && estado.noFim === 'dormir') {
+      cancelarProximo();
+      send('POST', PLAYER + '/sono-fim');
+    }
+    if (!perguntando()) esconderPergunta();
+  }
+
+  // Toda tecla da TV e "tem gente aqui": avisa o servidor (zera a conta do "Ainda esta assistindo?"). true = a tecla so dispensou o "Boa noite" (nao faz mais nada).
+  function teclaNaTv(e) {
+    var agora = (new Date()).getTime();
+    if (agora - interacaoEnviadaEm >= INTERACAO_THROTTLE_MS) { interacaoEnviadaEm = agora; send('POST', PLAYER + '/interacao'); }
+    if (elBoaNoite.style.display !== 'block') return false;
+    var s = estadoRemotoAnterior && estadoRemotoAnterior.sono;
+    if (s) boaNoiteDispensada = s.versao;
+    elBoaNoite.style.display = 'none';
+    if (e.preventDefault) e.preventDefault();
+    return true;
+  }
+
   // ---- teclado / controle remoto ----
   document.onkeydown = function (e) {
     e = e || window.event;
     var k = e.keyCode;
     var playerAtivo = els.player.className === 'on';
+    if (teclaNaTv(e)) return false;   // toda tecla e interacao (avisa o servidor); a 1a com o "Boa noite" na tela so o dispensa
 
     // Diagnostico (TV sem console): se o vermelho nao manda 403 nesta TV a legenda nunca liga e
     // nada aparece no log. Loga as teclas que nao sao seta/OK pra descobrir o codigo de verdade.
@@ -1370,7 +1469,7 @@ video { width: 100%; height: auto; background: #000; }
       // Oferta de proximo episodio na tela: OK assiste agora, resto ignora
       // (Voltar ja foi tratado acima -> fecharPlayer -> cancelarProximo).
       if (proximoPendente) {
-        if (k === 13 || k === 32) { if (e.preventDefault) e.preventDefault(); irProximo(); return false; }
+        if (k === 13 || k === 32 || perguntando()) { if (e.preventDefault) e.preventDefault(); irProximo(); return false; }   // "Ainda esta assistindo?": qualquer tecla (menos Voltar) continua
         return true;
       }
 
