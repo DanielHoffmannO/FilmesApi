@@ -45,7 +45,7 @@ public class FilmeService
             f.Progresso != null ? f.Progresso.PosicaoSegundos : (double?)null,
             f.Progresso != null ? f.Progresso.DuracaoSegundos : null,
             f.PosterUrl, f.Sinopse, f.TituloOriginal,
-            false, false, null, null, null, null, "", "Sem pasta", null, false);
+            false, false, null, null, null, null, "", "Sem pasta", null, false, false);
 
     public async Task<List<FilmeResponse>> ListarAsync()
     {
@@ -64,7 +64,7 @@ public class FilmeService
     /// <see cref="ProgressoService.ContinuarAssistindoAsync"/> devolve um resumo
     /// (id/título/posição); aqui cruza por id com o catálogo completo pra ter o
     /// <see cref="FilmeResponse"/> cheio (pôster, classificação etc.) que a tela precisa.</summary>
-    public async Task<TelaCatalogoResponse> ObterTelaAsync(string tipo, string visto, string? busca)
+    public async Task<TelaCatalogoResponse> ObterTelaAsync(string tipo, string visto, string? busca, string? dublagem = null)
     {
         var todos = await ListarAsync();
 
@@ -74,7 +74,7 @@ public class FilmeService
             continuarCandidatos = await PelaMetadeAsync(todos);
         }
 
-        return CatalogoAgrupador.Montar(todos, continuarCandidatos, tipo, visto, busca);
+        return CatalogoAgrupador.Montar(todos, continuarCandidatos, tipo, visto, busca, dublagem);
     }
 
     /// <summary>O que ficou pela metade (mais recente primeiro), cruzado por id com o catálogo já carregado pra ter o

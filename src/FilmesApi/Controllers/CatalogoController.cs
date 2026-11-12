@@ -22,11 +22,14 @@ public class CatalogoController : ControllerBase
     /// <summary>Catálogo já filtrado (tipo: all/filme/serie; visto: all/assistido/nao-assistido;
     /// busca: texto livre) e agrupado (filmes soltos / pasta filme+extras / série com
     /// episódios) — as 3 telas (index.html, controle.html, tv.html) só desenham isso, sem
-    /// nenhuma lógica de agrupamento própria.</summary>
+    /// nenhuma lógica de agrupamento própria. <c>dublagem</c> (opcional): <c>qualquer</c> = Dublado ou Dublado por IA,
+    /// <c>dublado</c> = só áudio em português que não é IA, <c>ia</c> = só dublagem por IA; ausente = sem filtro. A palavra
+    /// "dublado"/"dublados" na <c>busca</c> liga o mesmo filtro (<c>qualquer</c>).</summary>
     [HttpGet("tela")]
     public async Task<IActionResult> Tela(
-        [FromQuery] string tipo = "all", [FromQuery] string visto = "all", [FromQuery] string? busca = null)
-        => Ok(await _service.ObterTelaAsync(tipo, visto, busca));
+        [FromQuery] string tipo = "all", [FromQuery] string visto = "all", [FromQuery] string? busca = null,
+        [FromQuery] string? dublagem = null)
+        => Ok(await _service.ObterTelaAsync(tipo, visto, busca, dublagem));
 
     /// <summary>O que assistir agora: o que ficou pela metade e o próximo episódio das séries vistas nos últimos 14 dias.
     /// Cada item traz <c>motivo</c> ("continuar" ou "proximo"). É o topo do controle.</summary>

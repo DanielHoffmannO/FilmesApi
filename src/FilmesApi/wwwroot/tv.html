@@ -53,6 +53,7 @@ a.grp.sub { font-size: 26px; margin-top: 12px; }
 .ano { color: #bbb; font-size: 22px; }
 .visto { color: #2ecc40; font-size: 22px; }
 .ia { color: #e4d9ff; background: #4b2f8f; border: 2px solid #8e6bd0; font-size: 18px; font-weight: bold; padding: 0 8px; margin-left: 10px; }   /* selo: dublagem em portugues feita por IA */
+.dub { color: #d8ffe5; background: #1f6b3a; border: 2px solid #3fb86e; font-size: 18px; font-weight: bold; padding: 0 8px; margin-left: 10px; }   /* selo: tem audio em portugues (dublado / dual) */
 #msg { color: #bbb; margin: 20px 0; }
 #bar {
   margin-bottom: 20px;
@@ -172,6 +173,10 @@ video { width: 100%; height: auto; background: #000; }
     <a href="#" data-fg="tipo" data-fv="filme">Filmes</a>
     <a href="#" data-fg="tipo" data-fv="serie">Series</a>
     <span class="sep">|</span>
+    <span class="lbl">Dublagem</span>
+    <a href="#" data-fg="dublagem" data-fv="all" class="on">Tudo</a>
+    <a href="#" data-fg="dublagem" data-fv="qualquer">Dublados</a>
+    <span class="sep">|</span>
     <a href="#" id="reload">Recarregar</a>
   </div>
   <div id="msg">Carregando...</div>
@@ -204,6 +209,7 @@ video { width: 100%; height: auto; background: #000; }
   var hlsRetries = 0;
   var hlsWatchdog = null;
   var filtroTipo = 'all';   // all | filme | serie
+  var filtroDublagem = 'all';   // all | qualquer (dublado ou IA)
   var links = [];      // itens navegaveis atuais
   var idx = 0;
   var gruposAbertos = {};  // pastas de filme expandidas (series/temporadas: ver a sanfona em js/util.js) — sobrevive ao re-render
@@ -357,7 +363,7 @@ video { width: 100%; height: auto; background: #000; }
     var msg = els.msg;
     var i, j;
 
-    var url = API + '/tela?tipo=' + encodeURIComponent(filtroTipo) + '&visto=all';
+    var url = API + '/tela?tipo=' + encodeURIComponent(filtroTipo) + '&visto=all' + (filtroDublagem !== 'all' ? '&dublagem=' + encodeURIComponent(filtroDublagem) : '');
 
     get(url, function (err, t) {
       if (err || !t) {
@@ -383,6 +389,7 @@ video { width: 100%; height: auto; background: #000; }
                esc(rotulo || m.titulo) +
                (m.anoLancamento ? ' <span class="ano">(' + m.anoLancamento + ')</span>' : '') +
                (m.assistido ? ' <span class="visto">&#10003; assistido</span>' : '') +
+               (m.dublado ? ' <span class="dub">DUB</span>' : '') +
                (m.dubladoIa ? ' <span class="ia">IA</span>' : '') +
                '</a>';
       }
@@ -405,10 +412,13 @@ video { width: 100%; height: auto; background: #000; }
           var nota = pct ? (pct + '%') : formatarTempo(c.posicaoSegundos);
           html += '<a class="item" href="#" data-id="' + c.id + '">' +
                   esc(c.titulo) + ' <span class="ano">(' + nota + ')</span>' +
+                  (c.dublado ? ' <span class="dub">DUB</span>' : '') +
                   (c.dubladoIa ? ' <span class="ia">IA</span>' : '') + '</a>';
         }
         html += '</div>';
       }
+
+      html += '<div id="dublados" class="movies"></div>';   // fileira "Dublados": anexarDublados() preenche (so com itens), logo depois do Continuar assistindo
 
       if (totalFilmes) {
         html += '<h2>Filmes (' + totalFilmes + ')</h2>';
@@ -441,6 +451,7 @@ video { width: 100%; height: auto; background: #000; }
       grid.innerHTML = html;
       buildNav();
       anexarNovidades();
+      anexarDublados();
     });
   }
 
@@ -452,7 +463,7 @@ video { width: 100%; height: auto; background: #000; }
 
   function anexarNovidades() {
     var seq = ++novidadesSeq;
-    if (filtroTipo !== 'all') return;
+    if (filtroTipo !== 'all' || filtroDublagem !== 'all') return;
     get('/api/catalogo/novidades?limite=20', function (err, lista) {
       if (seq !== novidadesSeq || err || !lista || !lista.length) return;
       if (els.msg.style.display !== 'none') return;   // a lista foi trocada por "Carregando"/erro enquanto a resposta vinha
@@ -462,13 +473,43 @@ video { width: 100%; height: auto; background: #000; }
       for (i = 0; i < lista.length; i++) {
         f = lista[i].filme;
         h += '<a class="item" href="#" data-id="' + f.id + '">' + esc(lista[i].rotulo) +
-             (!f.ehEpisodio && f.anoLancamento ? ' <span class="ano">(' + f.anoLancamento + ')</span>' : '') + '</a>';
+             (!f.ehEpisodio && f.anoLancamento ? ' <span class="ano">(' + f.anoLancamento + ')</span>' : '') +
+             (f.dublado ? ' <span class="dub">DUB</span>' : '') + (f.dubladoIa ? ' <span class="ia">IA</span>' : '') + '</a>';
       }
       var caixa = document.createElement('div');
       caixa.id = 'novidades';
       caixa.className = 'movies';   // coletarNav() desce nas .movies: os itens entram na navegacao
       caixa.innerHTML = h;
       els.grid.insertBefore(caixa, els.grid.firstChild);
+      var foco = links[idx];   // o que estava focado continua focado, mesmo com a fileira nova empurrando o indice
+      buildNav();
+      var n = links.indexOf(foco);
+      if (n >= 0) focar(n);
+    });
+  }
+
+  // ---- Dublados (fileira logo depois do "Continuar assistindo") ----
+  // O que tem audio em portugues, dublagem de verdade ou por IA (GET /api/catalogo/dublados; episodios da mesma serie ja vem colapsados num
+  // cartao so que toca o proximo dublado nao visto: "Serie · 12 episodios dublados"). So com os filtros em "Tudo". Chega depois da lista e
+  // preenche o #dublados que o render() deixou no lugar; sem item dublado, nao aparece nada. Entra na navegacao do controle como as outras fileiras.
+  var dubladosSeq = 0;   // so a ultima chamada vale (a lista pode ter sido redesenhada enquanto a resposta vinha)
+
+  function anexarDublados() {
+    var seq = ++dubladosSeq;
+    if (filtroTipo !== 'all' || filtroDublagem !== 'all') return;
+    get('/api/catalogo/dublados?limite=24', function (err, lista) {
+      if (seq !== dubladosSeq || err || !lista || !lista.length) return;
+      if (els.msg.style.display !== 'none') return;   // a lista foi trocada por "Carregando"/erro enquanto a resposta vinha
+      var caixa = document.getElementById('dublados');
+      if (!caixa) return;
+      var h = '<h2>Dublados</h2>', i, f;
+      for (i = 0; i < lista.length; i++) {
+        f = lista[i].filme;
+        h += '<a class="item" href="#" data-id="' + f.id + '">' + esc(lista[i].rotulo) +
+             (!f.ehEpisodio && f.anoLancamento ? ' <span class="ano">(' + f.anoLancamento + ')</span>' : '') +
+             (f.dublado ? ' <span class="dub">DUB</span>' : '') + (f.dubladoIa ? ' <span class="ia">IA</span>' : '') + '</a>';
+      }
+      caixa.innerHTML = h;   // .movies: coletarNav() desce nela e os itens entram na navegacao
       var foco = links[idx];   // o que estava focado continua focado, mesmo com a fileira nova empurrando o indice
       buildNav();
       var n = links.indexOf(foco);
@@ -557,7 +598,7 @@ video { width: 100%; height: auto; background: #000; }
     var fg = el.getAttribute('data-fg');
     if (fg) {
       var fv = el.getAttribute('data-fv');
-      filtroTipo = fv;  // só resta o grupo "tipo" nessa tela
+      if (fg === 'dublagem') filtroDublagem = fv; else filtroTipo = fv;   // grupos da barra: "tipo" e "dublagem"
       var bar = els.bar.getElementsByTagName('a');
       for (var i = 0; i < bar.length; i++) {
         if (bar[i].getAttribute('data-fg') !== fg) continue;

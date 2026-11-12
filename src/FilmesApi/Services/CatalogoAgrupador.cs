@@ -12,19 +12,24 @@ public static class CatalogoAgrupador
     /// a seção aparece (tipo e visto neutros) e aplica a busca nela também.</summary>
     public static TelaCatalogoResponse Montar(
         List<FilmeResponse> todos, List<FilmeResponse> continuarCandidatos,
-        string tipo, string visto, string? busca)
+        string tipo, string visto, string? busca, string? dublagem = null)
     {
+        // "dublado"/"dublados" digitado na busca liga o filtro de dublagem (qualquer) e sai do texto procurado; o parâmetro explícito manda.
+        var (textoBusca, dublagemDaBusca) = DublagemEmPortugues.ExtrairDaBusca(busca);
+        var filtroDublagem = DublagemEmPortugues.Filtro(dublagem) ?? DublagemEmPortugues.Filtro(dublagemDaBusca);
+        bool PassaDublagem(FilmeResponse f) => filtroDublagem is null || filtroDublagem(f);
+
         // Sem acento/maiúscula, e procura também no nome que a TELA mostra (Família Soprano, Ruptura,
         // Além da Imaginação) e no título do episódio — senão quem busca pelo nome em português que
         // vê na lista não acha nada, porque o título guardado é o original ("The Sopranos").
-        var q = string.IsNullOrWhiteSpace(busca) ? null : MediaNomeParser.NormalizarBusca(busca);
+        var q = string.IsNullOrWhiteSpace(textoBusca) ? null : MediaNomeParser.NormalizarBusca(textoBusca);
         bool PassaBusca(FilmeResponse f) =>
             q is null || MediaNomeParser.NormalizarBusca(string.Join(' ',
                 f.Titulo, f.TituloEpisodio, f.Serie, MediaNomeParser.NomeExibicao(f.SerieChave, f.Serie ?? ""),
                 f.Pasta, f.Pasta is null ? null : MediaNomeParser.NomePastaExibicao(f.Pasta))).Contains(q);
 
         var continuarAssistindo = tipo == "all" && visto == "all"
-            ? continuarCandidatos.Where(PassaBusca).ToList()
+            ? continuarCandidatos.Where(f => PassaBusca(f) && PassaDublagem(f)).ToList()
             : [];
 
         bool PassaFiltro(FilmeResponse f) =>
@@ -32,6 +37,7 @@ public static class CatalogoAgrupador
             (visto != "nao-assistido" || !f.Assistido) &&
             (tipo != "filme" || !f.EhEpisodio) &&
             (tipo != "serie" || f.EhEpisodio) &&
+            PassaDublagem(f) &&
             PassaBusca(f);
 
         // Contagem por pasta na lista INTEIRA (não na filtrada) — senão a busca "achataria"

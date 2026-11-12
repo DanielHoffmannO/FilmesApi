@@ -4,7 +4,8 @@ namespace FilmesApi.Models;
 /// <c>Rotulo</c>…) são computados no servidor por <see cref="Services.MediaNomeParser"/> —
 /// as telas só renderizam, não têm mais regex. <c>DubladoIa</c>: o arquivo tem uma faixa de "dublagem por IA"
 /// (<see cref="Services.EscolhaAudio.EhDubladoIa(Services.FaixaAudio?)"/>) — lido de um flag guardado no banco
-/// (<see cref="Services.DubladoIaService"/>), nunca de um ffprobe na hora de listar.</summary>
+/// (<see cref="Services.DubladoIaService"/>), nunca de um ffprobe na hora de listar. <c>Dublado</c>: o arquivo tem áudio em português que NÃO é
+/// a dublagem por IA — da análise em segundo plano (probe), ou, enquanto ela não rodou, da dica no nome do arquivo (<see cref="Services.DublagemEmPortugues"/>).</summary>
 public record FilmeResponse(
     int Id, string Titulo, int? AnoLancamento, string? ArquivoPath,
     bool Assistido, DateTime DataAdicionado,
@@ -13,7 +14,8 @@ public record FilmeResponse(
     bool EhEpisodio = false, bool EhExtra = false, string? Serie = null, string? SerieChave = null,
     int? Temporada = null, int? Episodio = null, string Rotulo = "", string Pasta = "Sem pasta",
     string? TituloEpisodio = null,
-    bool DubladoIa = false);
+    bool DubladoIa = false,
+    bool Dublado = false);
 
 public record ScanResultado(int Importados, int Removidos, int TitulosLimpos = 0);
 
