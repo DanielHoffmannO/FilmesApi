@@ -38,7 +38,8 @@ builder.Services.AddSingleton<PlayerStateService>();
 builder.Services.AddSingleton<AutomacaoDoPlayer>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<AutomacaoDoPlayer>());
 builder.Services.AddSingleton(sp => LimitadorDeDownloads.Da(sp.GetRequiredService<IConfiguration>()));
-builder.Services.AddHostedService<ScanPeriodicoService>();
+builder.Services.AddSingleton<ScanPeriodicoService>();   // singleton + hosted: o webhook do *arr chama Solicitar()
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ScanPeriodicoService>());
 builder.Services.AddHostedService<PreAquecerContinuarService>();
 builder.Services.AddHostedService<AnaliseDeAberturaService>();
 builder.Services.AddHostedService<DubladoIaService>();

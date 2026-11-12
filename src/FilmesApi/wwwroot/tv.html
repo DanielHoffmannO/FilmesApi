@@ -412,6 +412,39 @@ video { width: 100%; height: auto; background: #000; }
       }
       grid.innerHTML = html;
       buildNav();
+      anexarNovidades();
+    });
+  }
+
+  // ---- Novidades (fileira no topo da lista) ----
+  // O que o Sonarr/Radarr acabou de importar e ainda nao foi visto (GET /api/catalogo/novidades; episodios da mesma serie ja vem
+  // colapsados num cartao so: "Serie · +3 episodios novos"). So no filtro "Tudo". Chega depois da lista e entra no TOPO do #grid, na
+  // ordem de navegacao do controle como as outras fileiras; sem novidade, nao aparece nada.
+  var novidadesSeq = 0;   // so a ultima chamada vale (o filtro/lista pode ter sido redesenhado enquanto a resposta vinha)
+
+  function anexarNovidades() {
+    var seq = ++novidadesSeq;
+    if (filtroTipo !== 'all') return;
+    get('/api/catalogo/novidades?limite=20', function (err, lista) {
+      if (seq !== novidadesSeq || err || !lista || !lista.length) return;
+      if (els.msg.style.display !== 'none') return;   // a lista foi trocada por "Carregando"/erro enquanto a resposta vinha
+      var velha = document.getElementById('novidades');
+      if (velha) velha.parentNode.removeChild(velha);
+      var h = '<h2>Novidades</h2>', i, f;
+      for (i = 0; i < lista.length; i++) {
+        f = lista[i].filme;
+        h += '<a class="item" href="#" data-id="' + f.id + '">' + esc(lista[i].rotulo) +
+             (!f.ehEpisodio && f.anoLancamento ? ' <span class="ano">(' + f.anoLancamento + ')</span>' : '') + '</a>';
+      }
+      var caixa = document.createElement('div');
+      caixa.id = 'novidades';
+      caixa.className = 'movies';   // coletarNav() desce nas .movies: os itens entram na navegacao
+      caixa.innerHTML = h;
+      els.grid.insertBefore(caixa, els.grid.firstChild);
+      var foco = links[idx];   // o que estava focado continua focado, mesmo com a fileira nova empurrando o indice
+      buildNav();
+      var n = links.indexOf(foco);
+      if (n >= 0) focar(n);
     });
   }
 

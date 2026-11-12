@@ -205,7 +205,7 @@ async function render() {
       </div>`;
   };
 
-  let html = '';
+  let html = await novidadesHtml(q);
   if (t.continuarAssistindo.length) {
     html += `
     <div class="secao">
@@ -239,6 +239,33 @@ async function render() {
 }
 
 // toggleGrupo(el, folderSet) (pastas de filme) e a sanfona das séries vêm de /js/util.js.
+
+// ─── Novidades (fileira no topo) ────────────────────────────────────────
+// O que o Sonarr/Radarr acabou de importar e ainda não foi visto: GET /api/catalogo/novidades devolve [{filme, novos, rotulo}]
+// (episódios da mesma série já vêm colapsados num cartão só, apontando pro mais novo não visto). Só com os filtros neutros, como o
+// "Continuar assistindo"; sem novidade, não devolve nada e a fileira some.
+async function novidadesHtml(busca) {
+  if (filtroTipo !== 'all' || filtroVisto !== 'all' || busca) return '';
+  const lista = await fetchJsonOuNull('/api/catalogo/novidades?limite=20');
+  if (!lista || !lista.length) return '';
+  return `
+    <div class="secao">
+      <div class="secao-title">🆕 Novidades <span class="count">(${lista.length})</span></div>
+      <div class="lista">${lista.map(novidadeRowHtml).join('')}</div>
+    </div>`;
+}
+
+function novidadeRowHtml(n) {
+  const f = n.filme;
+  return `
+    <div class="row" onclick="play(${f.id})" title="${tooltipFilme(f)}">
+      ${posterHtml(f)}
+      <span class="rtit">${esc(n.rotulo)}</span>
+      ${!f.ehEpisodio && f.anoLancamento ? `<span class="rano">${f.anoLancamento}</span>` : ''}
+      <span class="resume">🆕 ${n.novos > 1 ? n.novos + ' novos' : 'novo'}</span>
+      ${barraProgresso(f)}
+    </div>`;
+}
 
 function pctProgresso(item) {
   if (!item.posicaoSegundos || !item.duracaoSegundos) return 0;
