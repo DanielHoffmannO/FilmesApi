@@ -52,6 +52,7 @@ a.grp:focus, a.grp.sel { background: #e50914; border-color: #fff; outline: 0; }
 a.grp.sub { font-size: 26px; margin-top: 12px; }
 .ano { color: #bbb; font-size: 22px; }
 .visto { color: #2ecc40; font-size: 22px; }
+.ia { color: #e4d9ff; background: #4b2f8f; border: 2px solid #8e6bd0; font-size: 18px; font-weight: bold; padding: 0 8px; margin-left: 10px; }   /* selo: dublagem em portugues feita por IA */
 #msg { color: #bbb; margin: 20px 0; }
 #bar {
   margin-bottom: 20px;
@@ -354,6 +355,7 @@ video { width: 100%; height: auto; background: #000; }
                esc(rotulo || m.titulo) +
                (m.anoLancamento ? ' <span class="ano">(' + m.anoLancamento + ')</span>' : '') +
                (m.assistido ? ' <span class="visto">&#10003; assistido</span>' : '') +
+               (m.dubladoIa ? ' <span class="ia">IA</span>' : '') +
                '</a>';
       }
 
@@ -374,7 +376,8 @@ video { width: 100%; height: auto; background: #000; }
           var pct = c.duracaoSegundos ? Math.round(100 * c.posicaoSegundos / c.duracaoSegundos) : 0;
           var nota = pct ? (pct + '%') : formatarTempo(c.posicaoSegundos);
           html += '<a class="item" href="#" data-id="' + c.id + '">' +
-                  esc(c.titulo) + ' <span class="ano">(' + nota + ')</span></a>';
+                  esc(c.titulo) + ' <span class="ano">(' + nota + ')</span>' +
+                  (c.dubladoIa ? ' <span class="ia">IA</span>' : '') + '</a>';
         }
         html += '</div>';
       }

@@ -41,6 +41,7 @@ builder.Services.AddSingleton(sp => LimitadorDeDownloads.Da(sp.GetRequiredServic
 builder.Services.AddHostedService<ScanPeriodicoService>();
 builder.Services.AddHostedService<PreAquecerContinuarService>();
 builder.Services.AddHostedService<AnaliseDeAberturaService>();
+builder.Services.AddHostedService<DubladoIaService>();
 builder.Services.AddSingleton<LimpezaCacheService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<LimpezaCacheService>());
 builder.Services.AddSingleton<NomesPersonalizadosService>();

@@ -15,6 +15,7 @@ public class AppDbContext : DbContext
     public DbSet<ImpressaoSalva> Impressoes => Set<ImpressaoSalva>();
     public DbSet<CreditosEpisodio> Creditos => Set<CreditosEpisodio>();
     public DbSet<AberturaEpisodio> Aberturas => Set<AberturaEpisodio>();
+    public DbSet<AnaliseDeDublagem> AnalisesDeDublagem => Set<AnaliseDeDublagem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -65,6 +66,13 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<AberturaEpisodio>(e =>
         {
             e.ToTable("Aberturas");
+            e.HasKey(a => a.FilmeId);
+            e.HasOne(a => a.Filme).WithMany().HasForeignKey(a => a.FilmeId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AnaliseDeDublagem>(e =>
+        {
+            e.ToTable("AnalisesDeDublagem");
             e.HasKey(a => a.FilmeId);
             e.HasOne(a => a.Filme).WithMany().HasForeignKey(a => a.FilmeId).OnDelete(DeleteBehavior.Cascade);
         });

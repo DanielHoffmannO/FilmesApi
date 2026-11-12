@@ -103,6 +103,18 @@ public static class DbInitializer
             );
             """);
 
+        // Dublagem por IA: o que a análise em segundo plano (DubladoIaService) achou nas faixas de áudio de cada arquivo.
+        db.Database.ExecuteSqlRaw("""
+            CREATE TABLE IF NOT EXISTS "AnalisesDeDublagem" (
+                "FilmeId" INTEGER NOT NULL CONSTRAINT "PK_AnalisesDeDublagem" PRIMARY KEY,
+                "DubladoIa" INTEGER NOT NULL,
+                "ArquivoBytes" INTEGER NOT NULL,
+                "AnalisadoEm" TEXT NOT NULL,
+                CONSTRAINT "FK_AnalisesDeDublagem_Filmes_FilmeId" FOREIGN KEY ("FilmeId")
+                    REFERENCES "Filmes" ("Id") ON DELETE CASCADE
+            );
+            """);
+
         // Bancos antigos podem ter ArquivoPath duplicado (scan rodado 2x antes do índice único).
         // Remove as duplicatas (mantém o menor Id; o FK em cascata leva o progresso junto) e
         // então cria o índice — mesmo nome/definição que o EnsureCreated de um banco novo gera.

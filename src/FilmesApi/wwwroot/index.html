@@ -35,6 +35,8 @@ main{padding:16px 24px;max-width:1000px;margin:0 auto}
 .rposter{width:28px;height:40px;flex-shrink:0;border-radius:3px;background:#1a1a1a;object-fit:cover}
 .row .rep{color:var(--muted);font-variant-numeric:tabular-nums;margin-right:8px}
 .row .resume{font-size:12px;color:var(--accent);white-space:nowrap}
+/* selo "IA": o arquivo tem uma faixa de áudio em português dublada por IA (scripts/dublar) */
+.row .ia{flex:none;font-size:10px;font-weight:700;letter-spacing:.4px;line-height:1.5;color:#c9b6ff;background:rgba(124,92,214,.2);border:1px solid #6a4fb3;border-radius:3px;padding:0 5px;white-space:nowrap;cursor:help}
 .row .badge:hover{border-color:#666;color:#ccc}
 .row .baixar{flex:none;display:inline-flex;align-items:center;justify-content:center;min-width:36px;min-height:36px;margin:-6px -4px -6px 0;color:var(--muted);text-decoration:none;font-size:16px;border-radius:6px}
 .row .baixar:hover{color:#ccc;background:#222}
@@ -283,6 +285,11 @@ function tooltipFilme(f) {
   return attr(original + (f.sinopse || f.titulo));
 }
 
+// Selo "IA" (f.dubladoIa vem do servidor, guardado no banco — nenhuma leitura de arquivo aqui).
+function iaSelo(f) {
+  return f.dubladoIa ? '<span class="ia" title="Tem dublagem em português feita por IA (a faixa original continua no arquivo)">IA</span>' : '';
+}
+
 function rowHtml(f, episodio) {
   const retomar = f.posicaoSegundos ? `<span class="resume">▶ ${formatarTempo(f.posicaoSegundos)}</span>` : '';
   let titulo;
@@ -298,7 +305,7 @@ function rowHtml(f, episodio) {
   return `
     <div class="row ${f.assistido ? 'assistido' : ''}" onclick="play(${f.id})" title="${tooltipFilme(f)}">
       ${episodio ? '' : posterHtml(f)}
-      <span class="rtit">${titulo}</span>
+      <span class="rtit">${titulo}</span>${iaSelo(f)}
       ${!episodio && f.anoLancamento ? `<span class="rano">${f.anoLancamento}</span>` : ''}
       ${retomar}
       <span class="badge ${f.assistido ? 'on' : ''}" onclick="event.stopPropagation(); toggleAssistido(${f.id})">${f.assistido ? '✓ Assistido' : 'Marcar'}</span>
@@ -318,7 +325,7 @@ function continuarRowHtml(c) {
   return `
     <div class="row" onclick="play(${c.id})" title="${tooltipFilme(c)}">
       ${posterHtml(c)}
-      <span class="rtit">${nome}</span>
+      <span class="rtit">${nome}</span>${iaSelo(c)}
       <span class="resume">▶ ${info}</span>
       <button class="remover" title="Tirar de continuar assistindo" onclick="event.stopPropagation(); removerDeContinuar(${c.id})">✕</button>
       ${barraProgresso(c)}

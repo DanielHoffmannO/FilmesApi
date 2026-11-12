@@ -112,6 +112,17 @@ main{max-width:640px;margin:0 auto}
 .l3{display:flex;align-items:center;gap:6px;margin-top:10px;color:var(--mut)}
 .l3 .ib{margin:0;width:44px;height:44px}
 .l3 .ib:disabled{opacity:.35}
+/* ─── dublagem por IA (scripts/dublar): selo nas listas e "Original ⇄ Dublagem IA" na barra ─── */
+.tag.ia{flex:none;color:#c9b6ff;background:rgba(124,92,214,.18);border-color:#6a4fb3;font-size:10.5px;font-weight:700;letter-spacing:.04em;padding:2px 6px;margin-left:6px}
+.t b .tag.ia,.card b .tag.ia{vertical-align:1px}
+.remote-ia{display:none;align-items:center;gap:10px;margin-top:10px}
+.remote-ia.on{display:flex}
+.remote-ia .tag.ia{margin-left:0}
+.iabtn{flex:1;min-width:0;display:flex;align-items:center;gap:2px;min-height:44px;padding:3px;background:var(--bg);border:1px solid var(--line);border-radius:10px}
+.iabtn span{flex:1;text-align:center;line-height:36px;border-radius:7px;font-size:13.5px;color:var(--mut);white-space:nowrap;transition:background .15s,color .15s}
+.iabtn span.on{background:var(--s3);color:#fff;font-weight:550}
+.iabtn span.on.ia{background:rgba(124,92,214,.38);color:#efe8ff}
+.iabtn i{font-style:normal;color:var(--mut2);font-size:15px}
 .remote-proximo{display:none;align-items:center;gap:10px;background:var(--s2);border:1px solid var(--line);border-radius:10px;padding:8px 8px 8px 12px;margin-top:10px;font-size:13px;color:var(--txt)}
 .remote-proximo.on{display:flex}
 .remote-proximo span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -197,6 +208,10 @@ input[type=range].vol:focus-visible{outline:2px solid var(--acc);outline-offset:
     <span id="remoteProximoTxt"></span>
     <button onclick="remoteAceitarProximo()">Assistir agora</button>
   </div>
+  <div class="remote-ia" id="remoteIa">
+    <span class="tag ia" title="Este arquivo tem uma faixa de dublagem em português feita por IA">IA</span>
+    <button class="iabtn" id="remoteIaBtn" onclick="remoteAlternarIa()"></button>
+  </div>
   <div class="ctl">
     <button class="rb" onclick="remoteSeek(-SEEK_STEP_S)" aria-label="Voltar 30 segundos"><span data-ico="back"></span><em>30</em></button>
     <button class="big" onclick="remotePlayPause()" id="remotePlayPauseBtn" aria-label="Pausar"></button>
@@ -279,18 +294,21 @@ function fioDoIniciado(f) {
   return `<i class="ini" style="width:${pct.toFixed(0)}%"></i>`;
 }
 
+// Selo "IA": o arquivo tem uma faixa em português dublada por IA (f.dubladoIa vem do servidor, guardado no banco).
+const iaSelo = f => f.dubladoIa ? '<span class="tag ia" title="Tem dublagem em português feita por IA">IA</span>' : '';
+
 function linhaEp(f) {
   const tc = tocandoAgora(f);
   const titulo = f.tituloEpisodio || (f.episodio != null ? 'Episódio ' + f.episodio : f.titulo);
   return `<div class="ep${tc ? ' tc' : ''}${f.assistido ? ' vi' : ''}" onclick="enviarParaTv(${f.id})">
-      <span class="n">${esc(codigoEp(f))}</span><span class="t">${esc(titulo)}</span>${tc ? ico('tv', 'pl') : ''}${ckHtml(f)}${fioDoIniciado(f)}
+      <span class="n">${esc(codigoEp(f))}</span><span class="t">${esc(titulo)}${iaSelo(f)}</span>${tc ? ico('tv', 'pl') : ''}${ckHtml(f)}${fioDoIniciado(f)}
     </div>`;
 }
 
 function linhaFilme(f) {
   const tc = tocandoAgora(f);
   return `<div class="ep filme${tc ? ' tc' : ''}${f.assistido ? ' vi' : ''}" onclick="enviarParaTv(${f.id})">
-      <span class="t"><b>${esc(f.titulo)}</b>${f.anoLancamento ? `<small>${f.anoLancamento}</small>` : ''}</span>${tc ? ico('tv', 'pl') : ''}${ckHtml(f)}${fioDoIniciado(f)}
+      <span class="t"><b>${esc(f.titulo)}${iaSelo(f)}</b>${f.anoLancamento ? `<small>${f.anoLancamento}</small>` : ''}</span>${tc ? ico('tv', 'pl') : ''}${ckHtml(f)}${fioDoIniciado(f)}
     </div>`;
 }
 
@@ -303,7 +321,7 @@ function cartaoFila(i) {
   const ep = f.ehEpisodio ? (f.temporada != null ? 'T' + f.temporada + ' · ' : '') + codigoEp(f) : (f.anoLancamento || '');
   const sub = i.motivo === 'proximo' ? 'A seguir · ' + ep : ep;
   const pct = i.motivo !== 'proximo' && f.posicaoSegundos && f.duracaoSegundos ? Math.min(100, 100 * f.posicaoSegundos / f.duracaoSegundos) : 0;
-  return `<button class="card" onclick="enviarParaTv(${f.id})"><b>${esc(f.ehEpisodio && f.serie ? (nomesDeSerie[f.serieChave] || f.serie) : f.titulo)}</b><small>${esc(sub)}</small>` +
+  return `<button class="card" onclick="enviarParaTv(${f.id})"><b>${esc(f.ehEpisodio && f.serie ? (nomesDeSerie[f.serieChave] || f.serie) : f.titulo)}${iaSelo(f)}</b><small>${esc(sub)}</small>` +
          (pct ? `<div class="fio"><i style="width:${pct.toFixed(0)}%"></i></div>` : '') + '</button>';
 }
 
@@ -558,9 +576,49 @@ async function remoteCarregarLegendas(id) {
   if (folhaAberta()) desenharFolha();
 }
 async function remoteCarregarAudios(id) {
+  remoteAudios = [];   // as faixas do filme anterior não valem pro novo (o botão "Original ⇄ Dublagem IA" sairia errado por um instante)
   try { remoteAudios = await fetch(`${API}/${id}/audios`).then(r => r.json()); }
   catch { remoteAudios = []; }
   if (folhaAberta()) desenharFolha();
+}
+
+// ─── Dublagem por IA: botão "Original ⇄ Dublagem IA" da barra (usa as faixas de /audios e o mesmo POST /api/player/audio da folha) ───
+// "Original" = a faixa que não é IA e não é português (o áudio de origem); sem ela, qualquer faixa que não seja IA.
+const ehPortugues = a => ['por', 'pt', 'pob'].includes(String(a.idioma || '').toLowerCase());
+const faixaIa = () => remoteAudios.find(a => a.dubladoIa);
+const faixaOriginal = () => remoteAudios.find(a => !a.dubladoIa && !ehPortugues(a)) || remoteAudios.find(a => !a.dubladoIa);
+let chaveLinhaIa = null;   // só redesenha quando muda (o poll roda a cada segundo)
+
+function atualizarLinhaIa() {
+  const ia = ultimoEstadoRemoto && ultimoEstadoRemoto.filmeId !== null ? faixaIa() : null;
+  const orig = ia ? faixaOriginal() : null;
+  const chave = ia ? `${ia.idx}|${ia.atual}|${orig ? orig.idx : ''}` : '';
+  if (chave === chaveLinhaIa) return;
+  chaveLinhaIa = chave;
+  document.getElementById('remoteIa').classList.toggle('on', !!ia);
+  const btn = document.getElementById('remoteIaBtn');
+  btn.style.display = orig ? '' : 'none';   // só a faixa IA no arquivo: fica o selo, sem o que alternar
+  if (!ia) return;
+  btn.innerHTML = `<span class="${ia.atual ? '' : 'on'}">Original</span><i aria-hidden="true">⇄</i><span class="${ia.atual ? 'on ia' : ''}">Dublagem IA</span>`;
+  btn.setAttribute('aria-label', ia.atual ? 'Dublagem IA ligada. Tocar para voltar ao áudio original' : 'Áudio original ligado. Tocar para ouvir a dublagem IA');
+}
+
+// Troca a faixa de áudio da TV (a TV regera o HLS/remux — não é instantâneo). Mesmo caminho da folha "Idioma e legenda".
+async function remoteTrocarAudio(idx) {
+  await fetch(`${PLAYER_API}/audio`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idx }) });
+  remoteAudios = remoteAudios.map(a => ({ ...a, atual: a.idx === idx }));
+  if (padroes[filmeAtualRemoto?.serieChave]) await gravarEscolhaComoPadraoDaSerie();
+  atualizarLinhaIa();
+  if (folhaAberta()) desenharFolha();
+  pollRemote();
+}
+
+async function remoteAlternarIa() {
+  const ia = faixaIa();
+  const alvo = ia && (ia.atual ? faixaOriginal() : ia);
+  if (!alvo) return;
+  toast(alvo === ia ? 'Trocando para a dublagem IA…' : 'Voltando ao áudio original…');
+  await remoteTrocarAudio(alvo.idx);
 }
 
 const NOME_IDIOMA = { por: 'Português', eng: 'Inglês', spa: 'Espanhol', fra: 'Francês', deu: 'Alemão', ita: 'Italiano', jpn: 'Japonês' };
@@ -702,7 +760,7 @@ function desenharFolha() {
 
   // áudio: controle segmentado (português, inglês, espanhol, resto em ordem alfabética)
   const audios = ordenarPorIdioma(remoteAudios, a => ({ idioma: a.idioma, titulo: a.titulo }));
-  const rotAudios = rotulosDasFaixas(audios);
+  const rotAudios = rotulosDasFaixas(audios).map((r, i) => audios[i].dubladoIa ? nomeDoIdioma(audios[i].idioma, audios[i].titulo) + ' (IA)' : r);
   let html = '<div class="rot">Áudio</div>' + (audios.length > 1
     ? '<div class="seg2" role="radiogroup" aria-label="Áudio">' + audios.map((a, i) => segOpcao('audio', a.idx, rotAudios[i], !!a.atual)).join('') + '</div>'
     : `<div class="vazio">${audios.length ? esc(rotAudios[0]) + ' (única faixa de áudio)' : 'Sem faixas de áudio.'}</div>`);
@@ -829,6 +887,7 @@ async function pollRemote() {
       atualizarBotaoDireita(pos, dur);
       if (trocouFilme) render();
     }
+    atualizarLinhaIa();
     const proxBox = document.getElementById('remoteProximo');
     proxBox.classList.toggle('on', estado.proximoFilmeId != null);
     if (estado.proximoFilmeId != null) document.getElementById('remoteProximoTxt').textContent = 'Próximo: ' + (estado.proximoRotulo || '');

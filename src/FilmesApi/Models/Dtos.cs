@@ -2,7 +2,9 @@ namespace FilmesApi.Models;
 
 /// <summary>Um filme na lista. Os campos de classificação (<c>Serie</c>, <c>EhEpisodio</c>,
 /// <c>Rotulo</c>…) são computados no servidor por <see cref="Services.MediaNomeParser"/> —
-/// as telas só renderizam, não têm mais regex.</summary>
+/// as telas só renderizam, não têm mais regex. <c>DubladoIa</c>: o arquivo tem uma faixa de "dublagem por IA"
+/// (<see cref="Services.EscolhaAudio.EhDubladoIa(Services.FaixaAudio?)"/>) — lido de um flag guardado no banco
+/// (<see cref="Services.DubladoIaService"/>), nunca de um ffprobe na hora de listar.</summary>
 public record FilmeResponse(
     int Id, string Titulo, int? AnoLancamento, string? ArquivoPath,
     bool Assistido, DateTime DataAdicionado,
@@ -10,7 +12,8 @@ public record FilmeResponse(
     string? PosterUrl = null, string? Sinopse = null, string? TituloOriginal = null,
     bool EhEpisodio = false, bool EhExtra = false, string? Serie = null, string? SerieChave = null,
     int? Temporada = null, int? Episodio = null, string Rotulo = "", string Pasta = "Sem pasta",
-    string? TituloEpisodio = null);
+    string? TituloEpisodio = null,
+    bool DubladoIa = false);
 
 public record ScanResultado(int Importados, int Removidos, int TitulosLimpos = 0);
 
@@ -62,8 +65,10 @@ public record LegendaInfo(
 /// ffprobe (o mesmo usado em <c>-map 0:Idx</c> pelo HLS/remux) — ao contrário de
 /// <see cref="LegendaInfo"/>, não é relativo, porque é o valor que volta via
 /// <c>POST /{id}/audio</c> pra escolher a faixa. <c>Atual</c> = a que o remux/HLS usaria
-/// agora (preferência manual se houver, senão a escolha automática por idioma).</summary>
-public record AudioInfo(int Idx, string? Codec, string? Idioma, bool Default, bool Atual);
+/// agora (preferência manual se houver, senão a escolha automática por idioma). <c>Titulo</c> = a tag
+/// <c>title</c> da faixa; <c>DubladoIa</c> = é a dublagem sintética em português (ver
+/// <see cref="Services.EscolhaAudio.EhDubladoIa(Services.FaixaAudio?)"/>).</summary>
+public record AudioInfo(int Idx, string? Codec, string? Idioma, bool Default, bool Atual, string? Titulo = null, bool DubladoIa = false);
 
 public record AudioRequest(int Idx);
 public record SerieAudioRequest(string? Idioma);

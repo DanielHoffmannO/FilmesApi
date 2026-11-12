@@ -45,7 +45,7 @@ public class FilmeService
             f.Progresso != null ? f.Progresso.PosicaoSegundos : (double?)null,
             f.Progresso != null ? f.Progresso.DuracaoSegundos : null,
             f.PosterUrl, f.Sinopse, f.TituloOriginal,
-            false, false, null, null, null, null, "", "Sem pasta", null);
+            false, false, null, null, null, null, "", "Sem pasta", null, false);
 
     public async Task<List<FilmeResponse>> ListarAsync()
     {
@@ -53,6 +53,7 @@ public class FilmeService
             .OrderByDescending(f => f.DataAdicionado).Select(ToResponse).ToListAsync();
         // "ignorar" do nomes.json: o arquivo some do catálogo (a linha fica no banco até o próximo scan limpar)
         lista.RemoveAll(f => MediaNomeParser.Ignorado(f.ArquivoPath));
+        await DubladoIaService.MarcarAsync(_db, lista);   // flag guardado pela análise em segundo plano — sem ffprobe aqui
 
         return _classificacao.Classificar(lista);
     }

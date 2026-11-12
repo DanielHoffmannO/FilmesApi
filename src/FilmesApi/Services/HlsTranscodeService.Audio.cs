@@ -14,7 +14,7 @@ public partial class HlsTranscodeService
 
         var escolhida = EscolherAudio(filmeId, info.Audios);
         return info.Audios
-            .Select(a => new AudioInfo(a.Index, a.Codec, a.Idioma, a.Default, a.Index == escolhida))
+            .Select(a => new AudioInfo(a.Index, a.Codec, a.Idioma, a.Default, a.Index == escolhida, a.Titulo, EscolhaAudio.EhDubladoIa(a)))
             .ToList();
     }
 

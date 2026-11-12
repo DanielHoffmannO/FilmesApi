@@ -8,8 +8,10 @@ namespace FilmesApi.Services;
 
 /// <summary><c>Canais</c>: null quando o ffprobe não informa (raro) — tratar como
 /// "desconhecido", não como mono/estéreo, pra não arriscar pular o reencode de proteção
-/// contra áudio multicanal (ver <see cref="EscolhaAudio.JaCompativel"/>).</summary>
-public record FaixaAudio(int Index, string? Codec, string? Idioma, bool Default, int? Canais);
+/// contra áudio multicanal (ver <see cref="EscolhaAudio.JaCompativel"/>).
+/// <c>Titulo</c>: a tag <c>title</c> da faixa (opcional; null se não há). É o que marca a "dublagem por IA" —
+/// ver <see cref="EscolhaAudio.EhDubladoIa(FaixaAudio?)"/>.</summary>
+public record FaixaAudio(int Index, string? Codec, string? Idioma, bool Default, int? Canais, string? Titulo = null);
 
 /// <summary><c>IdxRelativo</c> = posição entre as faixas de legenda (0,1,2…), usada em
 /// <c>-map 0:s:N</c> e no endpoint <c>/legenda/{idx}</c>.</summary>
@@ -180,7 +182,7 @@ public class MediaProbeService : IDisposable
                     case "audio":
                         var canais = Int(s, "channels");
                         audios.Add(new FaixaAudio(Int(s, "index"), Str(s, "codec_name"),
-                            Tag(s, "language"), Disp(s, "default"), canais > 0 ? canais : null));
+                            Tag(s, "language"), Disp(s, "default"), canais > 0 ? canais : null, Tag(s, "title")));
                         break;
                     case "subtitle":
                         legendas.Add(new FaixaLegenda(idxLegenda++, Str(s, "codec_name") ?? "",
