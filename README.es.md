@@ -202,6 +202,10 @@ del mando, uno por revisión, nunca de episodios vistos; `PreAquecerAtrasoInicia
 `/api/admin/*` y escaneo manual), `AllowAnyOrigin` (`false`), `NomesPath` (`/data/nomes.json`), `ThermalRoot`
 (`/sys/class/thermal`).
 
+**Compresión y caché HTTP (sin config):** brotli/gzip **solo** para `json`, `html`, `js`, `css`, `svg`, y solo si el cliente manda
+`Accept-Encoding` (el Chromium 25 de la TV recibe gzip; sin header = cuerpo crudo). Vídeo (`.ts`, `.mp4`, `/stream`, `/remux`), `.m3u8`, subtítulos y cualquier respuesta `Range`
+(`206`) nunca se comprimen. html, `/js`, `/css` siguen `no-cache` (revalidación por ETag); `/vendor/hls.min.js` queda `public, max-age=86400`.
+
 **Espacio libre:** `EspacoLivreMinimoGB` (`5`, `0` = off): `/health` pasa a `Degraded` (503) con menos de esos GB libres en el volumen de datos
 (`CachePath`); `/health/vivo` no ejecuta el check y ningún job de transcode se rechaza. `/api/status` › `espaco` y `status.html` muestran GB libres y % usado de datos y medios.
 

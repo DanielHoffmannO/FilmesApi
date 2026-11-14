@@ -54,6 +54,7 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton<TmdbService>();
 builder.Services.AddHostedService<MetadataService>();
 
+builder.Services.AddCompressaoHttp();
 builder.Services.AddControllers();
 
 builder.Services.AddEndpointsApiExplorer();
@@ -113,6 +114,7 @@ _ = Task.Run(() =>
 
 // ─── Pipeline ───────────────────────────────────────────────────────────
 if (app.Configuration.GetValue<bool>("AllowAnyOrigin")) app.UseCors();
+app.UseResponseCompression();   // só json/html/js/css/svg e só se o cliente pedir (Accept-Encoding); ver CompressaoHttp
 // index.html/tv.html/controle.html quase tudo inline, mas wwwroot/js/*.js e wwwroot/css/*.css
 // (compartilhados entre as 3) são nossos e mudam junto — sem no-cache aqui, TV agressiva em
 // cache pode continuar rodando um util.js/base.css velho mesmo depois de um F5 na página.
@@ -132,16 +134,7 @@ if (!string.IsNullOrEmpty(adminToken))
         await next();
     });
 
-app.UseStaticFiles(new StaticFileOptions
-{
-    OnPrepareResponse = ctx =>
-    {
-        if (ctx.File.Name.EndsWith(".html", StringComparison.OrdinalIgnoreCase)
-            || ctx.Context.Request.Path.StartsWithSegments("/js")
-            || ctx.Context.Request.Path.StartsWithSegments("/css"))
-            ctx.Context.Response.Headers.CacheControl = "no-cache";
-    }
-});
+app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = CompressaoHttp.CacheDeEstaticos });
 app.UseSwagger();
 app.UseSwaggerUI(c => c.RoutePrefix = "swagger");
 app.MapControllers();

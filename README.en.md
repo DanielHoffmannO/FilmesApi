@@ -201,6 +201,10 @@ you skip episodes it jumps to the newest unwatched one). Dates come from `Filmes
 `/api/admin/*` and manual scan), `AllowAnyOrigin` (`false`), `NomesPath` (`/data/nomes.json`), `ThermalRoot`
 (`/sys/class/thermal`).
 
+**HTTP compression and caching (no config):** brotli/gzip **only** for `json`, `html`, `js`, `css`, `svg`, and only if the client sends
+`Accept-Encoding` (the TV's Chromium 25 gets gzip; no header = raw body). Video (`.ts`, `.mp4`, `/stream`, `/remux`), `.m3u8`, subtitles and any `Range`
+(`206`) response are never compressed. html, `/js`, `/css` stay `no-cache` (ETag revalidation); `/vendor/hls.min.js` is `public, max-age=86400`.
+
 **Free space:** `EspacoLivreMinimoGB` (`5`, `0` = off): `/health` goes `Degraded` (503) below this many free GB on the data volume
 (`CachePath`); `/health/vivo` does not run the check and no transcode job is refused. `/api/status` › `espaco` and `status.html` show free GB and % used for data and media.
 

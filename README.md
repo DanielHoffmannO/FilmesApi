@@ -381,6 +381,8 @@ usam `__` (ex.: `ConnectionStrings__Default`).
 | `FfmpegPath` / `FfprobePath` | `ffmpeg` / `ffprobe` | Binários (o Docker aponta pro jellyfin-ffmpeg). |
 | `AllowAnyOrigin` | `false` | Libera CORS geral (`AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()`). Só necessário se as telas forem servidas de outro host. |
 
+**Compressão e cache HTTP (sem configuração):** o servidor comprime (brotli ou gzip, o que o cliente aceitar) **só** `json`, `html`, `js`, `css` e `svg`, e só quando o cliente manda `Accept-Encoding` — a TV (Chromium 25, `gzip,deflate`) recebe gzip; cliente sem o header recebe o corpo cru. Vídeo (`.ts`, `.mp4`, `/stream`, `/remux`), playlists `.m3u8`, legendas e qualquer resposta de `Range` (`206`) nunca são comprimidos. `html`, `/js` e `/css` seguem `no-cache` (revalidam por ETag → `304`); `/vendor/hls.min.js` (terceiro, não muda sozinho) fica `public, max-age=86400`.
+
 ### Transcodificação
 
 | Chave | Padrão | Descrição |
