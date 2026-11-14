@@ -188,7 +188,7 @@ app.MapPost("/api/admin/nomes", (NomeRequest req, NomesPersonalizadosService nom
     nomes.Adicionar(req.Secao ?? "", req.Chave ?? "", req.Valor ?? "") switch
     {
         NomesPersonalizadosService.ResultadoAdicao.Aplicado => Results.Ok(new { aplicado = true }),
-        NomesPersonalizadosService.ResultadoAdicao.SecaoInvalida => Results.BadRequest(new { mensagem = "secao precisa ser 'apelidos' ou 'nomes', com chave e valor." }),
+        NomesPersonalizadosService.ResultadoAdicao.SecaoInvalida => Results.BadRequest(new { mensagem = "secao precisa ser 'apelidos', 'nomes' ou 'tmdb' (id inteiro > 0), com chave e valor." }),
         NomesPersonalizadosService.ResultadoAdicao.ArquivoInvalido => Results.BadRequest(new { mensagem = "o nomes.json atual é inválido — nada foi alterado.", caminho = nomes.Caminho }),
         _ => Results.Problem("não consegui gravar o nomes.json (permissão ou disco) — veja o log do servidor."),
     });

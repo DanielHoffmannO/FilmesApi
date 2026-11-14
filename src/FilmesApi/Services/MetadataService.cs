@@ -17,10 +17,16 @@ public class MetadataService : BackgroundService
     private readonly TmdbService _tmdb;
     private readonly ILogger<MetadataService> _logger;
     private readonly RegistroDeTarefas? _tarefas;
+    private readonly NomesPersonalizadosService? _nomes;
+    private readonly SemaphoreSlim _acordar = new(0, 1);
+    private readonly HashSet<string> _overridesAplicados = [];   // "chave|id" já invalidados neste processo (evita laço se o id der 404)
 
     public MetadataService(IServiceScopeFactory escopos, TmdbService tmdb, ILogger<MetadataService> logger,
-        RegistroDeTarefas? tarefas = null)
+        RegistroDeTarefas? tarefas = null, NomesPersonalizadosService? nomes = null)
     {
+        _nomes = nomes;
+        if (nomes is not null)
+            nomes.TmdbMudou += () => { try { _acordar.Release(); } catch (SemaphoreFullException) { /* já acordado */ } };
         _tarefas = tarefas;
         _escopos = escopos;
         _tmdb = tmdb;
@@ -56,8 +62,51 @@ public class MetadataService : BackgroundService
                 pausa = TimeSpan.FromMinutes(10);
             }
 
-            try { await Task.Delay(pausa, stoppingToken); }
+            try { await _acordar.WaitAsync(pausa, stoppingToken); }
             catch (OperationCanceledException) { return; }
+        }
+    }
+
+    /// <summary>Chave de override de um item: título de busca normalizado (e, p/ episódio, também o nome da série).</summary>
+    internal static IEnumerable<string> ChavesDeOverride(string? arquivoPath, string? tituloFallback)
+    {
+        var (titulo, _) = MediaNomeParser.TituloParaBusca(arquivoPath, tituloFallback);
+        if (!string.IsNullOrWhiteSpace(titulo)) yield return MediaNomeParser.NormalizarBusca(titulo);
+        if (MediaNomeParser.EhEpisodio(arquivoPath))
+        {
+            var s = MediaNomeParser.ChaveSerie(arquivoPath);
+            if (!string.IsNullOrWhiteSpace(s)) yield return MediaNomeParser.NormalizarBusca(s);
+        }
+    }
+
+    /// <summary>Override vigente do item, se houver.</summary>
+    internal static int? OverrideDe(IReadOnlyDictionary<string, int> overrides, string? arquivoPath, string? tituloFallback)
+    {
+        if (overrides.Count == 0) return null;
+        foreach (var k in ChavesDeOverride(arquivoPath, tituloFallback))
+            if (overrides.TryGetValue(k, out var id)) return id;
+        return null;
+    }
+
+    /// <summary>Re-enriquece só os itens cujo override de tmdbId é novo (ou mudou): zera o <c>MetadadosEm</c> deles.</summary>
+    private async Task InvalidarOverridesNovosAsync(AppDbContext db, CancellationToken ct)
+    {
+        var overrides = _nomes?.TmdbOverrides;
+        if (overrides is null || overrides.Count == 0) return;
+
+        var candidatos = await db.Filmes.Where(f => f.ArquivoPath != null && f.MetadadosEm != null).ToListAsync(ct);
+        var invalidados = 0;
+        foreach (var f in candidatos)
+        {
+            if (OverrideDe(overrides, f.ArquivoPath, f.Titulo) is not int id || f.TmdbId == id) continue;
+            if (!_overridesAplicados.Add($"{f.Id}|{id}")) continue;
+            f.MetadadosEm = null;
+            invalidados++;
+        }
+        if (invalidados > 0)
+        {
+            await db.SaveChangesAsync(ct);
+            _logger.LogInformation("Metadados: {N} item(ns) voltam pro enriquecimento por override de tmdbId.", invalidados);
         }
     }
 
@@ -65,6 +114,8 @@ public class MetadataService : BackgroundService
     {
         using var escopo = _escopos.CreateScope();
         var db = escopo.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        await InvalidarOverridesNovosAsync(db, ct);
 
         var pendentes = await db.Filmes
             .Where(f => f.MetadadosEm == null && f.ArquivoPath != null)
@@ -81,13 +132,21 @@ public class MetadataService : BackgroundService
         {
             var (titulo, ano) = MediaNomeParser.TituloParaBusca(filme.ArquivoPath, filme.Titulo);
             var serie = MediaNomeParser.EhEpisodio(filme.ArquivoPath);
-            var chave = $"{(serie ? "tv" : "mv")}|{titulo}|{ano}";
+            var overrideId = OverrideDe(_nomes?.TmdbOverrides ?? new Dictionary<string, int>(), filme.ArquivoPath, filme.Titulo);
+            var chave = overrideId is int oid ? $"{(serie ? "tv" : "mv")}|#{oid}" : $"{(serie ? "tv" : "mv")}|{titulo}|{ano}";
 
             if (!cache.TryGetValue(chave, out var res))
             {
                 try
                 {
-                    res = string.IsNullOrWhiteSpace(titulo) ? null : await _tmdb.BuscarAsync(titulo, ano, serie, ct);
+                    if (overrideId is int idForcado)
+                    {
+                        // id inexistente (404) devolve null: cai na busca normal em vez de deixar o item sem metadados
+                        res = await _tmdb.BuscarPorIdAsync(idForcado, serie, ct);
+                        if (res is null) await Task.Delay(TimeSpan.FromMilliseconds(300), ct);
+                    }
+                    if (res is null)
+                        res = string.IsNullOrWhiteSpace(titulo) ? null : await _tmdb.BuscarAsync(titulo, ano, serie, ct);
                 }
                 catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
                 {

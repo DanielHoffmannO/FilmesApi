@@ -8,9 +8,11 @@ namespace FilmesApi.Services;
 /// <c>/data/nomes.json</c>) em vez de dicionário no C# — cada série nova com nome feio custava
 /// build + deploy. Formato (tudo opcional):
 /// <code>{ "apelidos": { "attack on titan": "ataque dos titas" }, "nomes": { "ataque dos titas": "Ataque dos Titãs" },
-///   "ignorar": ["extra/Laranja.Mecanica*/1XBET*", "**/Sample/*"], "tipos": { "cabo do medo": "filme" } }</code>
+///   "ignorar": ["extra/Laranja.Mecanica*/1XBET*", "**/Sample/*"], "tipos": { "cabo do medo": "filme" },
+///   "tmdb": { "ataque dos titas": 1429 } }</code>
 /// <c>ignorar</c>: glob no caminho relativo — o arquivo some do catálogo, do scan e do diagnóstico (continua no disco).
 /// <c>tipos</c>: chave de série → <c>"filme"</c> força "filme avulso" (ignora o SxxExx do nome).
+/// <c>tmdb</c>: chave de série/filme → id inteiro (&gt; 0) do TMDB que vale no lugar do 1º resultado da busca.
 /// O padrão embutido (<c>MediaNomeParser.ApelidosPadrao/NomesPadrao</c>) continua valendo; o arquivo soma e
 /// sobrescreve. Lido na subida e a cada mudança (olha o arquivo a cada 15 s), ou na hora por
 /// <c>POST /api/admin/recarregar-nomes</c>. Arquivo inválido NUNCA derruba o app nem zera o que já
@@ -28,6 +30,23 @@ public class NomesPersonalizadosService(IConfiguration config, ILogger<NomesPers
     private bool _temPersonalizado;
 
     public string Caminho => _caminho;
+
+    private volatile Dictionary<string, int> _tmdb = [];
+
+    /// <summary>Disparado depois que o mapa <c>tmdb</c> muda numa recarga (o MetadataService acorda pra re-enriquecer).</summary>
+    public event Action? TmdbMudou;
+
+    /// <summary>Overrides de tmdbId vigentes (chave normalizada → id). Cópia imutável por recarga.</summary>
+    public IReadOnlyDictionary<string, int> TmdbOverrides => _tmdb;
+
+    private void DefinirTmdb(Dictionary<string, int> novo)
+    {
+        var mapa = new Dictionary<string, int>();
+        foreach (var (k, v) in novo) mapa[MediaNomeParser.NormalizarBusca(k)] = v;
+        var mudou = mapa.Count != _tmdb.Count || mapa.Any(kv => !_tmdb.TryGetValue(kv.Key, out var v) || v != kv.Value);
+        _tmdb = mapa;
+        if (mudou) TmdbMudou?.Invoke();
+    }
 
     protected override async Task ExecuteAsync(CancellationToken parar)
     {
@@ -54,6 +73,7 @@ public class NomesPersonalizadosService(IConfiguration config, ILogger<NomesPers
                 if (_temPersonalizado)
                 {
                     MediaNomeParser.DefinirNomesPersonalizados(null);
+                    DefinirTmdb([]);
                     _temPersonalizado = false;
                     logger.LogInformation("nomes.json sumiu ({Caminho}) — voltando ao padrão embutido.", _caminho);
                 }
@@ -64,6 +84,7 @@ public class NomesPersonalizadosService(IConfiguration config, ILogger<NomesPers
             {
                 var arquivo = Ler(File.ReadAllText(_caminho));
                 MediaNomeParser.DefinirNomesPersonalizados(arquivo);
+                DefinirTmdb(arquivo.Tmdb ?? []);
                 _temPersonalizado = true;
                 logger.LogInformation("nomes.json aplicado: {Apelidos} apelido(s), {Nomes} nome(s) de exibição, {Ignorar} padrão(ões) em ignorar, {Tipos} tipo(s).",
                     arquivo.Contagem.Apelidos, arquivo.Contagem.Nomes, arquivo.Contagem.Ignorar, arquivo.Contagem.Tipos);
@@ -79,11 +100,15 @@ public class NomesPersonalizadosService(IConfiguration config, ILogger<NomesPers
 
     public enum ResultadoAdicao { Aplicado, SecaoInvalida, ArquivoInvalido, FalhaAoGravar }
 
-    /// <summary>Grava UMA entrada em <c>apelidos</c> ou <c>nomes</c> do arquivo (cria se não existe), sem perder o que
+    /// <summary>Grava UMA entrada em <c>apelidos</c>, <c>nomes</c> ou <c>tmdb</c> (valor = id inteiro &gt; 0) do arquivo (cria se não existe), sem perder o que
     /// já há nele, guarda o anterior em <c>.bak</c> e recarrega na hora. Arquivo ilegível/inválido não é tocado.</summary>
     public ResultadoAdicao Adicionar(string secao, string chave, string valor)
     {
-        if (secao is not ("apelidos" or "nomes") || string.IsNullOrWhiteSpace(chave) || string.IsNullOrWhiteSpace(valor))
+        if (secao is not ("apelidos" or "nomes" or "tmdb") || string.IsNullOrWhiteSpace(chave) || string.IsNullOrWhiteSpace(valor))
+            return ResultadoAdicao.SecaoInvalida;
+        int idTmdb = 0;
+        if (secao == "tmdb"
+            && !(int.TryParse(valor.Trim(), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out idTmdb) && idTmdb > 0))
             return ResultadoAdicao.SecaoInvalida;
 
         lock (_trava)
@@ -95,7 +120,7 @@ public class NomesPersonalizadosService(IConfiguration config, ILogger<NomesPers
                 if (raiz is null) return ResultadoAdicao.ArquivoInvalido;
                 if (raiz[secao] is not null && raiz[secao] is not JsonObject) return ResultadoAdicao.ArquivoInvalido;
                 var alvo = raiz[secao] as JsonObject ?? (JsonObject)(raiz[secao] = new JsonObject());
-                alvo[MediaNomeParser.NormalizarBusca(chave)] = valor.Trim();
+                alvo[MediaNomeParser.NormalizarBusca(chave)] = secao == "tmdb" ? JsonValue.Create(idTmdb) : JsonValue.Create(valor.Trim());
 
                 var json = raiz.ToJsonString(new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
                 Ler(json);   // o que vamos gravar tem que ser lido de volta
@@ -147,7 +172,22 @@ public class NomesPersonalizadosService(IConfiguration config, ILogger<NomesPers
             if (tipo != NomesArquivo.TipoFilme)
                 throw new FormatException($"\"tipos\" › \"{chave}\": só \"{NomesArquivo.TipoFilme}\" é aceito (veio \"{tipo}\")");
 
-        return new NomesArquivo(LerMapa(raiz, "apelidos"), LerMapa(raiz, "nomes"), LerLista(raiz, "ignorar"), tipos);
+        return new NomesArquivo(LerMapa(raiz, "apelidos"), LerMapa(raiz, "nomes"), LerLista(raiz, "ignorar"), tipos, LerTmdb(raiz));
+    }
+
+    private static Dictionary<string, int> LerTmdb(JsonElement raiz)
+    {
+        var mapa = new Dictionary<string, int>();
+        if (!raiz.TryGetProperty("tmdb", out var el)) return mapa;
+        if (el.ValueKind != JsonValueKind.Object)
+            throw new FormatException("\"tmdb\" precisa ser um objeto de texto -> id inteiro");
+        foreach (var p in el.EnumerateObject())
+        {
+            if (p.Value.ValueKind != JsonValueKind.Number || !p.Value.TryGetInt32(out var id) || id <= 0)
+                throw new FormatException($"\"tmdb\" › \"{p.Name}\" precisa ser um id inteiro maior que 0");
+            mapa[p.Name] = id;
+        }
+        return mapa;
     }
 
     private static List<string> LerLista(JsonElement raiz, string nome)
@@ -183,7 +223,7 @@ public class NomesPersonalizadosService(IConfiguration config, ILogger<NomesPers
 
 /// <summary>O que o <c>nomes.json</c> traz. Vazio = nada personalizado (só o padrão embutido).</summary>
 public sealed record NomesArquivo(
-    Dictionary<string, string> Apelidos, Dictionary<string, string> Nomes, List<string> Ignorar, Dictionary<string, string> Tipos)
+    Dictionary<string, string> Apelidos, Dictionary<string, string> Nomes, List<string> Ignorar, Dictionary<string, string> Tipos, Dictionary<string, int>? Tmdb = null)
 {
     public const string TipoFilme = "filme";
     public static NomesArquivo Vazio => new([], [], [], []);

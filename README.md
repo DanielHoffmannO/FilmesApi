@@ -188,7 +188,8 @@ build nem deploy. Crie `data/nomes.json` (no contêiner, `/data/nomes.json`):
   "apelidos": { "attack on titan": "ataque dos titas" },
   "nomes":    { "ataque dos titas": "Ataque dos Titãs" },
   "ignorar":  ["extra/Laranja.Mecanica*/1XBET*", "**/Sample/*"],
-  "tipos":    { "cabo do medo": "filme" }
+  "tipos":    { "cabo do medo": "filme" },
+  "tmdb":     { "ataque dos titas": 1429 }
 }
 ```
 
@@ -202,6 +203,11 @@ build nem deploy. Crie `data/nomes.json` (no contêiner, `/data/nomes.json`):
   `"**/Sample/*"`. No diagnóstico, cada suspeito de propaganda tem um botão que copia a linha pronta pra colar aqui.
 - `tipos`: `{ "cabo do medo": "filme" }` força "filme avulso" pra uma série (a chave é a mesma do apelido, sem acento nem
   maiúscula) — pra quando um `S01E10` falso no nome enganou o parser. Só `"filme"` é aceito.
+- `tmdb`: corrige **match errado do TMDB**. Chave (série ou filme, sem acento nem maiúscula) → id inteiro maior que 0 do
+  TMDB (o número em `themoviedb.org/tv/1429`). Com override, o enriquecimento busca `/tv/{id}` ou `/movie/{id}` em vez
+  de usar o 1º resultado da busca, e re-enriquece só aquele item (os demais não são tocados). Id inexistente (404) é
+  registrado no log e o item cai na busca normal. Sem a seção, nada muda. No `/diagnostico.html`, as sugestões e as
+  séries com 1 só episódio têm um campo **tmdbId** + **fixar** (`POST /api/admin/nomes` com `secao: "tmdb"`, `valor` = id).
 - **Sugestões:** o `/diagnostico.html` propõe correções (a mesma série sob dois nomes → `apelidos`; nome todo em maiúsculas/minúsculas →
   `nomes`). **aplicar** grava a entrada no `nomes.json` (cria o arquivo se faltar, mantém o resto, guarda o anterior em `nomes.json.bak` e
   recarrega na hora; com `AdminToken` pede o token); **copiar** só copia a linha. É `POST /api/admin/nomes` `{secao, chave, valor}`.
@@ -517,7 +523,7 @@ Estado único em memória (`PlayerStateService`) — pensado pra uma casa com um
 | `GET` | `/api/status` | Temperatura, fila de transcode, tamanho dos caches de HLS e de remux, **total gravado nos caches desde que o servidor subiu** (inclusive o que já foi apagado), estado da VPU, o bloco `cache` (`{remux, hls}` com itens/bytes de assistido, não assistido, órfão, parado há mais de 7 dias e o teto) e, por pasta/disco de 1º nível, `montagens: [{prefixo, itensNoCatalogo, arquivosNoDisco, estado: ok\|suspeita}]` do último scan, e `tarefas: [{nome, estado, ultimaExecucao, duracaoMs, resumo, erro, execucoes, falhas}]` com o que cada worker de fundo (scan, limpeza-cache, pre-aquecer, metadados) fez por último (consumido pela `status.html`). |
 | `POST` | `/api/diag/log` | `{msg}` (cortada em 500 caracteres) — o `tv.html` manda erro de JS/hls.js/`<video>` pra cá (cai no log do servidor). TV não tem console acessível; sem isso não dava pra depurar o que acontecia na tela dela. |
 | `POST` | `/api/admin/recarregar-nomes` | Relê o `nomes.json` agora. `{resultado: aplicado/semarquivo, apelidos, nomes, ignorar, tipos}`; `400` se o arquivo está inválido (os nomes anteriores continuam valendo). Sem autenticação — rede de casa. |
-| `POST` | `/api/admin/nomes` | Corpo `{secao: "apelidos"\|"nomes", chave, valor}`: adiciona uma entrada ao `nomes.json` (ver Sugestões) e recarrega. `400` se a seção for inválida ou o arquivo atual estiver quebrado (nada é alterado). |
+| `POST` | `/api/admin/nomes` | Corpo `{secao: "apelidos"\|"nomes"\|"tmdb", chave, valor}` (`tmdb`: valor = id inteiro > 0): adiciona uma entrada ao `nomes.json` (ver Sugestões) e recarrega. `400` se a seção for inválida ou o arquivo atual estiver quebrado (nada é alterado). |
 | `GET` | `/health` | Health check pro **Uptime Kuma**: `MediaPath` montado, ffmpeg presente e **nenhuma pasta/disco em suspeita**. `503` com `Degraded` quando uma pasta de 1º nível tem itens no catálogo mas nenhum arquivo no disco (HD de backup caído — o scan mantém os itens por precaução, ver `/api/status` › `montagens`). |
 | `GET` | `/health/vivo` | O mesmo, **mas disco caído não derruba** (`200` `Degraded`): é o que o `healthcheck` do `docker-compose.yml` usa, pra um disco fora nunca marcar o contêiner como `unhealthy` nem reiniciar nada. |
 
