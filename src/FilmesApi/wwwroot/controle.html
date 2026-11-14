@@ -114,11 +114,6 @@ main{max-width:640px;margin:0 auto}
 .l3 .ib:disabled{opacity:.35}
 /* ─── dublagem por IA (scripts/dublar): selo nas listas e "Original ⇄ Dublagem IA" na barra ─── */
 .tag.ia{flex:none;color:#c9b6ff;background:rgba(124,92,214,.18);border-color:#6a4fb3;font-size:10.5px;font-weight:700;letter-spacing:.04em;padding:2px 6px;margin-left:6px}
-.t b .tag.ia,.card b .tag.ia{vertical-align:1px}
-/* selo "DUB" (áudio em português que não é IA: dublado/dual áudio) e o chip "Dublados" ao lado do filtro de tipo */
-.tag.dub{flex:none;color:#8fe0b0;background:rgba(46,204,113,.14);border-color:#2f7a52;font-size:10.5px;font-weight:700;letter-spacing:.04em;padding:2px 6px;margin-left:6px}
-.t b .tag.dub,.card b .tag.dub{vertical-align:1px}
-.seloDub{color:#8fe0b0;background:rgba(46,204,113,.14);border:1px solid #2f7a52;border-radius:6px;font-size:10.5px;font-weight:700;letter-spacing:.04em;padding:2px 6px;margin-left:6px;vertical-align:1px}
 .chips{display:flex;margin:0 20px 8px;max-width:600px}
 @media(min-width:680px){.chips{margin-left:auto;margin-right:auto;width:600px}}
 .chip{display:inline-flex;align-items:center;min-height:36px;padding:0 14px;border:1px solid var(--line);border-radius:18px;font-size:13px;color:var(--mut);transition:background .15s,color .15s,border-color .15s}
@@ -327,25 +322,19 @@ function fioDoIniciado(f) {
   return `<i class="ini" style="width:${pct.toFixed(0)}%"></i>`;
 }
 
-// Selo "IA": o arquivo tem uma faixa em português dublada por IA (f.dubladoIa vem do servidor, guardado no banco).
-const iaSelo = f => f.dubladoIa ? '<span class="tag ia" title="Tem dublagem em português feita por IA">IA</span>' : '';
-// Selo "DUB": o arquivo tem áudio em português que não é IA (f.dublado vem do servidor: probe guardado ou, até a análise rodar, a dica no nome).
-// No cabeçalho da série o selo NÃO leva a classe .tag: atualizarTags() remove o primeiro .tag do cabeçalho (o "padrão" de áudio/legenda).
-const dubSerieSelo = s => s.episodios.some(f => f.dublado) ? '<span class="seloDub" title="Tem episódios com áudio em português (dublado / dual áudio)">DUB</span>' : '';
-const dubSelo = f => f.dublado ? '<span class="tag dub" title="Tem áudio em português (dublado / dual áudio)">DUB</span>' : '';
 
 function linhaEp(f) {
   const tc = tocandoAgora(f);
   const titulo = f.tituloEpisodio || (f.episodio != null ? 'Episódio ' + f.episodio : f.titulo);
   return `<div class="ep${tc ? ' tc' : ''}${f.assistido ? ' vi' : ''}" onclick="enviarParaTv(${f.id})">
-      <span class="n">${esc(codigoEp(f))}</span><span class="t">${esc(titulo)}${dubSelo(f)}${iaSelo(f)}</span>${tc ? ico('tv', 'pl') : ''}${ckHtml(f)}${fioDoIniciado(f)}
+      <span class="n">${esc(codigoEp(f))}</span><span class="t">${esc(titulo)}</span>${tc ? ico('tv', 'pl') : ''}${ckHtml(f)}${fioDoIniciado(f)}
     </div>`;
 }
 
 function linhaFilme(f) {
   const tc = tocandoAgora(f);
   return `<div class="ep filme${tc ? ' tc' : ''}${f.assistido ? ' vi' : ''}" onclick="enviarParaTv(${f.id})">
-      <span class="t"><b>${esc(f.titulo)}${dubSelo(f)}${iaSelo(f)}</b>${f.anoLancamento ? `<small>${f.anoLancamento}</small>` : ''}</span>${tc ? ico('tv', 'pl') : ''}${ckHtml(f)}${fioDoIniciado(f)}
+      <span class="t"><b>${esc(f.titulo)}</b>${f.anoLancamento ? `<small>${f.anoLancamento}</small>` : ''}</span>${tc ? ico('tv', 'pl') : ''}${ckHtml(f)}${fioDoIniciado(f)}
     </div>`;
 }
 
@@ -358,7 +347,7 @@ function cartaoFila(i) {
   const ep = f.ehEpisodio ? (f.temporada != null ? 'T' + f.temporada + ' · ' : '') + codigoEp(f) : (f.anoLancamento || '');
   const sub = i.motivo === 'proximo' ? 'A seguir · ' + ep : ep;
   const pct = i.motivo !== 'proximo' && f.posicaoSegundos && f.duracaoSegundos ? Math.min(100, 100 * f.posicaoSegundos / f.duracaoSegundos) : 0;
-  return `<button class="card" onclick="enviarParaTv(${f.id})"><b>${esc(f.ehEpisodio && f.serie ? (nomesDeSerie[f.serieChave] || f.serie) : f.titulo)}${dubSelo(f)}${iaSelo(f)}</b><small>${esc(sub)}</small>` +
+  return `<button class="card" onclick="enviarParaTv(${f.id})"><b>${esc(f.ehEpisodio && f.serie ? (nomesDeSerie[f.serieChave] || f.serie) : f.titulo)}</b><small>${esc(sub)}</small>` +
          (pct ? `<div class="fio"><i style="width:${pct.toFixed(0)}%"></i></div>` : '') + '</button>';
 }
 
@@ -408,7 +397,7 @@ function serieHtmlControle(s) {
   }
   return `<div class="grupo${aberta ? '' : ' collapsed'}" data-serie="${attr(s.chave)}">
     <div class="serie" onclick="cliqueSerie(this)">${ico('caret', 'cv')}
-      <div class="t"><b>${esc(s.nome)}${dubSerieSelo(s)}</b><small>${sub}</small></div>${tagPadraoHtml(s.chave)}
+      <div class="t"><b>${esc(s.nome)}</b><small>${sub}</small></div>${tagPadraoHtml(s.chave)}
       <button class="ib" data-pref-serie="${attr(s.chave)}" aria-label="Idioma e legenda padrão de ${attr(s.nome)}">${ico('dots')}</button>
     </div>
     <div class="grupo-body">${corpo}</div></div>`;
