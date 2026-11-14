@@ -108,7 +108,9 @@ public partial class PlayerStateService(Func<DateTime>? agora = null, IConfigura
                 proximoAutomatico = _contexto?.ProximoAutomatico ?? false,
                 proximoContagem = _contexto?.ContagemProximoSegundos ?? 5,
                 proximoCancelado = _proximoCancelado,
-                sono = SnapshotDoSono(), presenca = SnapshotDaPresenca(), noFim = NoFimAtual(),   // timer de sono, "Ainda está assistindo?" e o que o fim do episódio faz
+                sono = SnapshotDoSono(),
+                presenca = SnapshotDaPresenca(),
+                noFim = NoFimAtual(),   // timer de sono, "Ainda está assistindo?" e o que o fim do episódio faz
                 inicioCreditos = _contexto?.InicioCreditos,
                 aviso = _avisoVersao == 0 ? null : new { versao = _avisoVersao, tipo = _avisoTipo, texto = _avisoTexto, acao = _avisoAcao },
             };
