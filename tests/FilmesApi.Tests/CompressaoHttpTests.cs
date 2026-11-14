@@ -21,12 +21,7 @@ public sealed class CompressaoHttpTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        Directory.CreateDirectory(Path.Combine(_raiz, "vendor"));
-        Directory.CreateDirectory(Path.Combine(_raiz, "js"));
-        File.WriteAllText(Path.Combine(_raiz, "vendor", "hls.min.js"), "var h=1;" + Grande);
-        File.WriteAllText(Path.Combine(_raiz, "js", "util.js"), "var u=1;" + Grande);
-        File.WriteAllText(Path.Combine(_raiz, "tela.html"), "<p>" + Grande + "</p>");
-        File.WriteAllText(Path.Combine(_raiz, "video.ts"), Grande);   // conteúdo compressível, mas extensão de vídeo
+        CriarArquivos();
 
         var b = WebApplication.CreateBuilder(new WebApplicationOptions { WebRootPath = _raiz, ContentRootPath = _raiz });
         b.WebHost.UseUrls("http://127.0.0.1:0");
@@ -34,15 +29,30 @@ public sealed class CompressaoHttpTests : IAsyncLifetime
         _app = b.Build();
         _app.UseResponseCompression();
         _app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = CompressaoHttp.CacheDeEstaticos });
-        _app.MapGet("/api/dados", () => Results.Json(new { texto = Grande }));
-        _app.MapGet("/hls/lista.m3u8", () => Results.Text("#EXTM3U\n" + Grande, "application/vnd.apple.mpegurl"));
-        _app.MapGet("/api/mp4", () => Results.Bytes(System.Text.Encoding.ASCII.GetBytes(Grande), "video/mp4", enableRangeProcessing: true));
-        _app.MapGet("/api/json-range", () => Results.Bytes(System.Text.Encoding.ASCII.GetBytes(Grande), "application/json", enableRangeProcessing: true));
+        MapearRotas();
         await _app.StartAsync();
 
         var url = _app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
         // Sem descompressão automática: o teste olha os bytes e cabeçalhos como a TV os veria.
         _http = new HttpClient(new HttpClientHandler { AutomaticDecompression = DecompressionMethods.None }) { BaseAddress = new Uri(url) };
+    }
+
+    private void CriarArquivos()
+    {
+        Directory.CreateDirectory(Path.Combine(_raiz, "vendor"));
+        Directory.CreateDirectory(Path.Combine(_raiz, "js"));
+        File.WriteAllText(Path.Combine(_raiz, "vendor", "hls.min.js"), "var h=1;" + Grande);
+        File.WriteAllText(Path.Combine(_raiz, "js", "util.js"), "var u=1;" + Grande);
+        File.WriteAllText(Path.Combine(_raiz, "tela.html"), "<p>" + Grande + "</p>");
+        File.WriteAllText(Path.Combine(_raiz, "video.ts"), Grande);   // conteúdo compressível, mas extensão de vídeo
+    }
+
+    private void MapearRotas()
+    {
+        _app.MapGet("/api/dados", () => Results.Json(new { texto = Grande }));
+        _app.MapGet("/hls/lista.m3u8", () => Results.Text("#EXTM3U\n" + Grande, "application/vnd.apple.mpegurl"));
+        _app.MapGet("/api/mp4", () => Results.Bytes(System.Text.Encoding.ASCII.GetBytes(Grande), "video/mp4", enableRangeProcessing: true));
+        _app.MapGet("/api/json-range", () => Results.Bytes(System.Text.Encoding.ASCII.GetBytes(Grande), "application/json", enableRangeProcessing: true));
     }
 
     public async Task DisposeAsync()
