@@ -127,6 +127,22 @@ public class MetadataService : BackgroundService
         _logger.LogInformation("Metadados: {N} título(s) em escrita não latina voltam pro enriquecimento (título em português).", voltam.Count);
     }
 
+    private bool _varreuSeries;
+
+    /// <summary>Uma vez por execução: episódio já enriquecido antes de o serviço guardar o nome da série no TMDB volta pro enriquecimento.</summary>
+    private async Task ReenriquecerSeriesSemNomeAsync(AppDbContext db, CancellationToken ct)
+    {
+        if (_varreuSeries || !_tmdb.Habilitado) return;
+        _varreuSeries = true;
+
+        var candidatos = await db.Filmes.Where(f => f.ArquivoPath != null && f.MetadadosEm != null && f.SerieTitulo == null).ToListAsync(ct);
+        var voltam = candidatos.Where(f => MediaNomeParser.EhEpisodio(f.ArquivoPath)).ToList();
+        if (voltam.Count == 0) return;
+        foreach (var f in voltam) f.MetadadosEm = null;
+        await db.SaveChangesAsync(ct);
+        _logger.LogInformation("Metadados: {N} episódio(s) voltam pro enriquecimento pra guardar o nome da série no TMDB.", voltam.Count);
+    }
+
     private async Task<int> ProcessarLoteAsync(CancellationToken ct)
     {
         using var escopo = _escopos.CreateScope();
@@ -134,6 +150,7 @@ public class MetadataService : BackgroundService
 
         await InvalidarOverridesNovosAsync(db, ct);
         await ReenriquecerTitulosNaoLatinosAsync(db, ct);
+        await ReenriquecerSeriesSemNomeAsync(db, ct);
 
         var pendentes = await db.Filmes
             .Where(f => f.MetadadosEm == null && f.ArquivoPath != null)
@@ -185,6 +202,7 @@ public class MetadataService : BackgroundService
             // Título limpo do TMDB só pra filme — episódio mantém o nome do arquivo, que o
             // parser de série/episódio ainda precisa pra achar o "SxxExx".
             if (!serie && res?.Titulo is { Length: > 0 } limpo) filme.Titulo = limpo;
+            if (serie) filme.SerieTitulo = res?.Titulo;
             filme.MetadadosEm = DateTime.UtcNow;
 
             // Salva um por um: se um /scan concorrente apagou este filme no meio do lote,

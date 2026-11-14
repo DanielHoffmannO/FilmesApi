@@ -154,6 +154,7 @@ public static class DbInitializer
         {
             ("TmdbId", """ALTER TABLE "Filmes" ADD COLUMN "TmdbId" INTEGER NULL;"""),
             ("TituloOriginal", """ALTER TABLE "Filmes" ADD COLUMN "TituloOriginal" TEXT NULL;"""),
+            ("SerieTitulo", """ALTER TABLE "Filmes" ADD COLUMN "SerieTitulo" TEXT NULL;"""),
             ("PosterUrl", """ALTER TABLE "Filmes" ADD COLUMN "PosterUrl" TEXT NULL;"""),
             ("Sinopse", """ALTER TABLE "Filmes" ADD COLUMN "Sinopse" TEXT NULL;"""),
             ("MetadadosEm", """ALTER TABLE "Filmes" ADD COLUMN "MetadadosEm" TEXT NULL;"""),

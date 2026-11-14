@@ -28,6 +28,8 @@ public class Filme
     // ─── Metadados do TMDB (preenchidos em background quando TmdbApiKey está configurada) ───
     public int? TmdbId { get; set; }
     public string? TituloOriginal { get; set; }
+    /// <summary>Só episódio: nome da SÉRIE no TMDB (em português quando existe). A pasta/arquivo não é traduzida; isto é o que a tela mostra no lugar.</summary>
+    public string? SerieTitulo { get; set; }
     public string? PosterUrl { get; set; }
     public string? Sinopse { get; set; }
     /// <summary>Quando o enriquecimento rodou. Não-nulo mesmo quando não achou nada no TMDB

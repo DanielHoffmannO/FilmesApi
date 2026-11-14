@@ -25,7 +25,7 @@ public static class CatalogoAgrupador
         var q = string.IsNullOrWhiteSpace(textoBusca) ? null : MediaNomeParser.NormalizarBusca(textoBusca);
         bool PassaBusca(FilmeResponse f) =>
             q is null || MediaNomeParser.NormalizarBusca(string.Join(' ',
-                f.Titulo, f.TituloEpisodio, f.Serie, MediaNomeParser.NomeExibicao(f.SerieChave, f.Serie ?? ""),
+                f.Titulo, f.TituloEpisodio, f.TituloOriginal, f.Serie, MediaNomeParser.NomeExibicao(f.SerieChave, f.Serie ?? ""),
                 f.Pasta, f.Pasta is null ? null : MediaNomeParser.NomePastaExibicao(f.Pasta))).Contains(q);
 
         var continuarAssistindo = tipo == "all" && visto == "all"

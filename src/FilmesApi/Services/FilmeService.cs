@@ -45,7 +45,7 @@ public class FilmeService
             f.Progresso != null ? f.Progresso.PosicaoSegundos : (double?)null,
             f.Progresso != null ? f.Progresso.DuracaoSegundos : null,
             f.PosterUrl, f.Sinopse, f.TituloOriginal,
-            false, false, null, null, null, null, "", "Sem pasta", null, false, false);
+            false, false, null, null, null, null, "", "Sem pasta", null, false, false, f.SerieTitulo);
 
     public async Task<List<FilmeResponse>> ListarAsync()
     {
@@ -55,7 +55,10 @@ public class FilmeService
         lista.RemoveAll(f => MediaNomeParser.Ignorado(f.ArquivoPath));
         await DubladoIaService.MarcarAsync(_db, lista);   // flag guardado pela análise em segundo plano — sem ffprobe aqui
 
-        return _classificacao.Classificar(lista);
+        // Série: o nome do TMDB (em português) no lugar do nome da pasta. A SerieChave não muda (preferências, abertura e
+        // nomes.json continuam casando); apelido do nomes.json segue ganhando, pois NomeExibicao o aplica por cima.
+        return [.. _classificacao.Classificar(lista).Select(f =>
+            f.EhEpisodio && !string.IsNullOrWhiteSpace(f.SerieTitulo) ? f with { Serie = f.SerieTitulo } : f)];
     }
 
     /// <summary>Monta a tela pronta pra desenhar — orquestra o que <see cref="CatalogoAgrupador.Montar"/>

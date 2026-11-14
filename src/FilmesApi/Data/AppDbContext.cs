@@ -24,6 +24,7 @@ public class AppDbContext : DbContext
             e.HasKey(f => f.Id);
             e.Property(f => f.Titulo).IsRequired().HasMaxLength(200);
             e.Property(f => f.TituloOriginal).HasMaxLength(300);
+            e.Property(f => f.SerieTitulo).HasMaxLength(300);
             e.Property(f => f.PosterUrl).HasMaxLength(500);
             e.Property(f => f.Sinopse).HasMaxLength(2000);
             e.HasIndex(f => f.ArquivoPath).IsUnique();
