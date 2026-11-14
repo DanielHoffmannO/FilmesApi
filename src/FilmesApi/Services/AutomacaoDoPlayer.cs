@@ -80,6 +80,13 @@ public class AutomacaoDoPlayer(IServiceScopeFactory escopos, PlayerStateService 
     public async Task<(int? ProximoId, bool Aprendeu)> ProximoManualAsync()
     {
         if (estado.FilmeId is not int id) return (null, false);
+        // fila manual ("tocar a seguir") vem antes do próximo episódio da série; não é episódio, então não ensina o próximo automático
+        if (estado.Fila.Count > 0)
+        {
+            var daFila = estado.Fila[0];
+            await SelecionarAsync(daFila);
+            return (daFila, false);
+        }
         using var escopo = escopos.CreateScope();
         var prox = await escopo.ServiceProvider.GetRequiredService<FilmeService>().ProximoEpisodioAsync(id);
         if (prox is null) return (null, false);

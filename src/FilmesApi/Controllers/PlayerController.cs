@@ -33,6 +33,31 @@ public class PlayerController : ControllerBase
         return Ok(_state.Snapshot());
     }
 
+    /// <summary>Fila manual "tocar a seguir": adiciona ao fim (404 se o filme não existe, 409 se a fila está cheia; já estando na fila, não duplica).</summary>
+    [HttpPost("fila/{filmeId:int}")]
+    public async Task<IActionResult> Enfileirar(int filmeId)
+    {
+        if (!await _filmes.ExisteAsync(filmeId)) return NotFound(new { mensagem = "filme não existe" });
+        var r = _state.Enfileirar(filmeId);
+        return r == ResultadoFila.Cheia
+            ? Conflict(new { mensagem = $"a fila já tem {PlayerStateService.FilaMaxima} itens" })
+            : Ok(new { resultado = r.ToString(), fila = _state.Fila });
+    }
+
+    [HttpDelete("fila/{filmeId:int}")]
+    public IActionResult DesenfileirarUm(int filmeId)
+    {
+        _state.RemoverDaFila(filmeId);
+        return Ok(new { fila = _state.Fila });
+    }
+
+    [HttpDelete("fila")]
+    public IActionResult LimparFila()
+    {
+        _state.LimparFila();
+        return Ok(new { fila = _state.Fila });
+    }
+
     /// <summary>O botão "Pular abertura" do controle: o servidor lê a abertura do que está tocando, manda a TV pro fim dela e liga o pulo
     /// automático da temporada (o Daniel confirmou que ali é abertura). 404 se não há abertura conhecida. Use este e não o <c>seek-abs</c> genérico.</summary>
     [HttpPost("pular-abertura")]

@@ -70,6 +70,15 @@ main{max-width:640px;margin:0 auto}
 .pl{color:var(--acc-txt);width:18px;height:18px}
 .ck{width:44px;height:44px;display:grid;place-items:center;color:var(--mut2);flex:none;margin-right:2px}
 .ck svg{width:19px;height:19px}
+.qb{width:40px;height:44px;display:grid;place-items:center;color:#3a3a3a;flex:none}
+.qb svg{width:19px;height:19px}
+.qb:active{color:var(--acc-txt)}
+.fila-n{position:absolute;top:2px;right:0;min-width:16px;height:16px;border-radius:8px;background:var(--acc);color:#fff;font-size:10.5px;font-weight:700;display:none;place-items:center;padding:0 4px}
+.fila-lin{display:flex;align-items:center;gap:10px;min-height:52px;border-bottom:1px solid var(--line)}
+.fila-lin .n{width:22px;color:var(--mut2);font-size:12.5px;font-variant-numeric:tabular-nums;flex:none}
+.fila-lin .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14.5px}
+.fila-lin .t small{display:block;color:var(--mut);font-size:12.5px;overflow:hidden;text-overflow:ellipsis}
+.fila-lin button{width:44px;height:44px;display:grid;place-items:center;color:var(--mut)}
 .ck:not(.on){color:#3a3a3a}
 .ck.on{color:var(--mut)}
 /* filme solto: título e ano (secundário) em duas linhas */
@@ -208,6 +217,14 @@ input[type=range].vol:focus-visible{outline:2px solid var(--acc);outline-offset:
   <div id="sonoCorpo"></div>
 </div>
 
+<div class="folha-scrim" id="filaScrim" onclick="fecharFila()"></div>
+<div class="folha" id="filaFolha" role="dialog" aria-modal="true" aria-labelledby="filaTitulo" tabindex="-1">
+  <div class="alca"></div>
+  <h2 id="filaTitulo">Tocar a seguir</h2>
+  <div class="sub">Toca na ordem, antes do próximo episódio da série.</div>
+  <div id="filaCorpo"></div>
+</div>
+
 <div class="remote" id="remote">
   <div class="l1">
     <span data-ico="tv"></span>
@@ -241,6 +258,7 @@ input[type=range].vol:focus-visible{outline:2px solid var(--acc);outline-offset:
     <button class="ib" onclick="remoteProximoEp()" id="remoteProximoEpBtn" aria-label="Próximo episódio" data-ico="next" style="display:none"></button>
     <span data-ico="vol" style="margin-left:6px;display:grid"></span>
     <input type="range" class="vol" id="remoteVolume" min="0" max="1" step="0.05" oninput="remoteVolume(this.value)" aria-label="Volume">
+    <button class="ib" id="remoteFilaBtn" onclick="abrirFila()" aria-label="Fila" style="position:relative;display:none"><span data-ico="fila" style="display:grid"></span><span class="fila-n" id="remoteFilaN"></span></button>
     <button class="ib" id="remoteSonoBtn" onclick="abrirSono()" aria-label="Dormir"></button>
     <button class="ib" onclick="remoteParar()" aria-label="Parar" data-ico="stop"></button>
   </div>
@@ -265,9 +283,11 @@ const IC = {
   caret: '<path d="M9 6l6 6l-6 6"/>',
   dots: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
   check: '<path d="M5 12l5 5l10-10"/>',
+  close: '<path d="M6 6l12 12M18 6L6 18"/>',
   circle: '<circle cx="12" cy="12" r="8.5"/>',
   tv: '<rect x="3" y="7" width="18" height="12" rx="2"/><path d="M16 3l-4 4l-4-4"/>',
   skip: '<path d="M5 5l8 7l-8 7z"/><path d="M13 5l8 7l-8 7z"/>',
+  fila: '<path d="M4 7h11M4 12h11M4 17h6M18 13v8M14 17h8"/>',
   next: '<path d="M7 4v16l10-8z"/><path d="M20 5v14"/>',
   nextF: '<path d="M5.5 4.5v15L16 12z"/><rect x="18" y="5" width="2.4" height="14" rx="1.2"/>',
   back: '<path d="M3.06 13a9 9 0 1 0 .49-4.087"/><path d="M3 4v5h5"/>',
@@ -309,6 +329,9 @@ function codigoEp(f) {
 }
 const tocandoAgora = f => !!(ultimoEstadoRemoto && ultimoEstadoRemoto.filmeId === f.id);
 
+// "tocar a seguir": entra no fim da fila manual (com nada tocando, só toca)
+const qbHtml = f => `<button class="qb" aria-label="Tocar a seguir" onclick="event.stopPropagation(); enfileirar(${f.id})">${ico('fila')}</button>`;
+
 // "marcar como assistido": área de toque de 44x44 (a linha inteira manda pra TV)
 function ckHtml(f) {
   const rot = f.assistido ? 'Desmarcar como assistido' : 'Marcar como assistido';
@@ -327,14 +350,14 @@ function linhaEp(f) {
   const tc = tocandoAgora(f);
   const titulo = f.tituloEpisodio || (f.episodio != null ? 'Episódio ' + f.episodio : f.titulo);
   return `<div class="ep${tc ? ' tc' : ''}${f.assistido ? ' vi' : ''}" onclick="enviarParaTv(${f.id})">
-      <span class="n">${esc(codigoEp(f))}</span><span class="t">${esc(titulo)}</span>${tc ? ico('tv', 'pl') : ''}${ckHtml(f)}${fioDoIniciado(f)}
+      <span class="n">${esc(codigoEp(f))}</span><span class="t">${esc(titulo)}</span>${tc ? ico('tv', 'pl') : ''}${qbHtml(f)}${ckHtml(f)}${fioDoIniciado(f)}
     </div>`;
 }
 
 function linhaFilme(f) {
   const tc = tocandoAgora(f);
   return `<div class="ep filme${tc ? ' tc' : ''}${f.assistido ? ' vi' : ''}" onclick="enviarParaTv(${f.id})">
-      <span class="t"><b>${esc(f.titulo)}</b>${f.anoLancamento ? `<small>${f.anoLancamento}</small>` : ''}</span>${tc ? ico('tv', 'pl') : ''}${ckHtml(f)}${fioDoIniciado(f)}
+      <span class="t"><b>${esc(f.titulo)}</b>${f.anoLancamento ? `<small>${f.anoLancamento}</small>` : ''}</span>${tc ? ico('tv', 'pl') : ''}${qbHtml(f)}${ckHtml(f)}${fioDoIniciado(f)}
     </div>`;
 }
 
@@ -466,6 +489,77 @@ async function enviarParaTv(id) {
   fetch(`${API}/${id}/pre-aquecer`, { method: 'POST' }).catch(() => {});
   await fetch(`${PLAYER_API}/selecionar/${id}`, { method: 'POST' });
   pollRemote();
+}
+
+// ─── Fila manual "tocar a seguir" (o servidor guarda; a TV toca o primeiro ao fim do que passa) ───
+const titulosDaFila = {};   // id -> { linha, sub } (buscado uma vez)
+let filaAtual = [];
+
+async function enfileirar(id) {
+  if (!ultimoEstadoRemoto || ultimoEstadoRemoto.filmeId === null) { enviarParaTv(id); return; }   // nada tocando: não há "a seguir", só toca
+  const r = await fetch(`${PLAYER_API}/fila/${id}`, { method: 'POST' }).catch(() => null);
+  if (!r || !r.ok) { toast(r && r.status === 409 ? 'A fila está cheia.' : 'Não consegui pôr na fila.'); return; }
+  const j = await r.json();
+  const f = await descreverDaFila(id);
+  toast(j.resultado === 'JaNaFila' ? 'Já está na fila.' : `Toca a seguir: ${f.linha}`,
+        j.resultado === 'JaNaFila' ? null : { rotulo: 'Desfazer', fazer: () => tirarDaFila(id) });
+  pollRemote();
+}
+
+async function descreverDaFila(id) {
+  if (titulosDaFila[id]) return titulosDaFila[id];
+  const f = await fetchJsonOuNull(`${API}/${id}`);
+  const linha = !f ? 'Item ' + id : f.ehEpisodio ? `${nomesDeSerie[f.serieChave] || f.serie} · ${codigoEp(f)}` : f.titulo;
+  return (titulosDaFila[id] = { linha });
+}
+
+async function tirarDaFila(id) {
+  await fetch(`${PLAYER_API}/fila/${id}`, { method: 'DELETE' }).catch(() => {});
+  await pollRemote();
+  if (folhaFilaAberta()) desenharFila();
+}
+
+async function limparFila() {
+  await fetch(`${PLAYER_API}/fila`, { method: 'DELETE' }).catch(() => {});
+  await pollRemote();
+  fecharFila();
+}
+
+const folhaFilaAberta = () => document.getElementById('filaFolha').classList.contains('on');
+function abrirFila() {
+  document.getElementById('filaScrim').classList.add('on');
+  const f = document.getElementById('filaFolha');
+  f.classList.add('on');
+  desenharFila();
+  f.focus({ preventScroll: true });
+}
+function fecharFila() {
+  document.getElementById('filaScrim').classList.remove('on');
+  document.getElementById('filaFolha').classList.remove('on');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && folhaFilaAberta()) fecharFila(); });
+
+async function desenharFila() {
+  const corpo = document.getElementById('filaCorpo');
+  if (!filaAtual.length) { corpo.innerHTML = '<div class="vazio">A fila está vazia.</div>'; return; }
+  const itens = await Promise.all(filaAtual.map(descreverDaFila));
+  corpo.innerHTML = filaAtual.map((id, i) =>
+    `<div class="fila-lin"><span class="n">${i + 1}</span><span class="t">${esc(itens[i].linha)}</span>` +
+    `<button aria-label="Tirar da fila" onclick="tirarDaFila(${id})">${ico('close')}</button></div>`).join('') +
+    '<button class="op mais" onclick="limparFila()"><span>Limpar a fila</span></button>';
+}
+
+// Chamado a cada poll: botão da barra (com contador), lista aberta e o "próximo" valendo mesmo sem próximo episódio.
+let filaTamanhoAnterior = 0;
+function tratarFila(estado) {
+  filaAtual = estado.fila || [];
+  const btn = document.getElementById('remoteFilaBtn'), n = document.getElementById('remoteFilaN');
+  btn.style.display = filaAtual.length ? '' : 'none';
+  n.textContent = filaAtual.length; n.style.display = filaAtual.length ? 'grid' : 'none';
+  if (folhaFilaAberta()) desenharFila();
+  if (filaAtual.length) { els.remoteProximoEpBtn.style.display = ''; els.remoteProximoEpBtn.disabled = false; }
+  else if (filaTamanhoAnterior && estado.filmeId !== null) atualizarBotaoProximoEp(estado.filmeId);   // esvaziou: volta a depender do próximo episódio
+  filaTamanhoAnterior = filaAtual.length;
 }
 
 async function remotePlayPause() {
@@ -961,6 +1055,7 @@ async function pollRemote() {
     ultimoEstadoRemoto = estado;
     tratarAviso(estado.aviso, estado.instancia);
     tratarSono(estado);
+    tratarFila(estado);
 
     const bar = els.remote;
     if (estado.filmeId === null) {

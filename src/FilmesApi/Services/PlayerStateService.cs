@@ -100,6 +100,7 @@ public partial class PlayerStateService(Func<DateTime>? agora = null, IConfigura
                 legendaPosicao = _legendaPosicao,
                 audioIdx = _audioIdx,
                 audioVersion = _audioVersion,
+                fila = _fila.ToArray(),
                 proximoFilmeId = _proximoFilmeId,
                 proximoRotulo = _proximoRotulo,
                 aceitarProximoVersion = _aceitarProximoVersion,
@@ -124,6 +125,7 @@ public partial class PlayerStateService(Func<DateTime>? agora = null, IConfigura
     {
         lock (_lock)
         {
+            _fila.Remove(filmeId);   // começou a tocar: sai da fila manual
             _filmeId = filmeId; _playing = true; _posSegundos = 0; _duracaoSegundos = 0; _legendaIdx = -1; _legendaManual = false;
             _proximoFilmeId = null; _proximoRotulo = null;
             _contexto = null; _aberturaPulada = false; _rajada = null; _proximoCancelado = false;

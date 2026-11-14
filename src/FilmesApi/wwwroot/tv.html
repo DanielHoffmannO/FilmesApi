@@ -997,6 +997,20 @@ html.leg-g video::cue { font-size: 135%; }
     esconderPergunta();  // "Ainda esta assistindo?" (bloco do sono, abaixo) era uma oferta sem contagem: some junto
   }
 
+  // O que toca depois de `id`: o primeiro da fila manual do celular ("tocar a seguir"), se houver; senao o proximo episodio da serie.
+  // Um item da fila que sumiu do catalogo (404) cai no proximo episodio normal.
+  function buscarProximo(id, cb) {
+    var fila = estadoRemotoAnterior && estadoRemotoAnterior.fila;
+    if (fila && fila.length && fila[0] !== id) {
+      get(API + '/' + fila[0], function (err, item) {
+        if (!err && item) cb(null, item);
+        else get(API + '/' + id + '/proximo', cb);
+      });
+      return;
+    }
+    get(API + '/' + id + '/proximo', cb);
+  }
+
   function ofereceProximo(id, contagem) {
     // 'ended' pode disparar 2x (visto em navegador de TV). cancelarProximo() sozinho nao
     // bastava: se as 2 chamadas acontecem sincronas (uma logo apos a outra, antes do fetch
@@ -1009,7 +1023,7 @@ html.leg-g video::cue { font-size: 135%; }
     // só a resposta da ÚLTIMA ofereceProximo (a que "ganhou" o token por último) monta o timer.
     cancelarProximo();
     var meuToken = ++proximoOfertaId;
-    get(API + '/' + id + '/proximo', function (err, prox) {
+    buscarProximo(id, function (err, prox) {
       if (err || !prox || filmeAtual !== id || meuToken !== proximoOfertaId) return;
       proximoPendente = prox;
       // Dispara o transcode do proximo episodio AGORA, antes de alguem pedir de verdade — o
@@ -1473,7 +1487,7 @@ html.leg-g video::cue { font-size: 135%; }
   function perguntarSeAindaAssiste(id) {
     cancelarProximo();
     var meuToken = ++proximoOfertaId;   // 'ended' pode disparar 2x (ver ofereceProximo)
-    get(API + '/' + id + '/proximo', function (err, prox) {
+    buscarProximo(id, function (err, prox) {
       if (err || !prox || filmeAtual !== id || meuToken !== proximoOfertaId) return;
       proximoPendente = prox;
       send('POST', PLAYER + '/presenca-pergunta', { rotulo: rotuloComTitulo(prox) });
