@@ -201,6 +201,11 @@ you skip episodes it jumps to the newest unwatched one). Dates come from `Filmes
 `/api/admin/*` and manual scan), `AllowAnyOrigin` (`false`), `NomesPath` (`/data/nomes.json`), `ThermalRoot`
 (`/sys/class/thermal`).
 
+**SQLite backup:** `Backup__Quantidade` (`7` kept, `0` = off), `Backup__Hora` (`3`, local hour of the daily run),
+`Backup__Pasta` (default `/data/backups`). Consistent `VACUUM INTO` snapshot, `PRAGMA integrity_check` on it, then renamed to
+`filmes-YYYYMMDD-HHMMSS.db`; refuses if free space is under 2x the DB size. `POST /api/admin/backup` runs one now; the result
+shows in `/api/status` (`backup`). Same disk as the DB does not protect against the disk dying — point it elsewhere if you can.
+
 **Thermal governor (opt-in):** `ThermalPauseCelsius` (`0` = off), `ThermalResumeCelsius`
 (`pause − 8`), `ThermalMaxWaitMinutes` (`5`).
 

@@ -44,6 +44,8 @@ builder.Services.AddHostedService<PreAquecerContinuarService>();
 builder.Services.AddHostedService<AnaliseDeAberturaService>();
 builder.Services.AddHostedService<DubladoIaService>();
 builder.Services.AddSaudeBiblioteca();   // varredura diária da biblioteca (truncados, duplicatas…); ver SaudeBibliotecaService
+builder.Services.AddSingleton<BackupService>();   // singleton + hosted: o POST /api/admin/backup chama ExecutarAsync()
+builder.Services.AddHostedService(sp => sp.GetRequiredService<BackupService>());
 builder.Services.AddSingleton<LimpezaCacheService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<LimpezaCacheService>());
 builder.Services.AddSingleton<NomesPersonalizadosService>();
@@ -182,6 +184,9 @@ app.MapPost("/api/admin/recarregar-nomes", (NomesPersonalizadosService nomes) =>
             tipos = arquivo.Contagem.Tipos,
         });
 });
+
+// Backup do SQLite agora (o diário roda sozinho): VACUUM INTO + integrity_check + retenção. 409 se já há um rodando.
+app.MapPost("/api/admin/backup", BackupService.Endpoint);
 
 // Aplica uma sugestão do /diagnostico.html: adiciona UMA entrada (apelido ou nome de exibição) ao nomes.json.
 app.MapPost("/api/admin/nomes", (NomeRequest req, NomesPersonalizadosService nomes) =>

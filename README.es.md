@@ -202,6 +202,11 @@ del mando, uno por revisión, nunca de episodios vistos; `PreAquecerAtrasoInicia
 `/api/admin/*` y escaneo manual), `AllowAnyOrigin` (`false`), `NomesPath` (`/data/nomes.json`), `ThermalRoot`
 (`/sys/class/thermal`).
 
+**Copia de seguridad de SQLite:** `Backup__Quantidade` (`7` guardadas, `0` = off), `Backup__Hora` (`3`, hora local de la copia diaria),
+`Backup__Pasta` (por defecto `/data/backups`). Snapshot consistente con `VACUUM INTO`, `PRAGMA integrity_check` sobre él y luego se renombra a
+`filmes-AAAAMMDD-HHMMSS.db`; se niega si el espacio libre es menor que 2x el tamaño de la base. `POST /api/admin/backup` hace una ahora; el
+resultado sale en `/api/status` (`backup`). En el mismo disco no protege si el disco muere — apúntalo a otro si puedes.
+
 **Gobernador térmico (opt-in):** `ThermalPauseCelsius` (`0` = off), `ThermalResumeCelsius`
 (`pausa − 8`), `ThermalMaxWaitMinutes` (`5`).
 
