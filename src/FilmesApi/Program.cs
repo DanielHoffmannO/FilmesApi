@@ -44,6 +44,8 @@ builder.Services.AddHostedService<PreAquecerContinuarService>();
 builder.Services.AddHostedService<AnaliseDeAberturaService>();
 builder.Services.AddHostedService<DubladoIaService>();
 builder.Services.AddSaudeBiblioteca();   // varredura diária da biblioteca (truncados, duplicatas…); ver SaudeBibliotecaService
+builder.Services.AddSingleton<BackupService>();   // singleton + hosted: o POST /api/admin/backup chama ExecutarAsync()
+builder.Services.AddHostedService(sp => sp.GetRequiredService<BackupService>());
 builder.Services.AddSingleton<LimpezaCacheService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<LimpezaCacheService>());
 builder.Services.AddSingleton<NomesPersonalizadosService>();
@@ -52,6 +54,7 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton<TmdbService>();
 builder.Services.AddHostedService<MetadataService>();
 
+builder.Services.AddCompressaoHttp();
 builder.Services.AddControllers();
 
 builder.Services.AddEndpointsApiExplorer();
@@ -80,7 +83,8 @@ builder.Services.AddHealthChecks()
         var ff = builder.Configuration.GetValue<string>("FfmpegPath") ?? "ffmpeg";
         return !Path.IsPathRooted(ff) || File.Exists(ff) ? HealthCheckResult.Healthy() : HealthCheckResult.Unhealthy($"ffmpeg '{ff}' não existe");
     })
-    .AddCheck<MontagensHealthCheck>("montagens", tags: [MontagensHealthCheck.Tag]);
+    .AddCheck<MontagensHealthCheck>("montagens", tags: [MontagensHealthCheck.Tag])
+    .AddCheck<EspacoHealthCheck>("espaco", tags: [EspacoHealthCheck.Tag]);
 
 // CORS: as páginas são same-origin. Só libera geral se AllowAnyOrigin=true (caso alguém sirva
 // as telas de outro host); por padrão, sem CORS.
@@ -110,6 +114,7 @@ _ = Task.Run(() =>
 
 // ─── Pipeline ───────────────────────────────────────────────────────────
 if (app.Configuration.GetValue<bool>("AllowAnyOrigin")) app.UseCors();
+app.UseResponseCompression();   // só json/html/js/css/svg e só se o cliente pedir (Accept-Encoding); ver CompressaoHttp
 // index.html/tv.html/controle.html quase tudo inline, mas wwwroot/js/*.js e wwwroot/css/*.css
 // (compartilhados entre as 3) são nossos e mudam junto — sem no-cache aqui, TV agressiva em
 // cache pode continuar rodando um util.js/base.css velho mesmo depois de um F5 na página.
@@ -129,21 +134,12 @@ if (!string.IsNullOrEmpty(adminToken))
         await next();
     });
 
-app.UseStaticFiles(new StaticFileOptions
-{
-    OnPrepareResponse = ctx =>
-    {
-        if (ctx.File.Name.EndsWith(".html", StringComparison.OrdinalIgnoreCase)
-            || ctx.Context.Request.Path.StartsWithSegments("/js")
-            || ctx.Context.Request.Path.StartsWithSegments("/css"))
-            ctx.Context.Response.Headers.CacheControl = "no-cache";
-    }
-});
+app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = CompressaoHttp.CacheDeEstaticos });
 app.UseSwagger();
 app.UseSwaggerUI(c => c.RoutePrefix = "swagger");
 app.MapControllers();
 // /health: o que o Uptime Kuma olha — disco/pasta caída ("Degraded") vira 503 pra avisar. /health/vivo é o do
-// healthcheck do Docker: nem roda o check das montagens (tag "montagens"), então disco caído NUNCA o deixa unhealthy
+// healthcheck do Docker: nem roda o check das montagens (tag "montagens") nem o de espaço livre (tag "espaco"), então disco caído ou cheio NUNCA o deixa unhealthy
 // (e nada reinicia por causa disso) — só 503 se o app estiver mesmo quebrado.
 app.MapHealthChecks("/health", new HealthCheckOptions
 {
@@ -154,7 +150,7 @@ app.MapHealthChecks("/health", new HealthCheckOptions
         [HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable,
     },
 });
-app.MapHealthChecks("/health/vivo", new HealthCheckOptions { Predicate = c => !c.Tags.Contains(MontagensHealthCheck.Tag) });
+app.MapHealthChecks("/health/vivo", new HealthCheckOptions { Predicate = c => !c.Tags.Contains(MontagensHealthCheck.Tag) && !c.Tags.Contains(EspacoHealthCheck.Tag) });
 
 // Diagnostico client-side: tv.html nao tem console acessivel (TV sem devtools) — manda
 // erro de JS/hls.js/<video> pra cá, cai direto no docker logs. Sem persistir em banco:
@@ -182,6 +178,9 @@ app.MapPost("/api/admin/recarregar-nomes", (NomesPersonalizadosService nomes) =>
             tipos = arquivo.Contagem.Tipos,
         });
 });
+
+// Backup do SQLite agora (o diário roda sozinho): VACUUM INTO + integrity_check + retenção. 409 se já há um rodando.
+app.MapPost("/api/admin/backup", BackupService.Endpoint);
 
 // Aplica uma sugestão do /diagnostico.html: adiciona UMA entrada (apelido ou nome de exibição) ao nomes.json.
 app.MapPost("/api/admin/nomes", (NomeRequest req, NomesPersonalizadosService nomes) =>

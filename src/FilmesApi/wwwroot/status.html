@@ -65,6 +65,18 @@ code{background:#2a2a2a;padding:1px 5px;border-radius:3px;font-size:13px}
 </div>
 
 <div class="card">
+  <h2>Espaço em disco</h2>
+  <div id="espaco"><span class="muted">—</span></div>
+  <div class="muted" id="espacoInfo" style="margin-top:6px"></div>
+</div>
+
+<div class="card">
+  <h2>Backup do banco</h2>
+  <div class="row"><span class="k">Mais recente</span><span class="v" id="backupUltimo">—</span></div>
+  <div class="muted" id="backupInfo" style="margin-top:6px"></div>
+</div>
+
+<div class="card">
   <h2>Tarefas em segundo plano</h2>
   <div id="tarefas"><span class="muted">—</span></div>
 </div>
@@ -145,6 +157,28 @@ async function tick(){
     : '<span class="muted">ainda sem scan desde que o servidor subiu</span>';
   txt('montagensInfo', d.montagensAtualizadoEm ? 'conferido no último scan (' + new Date(d.montagensAtualizadoEm).toLocaleTimeString() + ')' : '');
   txt('escritoInfo', 'em ' + horas.toFixed(1) + ' h (~' + mb(x.escritoBytes / horas * 24) + ' por dia nesse ritmo) — o cache de HLS/remux é a maior fonte de escrita do servidor');
+
+  // espaço livre dos volumes (dados/cache e mídia)
+  const esp = d.espaco;
+  if (esp) {
+    const vols = esp.volumes || [];
+    const min = esp.minimoGB;
+    document.getElementById('espaco').innerHTML = vols.length ? vols.map(v => {
+      const baixo = v.nome === 'dados' && min > 0 && v.livreGB < min;
+      return '<div class="row"><span class="k">' + (v.nome === 'dados' ? 'Dados e cache' : 'Mídia') + ' <span class="muted">' + esc(v.caminho) + '</span></span><span class="v">' +
+        v.livreGB.toFixed(1) + ' GB livres · ' + v.percentualUsado.toFixed(0) + '% usado ' +
+        (baixo ? '<span class="pill off">pouco espaço</span>' : '') + '</span></div>' +
+        '<div class="bar"><div style="width:' + Math.min(100, v.percentualUsado) + '%"></div></div>';
+    }).join('') : '<span class="muted">não consegui ler os volumes</span>';
+    txt('espacoInfo', min > 0 ? 'o /health avisa abaixo de ' + min + ' GB livres no volume de dados (nada é recusado por isso)' : '');
+  }
+
+  // backup do SQLite
+  const b = d.backup;
+  if (b) {
+    txt('backupUltimo', !b.ligado ? 'desligado' : b.maisRecente ? b.maisRecente : 'nenhum ainda');
+    txt('backupInfo', b.ligado ? b.quantidade + ' de ' + b.manter + ' em ' + b.pasta + ' (' + mb(b.bytes) + '), diário às ' + b.hora + 'h' : '');
+  }
 
   // tarefas em segundo plano (workers)
   const tarefas = d.tarefas || [];

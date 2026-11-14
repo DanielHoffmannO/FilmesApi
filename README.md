@@ -378,11 +378,16 @@ usam `__` (ex.: `ConnectionStrings__Default`).
 | `ScanEstabilidadeSegundos` | `2` | Arquivo novo só entra se o tamanho não mudou durante esta pausa (download/cópia em andamento fica pro próximo scan). `0` desliga. |
 | `ConnectionStrings__Default` | `Data Source=/data/filmes.db` | Banco SQLite. |
 | `CachePath` | `/data` | **Raiz dos caches em disco** (HLS em `{raiz}/hls`, remux em `{raiz}/remux`, legendas em `{raiz}/subs`). Aponte pro SSD de mídia pra tirar a escrita pesada do disco do sistema: monte o SSD no contêiner (ex.: `- /mnt/ssd/cache:/cache`) e use `CachePath=/cache`. |
+| `Backup__Quantidade` | `7` | **Backup do SQLite**: quantos backups manter (`0` desliga). Um por dia, na hora de `Backup__Hora` (padrão `3`, hora local do contêiner), mais `POST /api/admin/backup` pra fazer um agora. Snapshot consistente via `VACUUM INTO` (pega o que ainda está no WAL), `PRAGMA integrity_check` no snapshot antes de renomear pra `filmes-AAAAMMDD-HHMMSS.db`; recusa se a pasta tem menos de 2× o tamanho do banco livre. Os mais antigos além da quantidade são apagados. |
+| `Backup__Pasta` | `backups` ao lado do `.db` (`/data/backups`) | Onde guardar. Backup no mesmo disco do banco protege de corrupção/erro, **não** de o disco morrer — aponte pra outro volume se puder. O resultado aparece em `/api/status` (`backup`, tarefa `backup`). |
+| `EspacoLivreMinimoGB` | `5` | Abaixo disto de espaço livre no volume de dados (`CachePath`, onde ficam o SQLite, o cache e os backups) o `/health` fica `Degraded` (503, pro Uptime Kuma avisar); `0` desliga. O `/health/vivo` (Docker) **não** roda este check e nenhum job de transcode é recusado por isso. `/api/status` › `espaco` e a `status.html` mostram GB livres e % usado do volume de dados e da mídia. |
 | `HlsCachePath` | `{CachePath}/hls` | Cache dos segmentos HLS (ganha da raiz). |
 | `RemuxCachePath` | `{CachePath}/remux` | Cache dos `.mp4` do `/remux` (áudio arrumado pra TV sem HLS). |
 | `SubtitleCachePath` | `{CachePath}/subs` | Cache das legendas `.vtt` extraídas. |
 | `FfmpegPath` / `FfprobePath` | `ffmpeg` / `ffprobe` | Binários (o Docker aponta pro jellyfin-ffmpeg). |
 | `AllowAnyOrigin` | `false` | Libera CORS geral (`AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()`). Só necessário se as telas forem servidas de outro host. |
+
+**Compressão e cache HTTP (sem configuração):** o servidor comprime (brotli ou gzip, o que o cliente aceitar) **só** `json`, `html`, `js`, `css` e `svg`, e só quando o cliente manda `Accept-Encoding` — a TV (Chromium 25, `gzip,deflate`) recebe gzip; cliente sem o header recebe o corpo cru. Vídeo (`.ts`, `.mp4`, `/stream`, `/remux`), playlists `.m3u8`, legendas e qualquer resposta de `Range` (`206`) nunca são comprimidos. `html`, `/js` e `/css` seguem `no-cache` (revalidam por ETag → `304`); `/vendor/hls.min.js` (terceiro, não muda sozinho) fica `public, max-age=86400`.
 
 ### Transcodificação
 
@@ -524,8 +529,9 @@ Estado único em memória (`PlayerStateService`) — pensado pra uma casa com um
 | `POST` | `/api/diag/log` | `{msg}` (cortada em 500 caracteres) — o `tv.html` manda erro de JS/hls.js/`<video>` pra cá (cai no log do servidor). TV não tem console acessível; sem isso não dava pra depurar o que acontecia na tela dela. |
 | `POST` | `/api/admin/recarregar-nomes` | Relê o `nomes.json` agora. `{resultado: aplicado/semarquivo, apelidos, nomes, ignorar, tipos}`; `400` se o arquivo está inválido (os nomes anteriores continuam valendo). Sem autenticação — rede de casa. |
 | `POST` | `/api/admin/nomes` | Corpo `{secao: "apelidos"\|"nomes"\|"tmdb", chave, valor}` (`tmdb`: valor = id inteiro > 0): adiciona uma entrada ao `nomes.json` (ver Sugestões) e recarrega. `400` se a seção for inválida ou o arquivo atual estiver quebrado (nada é alterado). |
-| `GET` | `/health` | Health check pro **Uptime Kuma**: `MediaPath` montado, ffmpeg presente e **nenhuma pasta/disco em suspeita**. `503` com `Degraded` quando uma pasta de 1º nível tem itens no catálogo mas nenhum arquivo no disco (HD de backup caído — o scan mantém os itens por precaução, ver `/api/status` › `montagens`). |
-| `GET` | `/health/vivo` | O mesmo, **mas disco caído não derruba** (`200` `Degraded`): é o que o `healthcheck` do `docker-compose.yml` usa, pra um disco fora nunca marcar o contêiner como `unhealthy` nem reiniciar nada. |
+| `POST` | `/api/admin/backup` | Faz um backup do SQLite agora (ver `Backup__*`). `{arquivo, bytes, removidos, pasta}`; `400` se desligado, `409` se já há um em andamento, `500` se falhou (espaço, integrity_check…). Sob `AdminToken`. |
+| `GET` | `/health` | Health check pro **Uptime Kuma**: `MediaPath` montado, ffmpeg presente e **nenhuma pasta/disco em suspeita** e **espaço livre acima de `EspacoLivreMinimoGB`** no volume de dados. `503` com `Degraded` quando uma pasta de 1º nível tem itens no catálogo mas nenhum arquivo no disco (HD de backup caído — o scan mantém os itens por precaução, ver `/api/status` › `montagens`). |
+| `GET` | `/health/vivo` | O mesmo, **mas disco caído ou cheio não derruba** (`200` `Degraded`): é o que o `healthcheck` do `docker-compose.yml` usa, pra um disco fora nunca marcar o contêiner como `unhealthy` nem reiniciar nada. |
 
 ---
 
