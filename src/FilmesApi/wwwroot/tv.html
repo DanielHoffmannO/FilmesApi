@@ -123,6 +123,12 @@ video { width: 100%; height: auto; background: #000; }
   z-index: 1;
 }
 #psub:empty { display: none; }
+/* estilo escolhido no controle (estado.legendaTamanho/legendaPosicao -> classes no <html>); media = o padrao acima. ::cue = <track> nativo (tela cheia nativa) */
+html.leg-p #psub { font-size: 26px; }
+html.leg-g #psub { font-size: 46px; }
+html.leg-alta #psub { bottom: 30%; }
+html.leg-p video::cue { font-size: 70%; }
+html.leg-g video::cue { font-size: 135%; }
 #phint {
   position: absolute;
   top: 0; right: 0;
@@ -881,6 +887,7 @@ video { width: 100%; height: auto; background: #000; }
     t.setAttribute('label', 'Legenda');
     t.setAttribute('srclang', 'und');
     t.setAttribute('src', API + '/' + filmeAtual + '/legenda/' + idx);
+    t.addEventListener('load', posicionarCuesNativos, false);
     v.appendChild(t);
     aplicarModoLegenda();   // 'hidden' ja basta pra o navegador baixar os cues
   }
@@ -1292,9 +1299,30 @@ video { width: 100%; height: auto; background: #000; }
     });
   }
 
+  // Tamanho/posicao da legenda (escolhidos no controle): classes no <html> pro #psub e pro ::cue; no <track> nativo a posicao vai em cue.line.
+  var legendaPosicaoAtual = 'baixa';
+  function aplicarEstiloLegenda(estado) {
+    var tam = estado.legendaTamanho === 'p' || estado.legendaTamanho === 'g' ? estado.legendaTamanho : 'm';
+    var pos = estado.legendaPosicao === 'alta' ? 'alta' : 'baixa';
+    var raiz = document.documentElement;
+    raiz.className = raiz.className.replace(/\bleg-(p|m|g|alta|baixa)\b/g, '').replace(/\s+$/, '') + ' leg-' + tam + ' leg-' + pos;
+    if (pos !== legendaPosicaoAtual) { legendaPosicaoAtual = pos; posicionarCuesNativos(); }
+  }
+
+  function posicionarCuesNativos() {
+    try {
+      var tt = els.video.textTracks;
+      for (var i = 0; tt && i < tt.length; i++) {
+        var cues = tt[i].cues;
+        for (var j = 0; cues && j < cues.length; j++) cues[j].line = legendaPosicaoAtual === 'alta' ? -7 : 'auto';
+      }
+    } catch (e) {}
+  }
+
   function aplicarEstadoRemoto(estado) {
     var anterior = estadoRemotoAnterior;
     estadoRemotoAnterior = estado;
+    aplicarEstiloLegenda(estado);
     sonoNaTv(estado);   // "Boa noite" / "Ainda esta assistindo?" (bloco do sono)
     if (!anterior) return;  // 1o poll: so guarda a base, nao reage a versao "zerada" do boot
     if (servidorReiniciou(estado, anterior)) return;  // servidor reiniciou: os contadores zeraram; esta leitura e a nova base

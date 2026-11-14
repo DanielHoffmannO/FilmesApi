@@ -66,6 +66,9 @@ public partial class PlayerStateService(Func<DateTime>? agora = null, IConfigura
     // Oferta de "próximo episódio" que a TV mostra sozinha ao terminar um episódio (com
     // contagem regressiva de auto-play) — sem isso, quem só tem o celular na mão não sabe
     // que a oferta apareceu nem consegue confirmar/adiantar sem ir até a TV.
+    // Estilo da legenda na TV (ajuste do aparelho, não do filme: sobrevive à troca de filme; volta ao padrão com o restart, como o volume)
+    private string _legendaTamanho = "m";
+    private string _legendaPosicao = "baixa";
     private int? _proximoFilmeId;
     private string? _proximoRotulo;
     private int _aceitarProximoVersion;
@@ -93,6 +96,8 @@ public partial class PlayerStateService(Func<DateTime>? agora = null, IConfigura
                 legendaIdx = _legendaIdx,
                 legendaVersion = _legendaVersion,
                 legendaManual = _legendaManual,
+                legendaTamanho = _legendaTamanho,
+                legendaPosicao = _legendaPosicao,
                 audioIdx = _audioIdx,
                 audioVersion = _audioVersion,
                 proximoFilmeId = _proximoFilmeId,
@@ -177,6 +182,23 @@ public partial class PlayerStateService(Func<DateTime>? agora = null, IConfigura
     public void SetLegenda(int idx)
     {
         lock (_lock) { _legendaVersion++; _legendaIdx = idx; _legendaManual = true; }
+    }
+
+    public static readonly string[] TamanhosDeLegenda = ["p", "m", "g"];
+    public static readonly string[] PosicoesDeLegenda = ["baixa", "alta"];
+
+    /// <summary>Celular escolheu o tamanho (<c>p</c>/<c>m</c>/<c>g</c>) e/ou a posição (<c>baixa</c>/<c>alta</c>) da legenda na TV; null deixa como está.
+    /// false (e nada muda) se algum valor não é reconhecido.</summary>
+    public bool SetEstiloLegenda(string? tamanho, string? posicao)
+    {
+        if (tamanho is not null && !TamanhosDeLegenda.Contains(tamanho)) return false;
+        if (posicao is not null && !PosicoesDeLegenda.Contains(posicao)) return false;
+        lock (_lock)
+        {
+            if (tamanho is not null) _legendaTamanho = tamanho;
+            if (posicao is not null) _legendaPosicao = posicao;
+        }
+        return true;
     }
 
     /// <summary>A TV informa a legenda que ela mesma ligou/desligou (botão vermelho ou automática). Só

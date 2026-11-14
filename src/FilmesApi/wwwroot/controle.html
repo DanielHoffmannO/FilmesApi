@@ -807,6 +807,14 @@ function desenharFolha() {
     if (!todas) html += `<button class="op mais" data-fo="mais"><span>Mais ${linhas.length - LEGENDAS_VISIVEIS} idiomas</span>${ico('caret').replace('<path d="M9 6l6 6l-6 6"/>', '<path d="M6 9l6 6l6-6"/>')}</button>`;
   }
 
+  // aspecto da legenda na TV: tamanho e posição (ajuste do aparelho, vale pra qualquer filme)
+  const estLeg = ultimoEstadoRemoto || {};
+  const tamLeg = estLeg.legendaTamanho || 'm', posLeg = estLeg.legendaPosicao || 'baixa';
+  html += '<div class="rot">Tamanho da legenda</div><div class="seg2" role="radiogroup" aria-label="Tamanho da legenda">' +
+    [['p', 'Pequena'], ['m', 'Média'], ['g', 'Grande']].map(([k, t]) => segOpcao('leg-tam', k, t, tamLeg === k)).join('') + '</div>' +
+    '<div class="rot">Posição da legenda</div><div class="seg2" role="radiogroup" aria-label="Posição da legenda">' +
+    [['baixa', 'Baixa'], ['alta', 'Mais alta']].map(([k, t]) => segOpcao('leg-pos', k, t, posLeg === k)).join('') + '</div>';
+
   if (f && f.ehEpisodio && f.serieChave) {
     const ligado = !!padroes[f.serieChave];
     html += `<div class="lin"><div id="rotUsarSerie">Usar em toda a série<small>Áudio e legenda como padrão</small></div>
@@ -844,6 +852,11 @@ document.getElementById('folhaCorpo').addEventListener('click', async e => {
     await fetch(`${PLAYER_API}/legenda`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idx }) });
     if (ultimoEstadoRemoto) ultimoEstadoRemoto = { ...ultimoEstadoRemoto, legendaIdx: idx };
     if (padroes[filmeAtualRemoto?.serieChave]) await gravarEscolhaComoPadraoDaSerie();
+    pollRemote();
+  } else if (fo === 'leg-tam' || fo === 'leg-pos') {
+    const corpo = fo === 'leg-tam' ? { tamanho: v } : { posicao: v };
+    await fetch(`${PLAYER_API}/legenda-estilo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+    if (ultimoEstadoRemoto) ultimoEstadoRemoto = { ...ultimoEstadoRemoto, ...(fo === 'leg-tam' ? { legendaTamanho: v } : { legendaPosicao: v }) };
     pollRemote();
   } else if (fo === 'usar-serie') {
     const chave = filmeAtualRemoto.serieChave;

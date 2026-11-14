@@ -125,6 +125,14 @@ public class PlayerController : ControllerBase
         return Ok(_state.Snapshot());
     }
 
+    /// <summary>Celular escolheu tamanho e/ou posição da legenda na TV. 400 se o valor não existe.</summary>
+    [HttpPost("legenda-estilo")]
+    public IActionResult SetLegendaEstilo([FromBody] LegendaEstiloRequest req)
+    {
+        if (!_state.SetEstiloLegenda(req.Tamanho, req.Posicao)) return BadRequest(new { mensagem = "tamanho (p|m|g) ou posição (baixa|alta) inválidos" });
+        return Ok(_state.Snapshot());
+    }
+
     /// <summary>A TV avisa a legenda que ela mesma ligou/desligou (vermelho ou automática), pro celular
     /// mostrar o estado certo. Não gera comando de volta pra TV.</summary>
     [HttpPost("legenda-tv")]
