@@ -60,6 +60,36 @@ public class TmdbService
         return InterpretarResposta(doc, serie, _imgBase);
     }
 
+    /// <summary>Metadados do item exato <paramref name="id"/> (override manual do nomes.json): <c>/movie/{id}</c> ou
+    /// <c>/tv/{id}</c>. <c>null</c> se o id não existe (404) ou a chave foi recusada; lança em erro de transporte,
+    /// como <see cref="BuscarAsync"/>.</summary>
+    public async Task<TmdbResultado?> BuscarPorIdAsync(int id, bool serie, CancellationToken ct)
+    {
+        if (!Habilitado || id <= 0) return null;
+
+        var url = $"https://api.themoviedb.org/3/{(serie ? "tv" : "movie")}/{id}?api_key={_apiKey}"
+                + $"&language={Uri.EscapeDataString(_lang)}";
+        using var cli = _http.CreateClient();
+        cli.Timeout = TimeSpan.FromSeconds(15);
+        using var resp = await cli.GetAsync(url, ct);
+
+        if (resp.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+        {
+            _chaveInvalida = true;
+            _logger.LogWarning("TMDB recusou a chave ({Code}) — enriquecimento desligado até reiniciar.", (int)resp.StatusCode);
+            return null;
+        }
+        if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            _logger.LogWarning("TMDB: {Tipo}/{Id} não existe (404) — override do nomes.json ignorado.", serie ? "tv" : "movie", id);
+            return null;
+        }
+        resp.EnsureSuccessStatusCode();
+
+        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+        return ExtrairItem(doc.RootElement, serie, _imgBase);
+    }
+
     /// <summary>Extrai o 1º resultado da busca (título/sinopse/pôster), ou null quando não há
     /// resultado utilizável. Pura — sem rede — pra testar contra JSON de exemplo sem precisar
     /// bater no TMDB de verdade.</summary>
@@ -69,8 +99,13 @@ public class TmdbService
             || results.ValueKind != JsonValueKind.Array || results.GetArrayLength() == 0)
             return null;
 
-        var r = results[0];
-        if (!r.TryGetProperty("id", out var idEl) || idEl.ValueKind != JsonValueKind.Number
+        return ExtrairItem(results[0], serie, imgBase);
+    }
+
+    /// <summary>Um item do TMDB (elemento da busca ou resposta de <c>/movie/{id}</c>/<c>/tv/{id}</c>).</summary>
+    internal static TmdbResultado? ExtrairItem(JsonElement r, bool serie, string imgBase)
+    {
+        if (r.ValueKind != JsonValueKind.Object || !r.TryGetProperty("id", out var idEl) || idEl.ValueKind != JsonValueKind.Number
             || !idEl.TryGetInt32(out var id) || id == 0)
             return null;
 
