@@ -123,6 +123,12 @@ video { width: 100%; height: auto; background: #000; }
   z-index: 1;
 }
 #psub:empty { display: none; }
+/* estilo escolhido no controle (estado.legendaTamanho/legendaPosicao -> classes no <html>); media = o padrao acima. ::cue = <track> nativo (tela cheia nativa) */
+html.leg-p #psub { font-size: 26px; }
+html.leg-g #psub { font-size: 46px; }
+html.leg-alta #psub { bottom: 30%; }
+html.leg-p video::cue { font-size: 70%; }
+html.leg-g video::cue { font-size: 135%; }
 #phint {
   position: absolute;
   top: 0; right: 0;
@@ -238,6 +244,7 @@ video { width: 100%; height: auto; background: #000; }
   // ─── Configuração (valores antes soltos pelo código, alguns repetidos em mais de um
   // lugar com o mesmo literal significando coisas diferentes — ex.: dois "1500" e dois "12") ──
   var RETOMAR_MIN_SEGUNDOS = 5;      // abaixo disso não vale a pena retomar do meio
+  var RETOMAR_RECUO_S = 7;           // ao retomar de onde parou, volta esses segundos (recuarRetomada: nao recua perto do inicio)
   var RETOMAR_MARGEM_FIM_S = 5;      // dentro desses últimos segundos do fim, considera "já terminou" (não retoma)
   var RETOMAR_TOLERANCIA_S = 1.5;    // diferença aceitável entre currentTime e a retomada aplicada
   var MAX_RETOMAR_TENTATIVAS = 4;    // desiste de tentar re-aplicar o seek de retomada
@@ -880,6 +887,7 @@ video { width: 100%; height: auto; background: #000; }
     t.setAttribute('label', 'Legenda');
     t.setAttribute('srclang', 'und');
     t.setAttribute('src', API + '/' + filmeAtual + '/legenda/' + idx);
+    t.addEventListener('load', posicionarCuesNativos, false);
     v.appendChild(t);
     aplicarModoLegenda();   // 'hidden' ja basta pra o navegador baixar os cues
   }
@@ -1052,14 +1060,14 @@ video { width: 100%; height: auto; background: #000; }
   function irProximo() {
     var p = proximoPendente;
     cancelarProximo();
-    if (p) tocar(p.id);
+    if (p) tocar(p.id, false, null, true);
   }
 
   // posInicial (opcional): pula o fetch de /progresso e usa essa posicao direto — usado ao
   // recarregar o MESMO filme depois de trocar dublagem (aplicarAudioRemoto), onde a posicao
   // certa e onde o video estava (v.currentTime), nao a ultima salva no banco. Tambem pula o
   // aviso de "selecionar" ao PlayerStateService (mesmo filme, nao e uma selecao nova).
-  function tocar(id, ehRetry, posInicial) {
+  function tocar(id, ehRetry, posInicial, semRecuo) {
     cancelarProximo();
     pararPoll();
     pararWatchdog();
@@ -1117,7 +1125,10 @@ video { width: 100%; height: auto; background: #000; }
 
     // pega o ponto de retomada ANTES de setar o src (senao o loadedmetadata perde a corrida)
     get(API + '/' + id + '/progresso', function (err, d) {
-      if (!err && d && d.posicaoSegundos) { posicaoRetomar = d.posicaoSegundos; retomadaPedida = posicaoRetomar; }
+      if (!err && d && d.posicaoSegundos) {
+        posicaoRetomar = (ehRetry || semRecuo) ? d.posicaoSegundos : recuarRetomada(d.posicaoSegundos, RETOMAR_RECUO_S, RETOMAR_MIN_SEGUNDOS);
+        retomadaPedida = posicaoRetomar;
+      }
       if (temHls) pollStatusEtocar(id); else tocarSemHls(id);
     });
   }
@@ -1288,9 +1299,30 @@ video { width: 100%; height: auto; background: #000; }
     });
   }
 
+  // Tamanho/posicao da legenda (escolhidos no controle): classes no <html> pro #psub e pro ::cue; no <track> nativo a posicao vai em cue.line.
+  var legendaPosicaoAtual = 'baixa';
+  function aplicarEstiloLegenda(estado) {
+    var tam = estado.legendaTamanho === 'p' || estado.legendaTamanho === 'g' ? estado.legendaTamanho : 'm';
+    var pos = estado.legendaPosicao === 'alta' ? 'alta' : 'baixa';
+    var raiz = document.documentElement;
+    raiz.className = raiz.className.replace(/\bleg-(p|m|g|alta|baixa)\b/g, '').replace(/\s+$/, '') + ' leg-' + tam + ' leg-' + pos;
+    if (pos !== legendaPosicaoAtual) { legendaPosicaoAtual = pos; posicionarCuesNativos(); }
+  }
+
+  function posicionarCuesNativos() {
+    try {
+      var tt = els.video.textTracks;
+      for (var i = 0; tt && i < tt.length; i++) {
+        var cues = tt[i].cues;
+        for (var j = 0; cues && j < cues.length; j++) cues[j].line = legendaPosicaoAtual === 'alta' ? -7 : 'auto';
+      }
+    } catch (e) {}
+  }
+
   function aplicarEstadoRemoto(estado) {
     var anterior = estadoRemotoAnterior;
     estadoRemotoAnterior = estado;
+    aplicarEstiloLegenda(estado);
     sonoNaTv(estado);   // "Boa noite" / "Ainda esta assistindo?" (bloco do sono)
     if (!anterior) return;  // 1o poll: so guarda a base, nao reage a versao "zerada" do boot
     if (servidorReiniciou(estado, anterior)) return;  // servidor reiniciou: os contadores zeraram; esta leitura e a nova base

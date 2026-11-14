@@ -320,4 +320,47 @@ public class PlayerStateServiceTests
         dynamic s = svc.Snapshot();
         Assert.Equal(30.0, s.seekAcumulado);
     }
+
+    [Fact]
+    public void Estilo_da_legenda_comeca_medio_e_baixo()
+    {
+        dynamic s = new PlayerStateService().Snapshot();
+        Assert.Equal("m", (string)s.legendaTamanho);
+        Assert.Equal("baixa", (string)s.legendaPosicao);
+    }
+
+    [Fact]
+    public void Estilo_da_legenda_muda_so_o_que_veio_e_sobrevive_a_troca_de_filme()
+    {
+        var svc = new PlayerStateService();
+        Assert.True(svc.SetEstiloLegenda("g", null));
+        Assert.True(svc.SetEstiloLegenda(null, "alta"));
+        svc.Selecionar(7);
+        dynamic s = svc.Snapshot();
+        Assert.Equal("g", (string)s.legendaTamanho);
+        Assert.Equal("alta", (string)s.legendaPosicao);
+    }
+
+    [Theory]
+    [InlineData("enorme", null)]
+    [InlineData(null, "meio")]
+    [InlineData("g", "meio")]
+    public void Estilo_da_legenda_invalido_e_recusado_sem_mudar_nada(string? tamanho, string? posicao)
+    {
+        var svc = new PlayerStateService();
+        Assert.False(svc.SetEstiloLegenda(tamanho, posicao));
+        dynamic s = svc.Snapshot();
+        Assert.Equal("m", (string)s.legendaTamanho);
+        Assert.Equal("baixa", (string)s.legendaPosicao);
+    }
+
+    [Fact]
+    public void Controller_de_estilo_devolve_400_para_valor_invalido_e_estado_para_valido()
+    {
+        var svc = new PlayerStateService();
+        var c = new FilmesApi.Controllers.PlayerController(svc, null!, null!);
+        Assert.IsType<Microsoft.AspNetCore.Mvc.BadRequestObjectResult>(c.SetLegendaEstilo(new FilmesApi.Models.LegendaEstiloRequest("xl", null)));
+        Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(c.SetLegendaEstilo(new FilmesApi.Models.LegendaEstiloRequest("p", "alta")));
+        Assert.Equal("p", (string)((dynamic)svc.Snapshot()).legendaTamanho);
+    }
 }
