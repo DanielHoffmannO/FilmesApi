@@ -117,8 +117,7 @@ public sealed class BackupService : BackgroundService
 
         // O snapshot tem no máximo o tamanho do banco; exige o dobro de folga pra não encher o disco do app.
         var tamanhoBanco = File.Exists(_arquivoBanco!) ? new FileInfo(_arquivoBanco!).Length : 0;
-        long? livre = null;
-        try { livre = new DriveInfo(Path.GetFullPath(_op.Pasta)).AvailableFreeSpace; } catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException) { }
+        var livre = EspacoLivre.Do(_op.Pasta)?.LivreBytes;
         if (livre is { } l && l < tamanhoBanco * 2)
             return new ResultadoBackup(false, null, 0, 0, $"pouco espaço livre em {_op.Pasta} ({l / 1048576} MB; o banco tem {tamanhoBanco / 1048576} MB)");
 

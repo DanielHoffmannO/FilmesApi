@@ -22,13 +22,15 @@ public class ReproducaoController : ControllerBase
     private readonly RegistroDeTarefas _tarefas;
     private readonly PreferenciasAudioService _prefs;
     private readonly BackupService _backup;
+    private readonly IConfiguration _config;
     private readonly ILogger<ReproducaoController> _log;
 
     public ReproducaoController(
         FilmeService service, HlsTranscodeService transcode, SubtitleService legendas,
         RkmppCapabilityService rkmpp, ThermalService thermal, EstadoMontagens montagens, LimpezaCacheService limpeza,
-        LimitadorDeDownloads downloads, ILogger<ReproducaoController> log, RegistroDeTarefas tarefas, PreferenciasAudioService prefs, BackupService backup)
+        LimitadorDeDownloads downloads, ILogger<ReproducaoController> log, RegistroDeTarefas tarefas, PreferenciasAudioService prefs, BackupService backup, IConfiguration config)
     {
+        _config = config;
         _backup = backup;
         _prefs = prefs;
         _tarefas = tarefas;
@@ -63,6 +65,11 @@ public class ReproducaoController : ControllerBase
         montagensAtualizadoEm = _montagens.AtualizadoEm,
         tarefas = _tarefas.Snapshot(),
         backup = _backup.Resumo(),
+        espaco = new
+        {
+            minimoGB = EspacoLivre.MinimoGB(_config),
+            volumes = EspacoLivre.Volumes(_config).Select(v => new { v.Nome, v.Caminho, v.LivreGB, v.PercentualUsado }),
+        },
     });
 
     /// <summary>Keepalive do player: "ainda tem alguém assistindo este filme". Sem isso, o

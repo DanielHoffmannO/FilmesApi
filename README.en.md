@@ -201,6 +201,9 @@ you skip episodes it jumps to the newest unwatched one). Dates come from `Filmes
 `/api/admin/*` and manual scan), `AllowAnyOrigin` (`false`), `NomesPath` (`/data/nomes.json`), `ThermalRoot`
 (`/sys/class/thermal`).
 
+**Free space:** `EspacoLivreMinimoGB` (`5`, `0` = off): `/health` goes `Degraded` (503) below this many free GB on the data volume
+(`CachePath`); `/health/vivo` does not run the check and no transcode job is refused. `/api/status` › `espaco` and `status.html` show free GB and % used for data and media.
+
 **SQLite backup:** `Backup__Quantidade` (`7` kept, `0` = off), `Backup__Hora` (`3`, local hour of the daily run),
 `Backup__Pasta` (default `/data/backups`). Consistent `VACUUM INTO` snapshot, `PRAGMA integrity_check` on it, then renamed to
 `filmes-YYYYMMDD-HHMMSS.db`; refuses if free space is under 2x the DB size. `POST /api/admin/backup` runs one now; the result

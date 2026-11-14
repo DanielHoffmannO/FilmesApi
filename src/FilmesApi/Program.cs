@@ -82,7 +82,8 @@ builder.Services.AddHealthChecks()
         var ff = builder.Configuration.GetValue<string>("FfmpegPath") ?? "ffmpeg";
         return !Path.IsPathRooted(ff) || File.Exists(ff) ? HealthCheckResult.Healthy() : HealthCheckResult.Unhealthy($"ffmpeg '{ff}' não existe");
     })
-    .AddCheck<MontagensHealthCheck>("montagens", tags: [MontagensHealthCheck.Tag]);
+    .AddCheck<MontagensHealthCheck>("montagens", tags: [MontagensHealthCheck.Tag])
+    .AddCheck<EspacoHealthCheck>("espaco", tags: [EspacoHealthCheck.Tag]);
 
 // CORS: as páginas são same-origin. Só libera geral se AllowAnyOrigin=true (caso alguém sirva
 // as telas de outro host); por padrão, sem CORS.
@@ -145,7 +146,7 @@ app.UseSwagger();
 app.UseSwaggerUI(c => c.RoutePrefix = "swagger");
 app.MapControllers();
 // /health: o que o Uptime Kuma olha — disco/pasta caída ("Degraded") vira 503 pra avisar. /health/vivo é o do
-// healthcheck do Docker: nem roda o check das montagens (tag "montagens"), então disco caído NUNCA o deixa unhealthy
+// healthcheck do Docker: nem roda o check das montagens (tag "montagens") nem o de espaço livre (tag "espaco"), então disco caído ou cheio NUNCA o deixa unhealthy
 // (e nada reinicia por causa disso) — só 503 se o app estiver mesmo quebrado.
 app.MapHealthChecks("/health", new HealthCheckOptions
 {
@@ -156,7 +157,7 @@ app.MapHealthChecks("/health", new HealthCheckOptions
         [HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable,
     },
 });
-app.MapHealthChecks("/health/vivo", new HealthCheckOptions { Predicate = c => !c.Tags.Contains(MontagensHealthCheck.Tag) });
+app.MapHealthChecks("/health/vivo", new HealthCheckOptions { Predicate = c => !c.Tags.Contains(MontagensHealthCheck.Tag) && !c.Tags.Contains(EspacoHealthCheck.Tag) });
 
 // Diagnostico client-side: tv.html nao tem console acessivel (TV sem devtools) — manda
 // erro de JS/hls.js/<video> pra cá, cai direto no docker logs. Sem persistir em banco:
