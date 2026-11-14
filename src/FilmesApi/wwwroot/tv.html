@@ -238,6 +238,7 @@ video { width: 100%; height: auto; background: #000; }
   // ─── Configuração (valores antes soltos pelo código, alguns repetidos em mais de um
   // lugar com o mesmo literal significando coisas diferentes — ex.: dois "1500" e dois "12") ──
   var RETOMAR_MIN_SEGUNDOS = 5;      // abaixo disso não vale a pena retomar do meio
+  var RETOMAR_RECUO_S = 7;           // ao retomar de onde parou, volta esses segundos (recuarRetomada: nao recua perto do inicio)
   var RETOMAR_MARGEM_FIM_S = 5;      // dentro desses últimos segundos do fim, considera "já terminou" (não retoma)
   var RETOMAR_TOLERANCIA_S = 1.5;    // diferença aceitável entre currentTime e a retomada aplicada
   var MAX_RETOMAR_TENTATIVAS = 4;    // desiste de tentar re-aplicar o seek de retomada
@@ -1052,14 +1053,14 @@ video { width: 100%; height: auto; background: #000; }
   function irProximo() {
     var p = proximoPendente;
     cancelarProximo();
-    if (p) tocar(p.id);
+    if (p) tocar(p.id, false, null, true);
   }
 
   // posInicial (opcional): pula o fetch de /progresso e usa essa posicao direto — usado ao
   // recarregar o MESMO filme depois de trocar dublagem (aplicarAudioRemoto), onde a posicao
   // certa e onde o video estava (v.currentTime), nao a ultima salva no banco. Tambem pula o
   // aviso de "selecionar" ao PlayerStateService (mesmo filme, nao e uma selecao nova).
-  function tocar(id, ehRetry, posInicial) {
+  function tocar(id, ehRetry, posInicial, semRecuo) {
     cancelarProximo();
     pararPoll();
     pararWatchdog();
@@ -1117,7 +1118,10 @@ video { width: 100%; height: auto; background: #000; }
 
     // pega o ponto de retomada ANTES de setar o src (senao o loadedmetadata perde a corrida)
     get(API + '/' + id + '/progresso', function (err, d) {
-      if (!err && d && d.posicaoSegundos) { posicaoRetomar = d.posicaoSegundos; retomadaPedida = posicaoRetomar; }
+      if (!err && d && d.posicaoSegundos) {
+        posicaoRetomar = (ehRetry || semRecuo) ? d.posicaoSegundos : recuarRetomada(d.posicaoSegundos, RETOMAR_RECUO_S, RETOMAR_MIN_SEGUNDOS);
+        retomadaPedida = posicaoRetomar;
+      }
       if (temHls) pollStatusEtocar(id); else tocarSemHls(id);
     });
   }

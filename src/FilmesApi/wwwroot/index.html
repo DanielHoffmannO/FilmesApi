@@ -170,6 +170,7 @@ const els = {
 // ─── Configuração (valores antes soltos pelo código, alguns repetidos em mais de um
 // lugar com o mesmo literal significando coisas diferentes — ex.: dois "1500" e três "12") ──
 const RETOMAR_MIN_SEGUNDOS = 5;      // abaixo disso não vale a pena retomar do meio
+const RETOMAR_RECUO_S = 7;         // ao retomar de onde parou, volta esses segundos (recuarRetomada: não recua perto do início)
 const RETOMAR_MARGEM_FIM_S = 5;      // dentro desses últimos segundos do fim, considera "já terminou" (não retoma)
 const RETOMAR_TOLERANCIA_S = 1.5;    // diferença aceitável entre currentTime e a retomada aplicada
 const MAX_RETOMAR_TENTATIVAS = 4;    // desiste de tentar re-aplicar o seek de retomada
@@ -491,7 +492,7 @@ function iniciarHls(video, url, inicio) {
   }
 }
 
-async function play(id, ehRetry) {
+async function play(id, ehRetry, semRecuo) {
   const video = els.video;
   const converting = els.converting;
   cancelarProximo();
@@ -511,7 +512,7 @@ async function play(id, ehRetry) {
   duracaoConfiavel = false;
   reproducaoConcluida = false;
   const prog = await fetchJsonOuNull(`${API}/${id}/progresso`);
-  if (prog && prog.posicaoSegundos) posicaoParaRetomar = prog.posicaoSegundos;
+  if (prog && prog.posicaoSegundos) posicaoParaRetomar = (ehRetry || semRecuo) ? prog.posicaoSegundos : recuarRetomada(prog.posicaoSegundos, RETOMAR_RECUO_S, RETOMAR_MIN_SEGUNDOS);
 
   const inicioPrep = Date.now();
   converting.style.display = 'block';
@@ -644,7 +645,7 @@ async function ofereceProximo(id) {
 function irProximo() {
   const prox = proximoInfo;
   cancelarProximo();
-  if (prox) play(prox.id);
+  if (prox) play(prox.id, false, true);
 }
 
 // Dispara/reusa o transcode do próximo episódio assim que a oferta aparece (fim do atual) —

@@ -183,6 +183,14 @@ function decidirSaltoAbertura(abertura, pos, jaPulouNestaReproducao) {
   return pos >= abertura.inicio - 1 && pos < abertura.fim ? abertura.fim : null;
 }
 
+// Retomar de onde parou: volta `recuo` segundos pra pessoa se situar na cena. Não recua se o ponto resultante ficaria abaixo de `minimo`
+// (início do filme: melhor manter a posição salva, que o chamador já ignora se for tão pequena). Só pra retomada de verdade: quem chama
+// não usa pro próximo episódio, pulo/abertura, troca de dublagem ou retry.
+function recuarRetomada(pos, recuo, minimo) {
+  var alvo = pos - recuo;
+  return alvo >= minimo ? alvo : pos;
+}
+
 // ─── Próximo episódio automático (a TV executa; decisões puras aqui pra testar) ───
 
 // `estado` = /api/player/state. Com o interruptor da temporada ligado e os créditos conhecidos: ao entrar neles (e uma vez por episódio) vai pro
