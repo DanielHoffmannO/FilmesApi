@@ -434,6 +434,7 @@ video { width: 100%; height: auto; background: #000; }
         }
       }
 
+      var sufixoVistos = function (eps) { var v = textoVistos(eps); return v ? ' \u00b7 ' + v : ''; };
       for (i = 0; i < t.series.length; i++) {
         var s = t.series[i], seps = '';
         if (i === 0) html += '<h2>Series (' + t.series.length + ')</h2>';
@@ -443,10 +444,10 @@ video { width: 100%; height: auto; background: #000; }
         } else {
           for (j = 0; j < grupos.length; j++) {
             seps += grpHtml('t:' + grupos[j].chave,
-              esc(grupos[j].rotulo) + ' (' + contagemEps(grupos[j].episodios.length) + ')', epsHtml(grupos[j].episodios), 'sub');
+              esc(grupos[j].rotulo) + ' (' + contagemEps(grupos[j].episodios.length) + ')' + sufixoVistos(grupos[j].episodios), epsHtml(grupos[j].episodios), 'sub');
           }
         }
-        html += grpHtml('s:' + s.chave, esc(s.nome) + ' (' + contagemEps(s.episodios.length) + ')', seps);
+        html += grpHtml('s:' + s.chave, esc(s.nome) + ' (' + contagemEps(s.episodios.length) + ')' + sufixoVistos(s.episodios), seps);
       }
       grid.innerHTML = html;
       buildNav();
