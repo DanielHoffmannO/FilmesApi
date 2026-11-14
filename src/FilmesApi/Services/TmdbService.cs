@@ -57,7 +57,7 @@ public class TmdbService
         resp.EnsureSuccessStatusCode();  // 5xx/429 -> exceção -> filme fica pendente
 
         using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
-        return InterpretarResposta(doc, serie, _imgBase);
+        return await GarantirTituloLatinoAsync(InterpretarResposta(doc, serie, _imgBase), serie, ct);
     }
 
     /// <summary>Metadados do item exato <paramref name="id"/> (override manual do nomes.json): <c>/movie/{id}</c> ou
@@ -87,7 +87,53 @@ public class TmdbService
         resp.EnsureSuccessStatusCode();
 
         using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
-        return ExtrairItem(doc.RootElement, serie, _imgBase);
+        return await GarantirTituloLatinoAsync(ExtrairItem(doc.RootElement, serie, _imgBase), serie, ct);
+    }
+
+    /// <summary>Sem tradução pro português, o TMDB devolve o título original — que pode vir em japonês, coreano, cirílico etc.
+    /// Nesse caso busca as traduções do item e fica com a portuguesa (pt-BR, depois pt-PT); sem ela, a inglesa. Se nada
+    /// em escrita latina existir, mantém o que veio. Só gasta a chamada extra quando o título localizado não é latino.</summary>
+    private async Task<TmdbResultado?> GarantirTituloLatinoAsync(TmdbResultado? res, bool serie, CancellationToken ct)
+    {
+        if (res is null || !TemEscritaNaoLatina(res.Titulo)) return res;
+
+        await Task.Delay(TimeSpan.FromMilliseconds(300), ct);   // mesma cota do resto do enriquecimento
+        var url = $"https://api.themoviedb.org/3/{(serie ? "tv" : "movie")}/{res.TmdbId}/translations?api_key={_apiKey}";
+        using var cli = _http.CreateClient();
+        cli.Timeout = TimeSpan.FromSeconds(15);
+        using var resp = await cli.GetAsync(url, ct);
+        if (!resp.IsSuccessStatusCode) return res;   // não vale perder o resto dos metadados por causa do título
+
+        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+        return EscolherTituloLatino(doc, serie) is { } titulo ? res with { Titulo = titulo } : res;
+    }
+
+    /// <summary>true se o texto tem alguma letra fora da escrita latina (kana, kanji, hangul, cirílico, árabe...).</summary>
+    internal static bool TemEscritaNaoLatina(string? s)
+    {
+        if (string.IsNullOrEmpty(s)) return false;
+        foreach (var c in s)
+            if (char.IsLetter(c) && c > '\u024F' && !(c >= '\u1E00' && c <= '\u1EFF')) return true;
+        return false;
+    }
+
+    /// <summary>Do JSON de <c>/translations</c>: título em pt-BR, senão pt-PT, senão inglês — só se estiver em escrita latina.</summary>
+    internal static string? EscolherTituloLatino(JsonDocument doc, bool serie)
+    {
+        if (!doc.RootElement.TryGetProperty("translations", out var lista) || lista.ValueKind != JsonValueKind.Array) return null;
+        var campo = serie ? "name" : "title";
+        string? Achar(string idioma, string? pais)
+        {
+            foreach (var t in lista.EnumerateArray())
+            {
+                if (Str(t, "iso_639_1") != idioma || (pais is not null && Str(t, "iso_3166_1") != pais)) continue;
+                if (!t.TryGetProperty("data", out var d) || d.ValueKind != JsonValueKind.Object) continue;
+                var titulo = Vazio(Str(d, campo));
+                if (titulo is not null && !TemEscritaNaoLatina(titulo)) return titulo;
+            }
+            return null;
+        }
+        return Achar("pt", "BR") ?? Achar("pt", "PT") ?? Achar("pt", null) ?? Achar("en", null);
     }
 
     /// <summary>Extrai o 1º resultado da busca (título/sinopse/pôster), ou null quando não há

@@ -110,12 +110,30 @@ public class MetadataService : BackgroundService
         }
     }
 
+    private bool _varreuNaoLatinos;
+
+    /// <summary>Uma vez por execução: filme já enriquecido cujo título ficou em japonês/coreano/etc. (de antes de o serviço buscar a
+    /// tradução em português) volta pro enriquecimento, que agora troca pelo título em português.</summary>
+    private async Task ReenriquecerTitulosNaoLatinosAsync(AppDbContext db, CancellationToken ct)
+    {
+        if (_varreuNaoLatinos || !_tmdb.Habilitado) return;
+        _varreuNaoLatinos = true;
+
+        var candidatos = await db.Filmes.Where(f => f.ArquivoPath != null && f.MetadadosEm != null).ToListAsync(ct);
+        var voltam = candidatos.Where(f => TmdbService.TemEscritaNaoLatina(f.Titulo) && !MediaNomeParser.EhEpisodio(f.ArquivoPath)).ToList();
+        if (voltam.Count == 0) return;
+        foreach (var f in voltam) f.MetadadosEm = null;
+        await db.SaveChangesAsync(ct);
+        _logger.LogInformation("Metadados: {N} título(s) em escrita não latina voltam pro enriquecimento (título em português).", voltam.Count);
+    }
+
     private async Task<int> ProcessarLoteAsync(CancellationToken ct)
     {
         using var escopo = _escopos.CreateScope();
         var db = escopo.ServiceProvider.GetRequiredService<AppDbContext>();
 
         await InvalidarOverridesNovosAsync(db, ct);
+        await ReenriquecerTitulosNaoLatinosAsync(db, ct);
 
         var pendentes = await db.Filmes
             .Where(f => f.MetadadosEm == null && f.ArquivoPath != null)
