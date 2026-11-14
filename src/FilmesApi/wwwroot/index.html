@@ -54,6 +54,8 @@ main{padding:16px 24px 40px;max-width:1000px;margin:0 auto}
 .row .resume{font-size:12px;color:var(--acc-txt);white-space:nowrap}
 .row .ia{flex:none;font-size:10.5px;font-weight:700;letter-spacing:.04em;line-height:1.6;color:#c9b6ff;background:rgba(124,92,214,.18);border:1px solid #6a4fb3;border-radius:6px;padding:0 6px;white-space:nowrap;cursor:help}
 .row .badge{border-radius:12px;padding:2px 9px;font-size:11.5px}
+/* selo "DUB": áudio em português que não é IA (dublado/dual áudio) — mesmo desenho do "IA", em verde */
+.dub{flex:none;font-size:10.5px;font-weight:700;letter-spacing:.04em;line-height:1.6;color:#8fe0b0;background:rgba(46,204,113,.14);border:1px solid #2f7a52;border-radius:6px;padding:0 6px;white-space:nowrap;cursor:help}
 .row .badge:hover{border-color:#666;color:#ccc}
 .row .badge.on{background:none;color:var(--mut);border-color:var(--line)}
 .row .rprog{left:0;right:0;height:2px;background:transparent;bottom:0}
@@ -122,6 +124,11 @@ main{padding:16px 24px 40px;max-width:1000px;margin:0 auto}
   <button class="filter-btn active" data-grupo="visto" data-filter="all">Todos</button>
   <button class="filter-btn" data-grupo="visto" data-filter="assistido">Assistidos</button>
   <button class="filter-btn" data-grupo="visto" data-filter="nao-assistido">Não assistidos</button>
+  <span class="filter-sep"></span>
+  <span class="filter-label">Dublagem</span>
+  <button class="filter-btn active" data-grupo="dublagem" data-filter="all">Todas</button>
+  <button class="filter-btn" data-grupo="dublagem" data-filter="qualquer" title="Áudio em português: dublado de verdade ou dublagem por IA">🔊 Dublados</button>
+  <button class="filter-btn" data-grupo="dublagem" data-filter="ia" title="Só a dublagem em português feita por IA">IA</button>
 </div>
 
 <main>
@@ -150,6 +157,7 @@ main{padding:16px 24px 40px;max-width:1000px;margin:0 auto}
 const API = '/api/filmes';
 let filtroTipo = 'all';   // all | filme | serie
 let filtroVisto = 'all';  // all | assistido | nao-assistido
+let filtroDublagem = 'all';  // all | qualquer (dublado ou IA) | ia — a palavra "dublado" na busca liga o 'qualquer' no servidor
 const foldersAbertos = new Set();  // pastas de filme expandidas — sobrevive ao re-render
 
 // Elementos consultados em 2+ lugares (funções diferentes) — pegos uma vez só. Os que só
@@ -207,6 +215,7 @@ async function render() {
 
   const q = els.busca.value.trim();
   const params = new URLSearchParams({ tipo: filtroTipo, visto: filtroVisto });
+  if (filtroDublagem !== 'all') params.set('dublagem', filtroDublagem);
   if (q) params.set('busca', q);
   const t = await fetchJsonOuNull(`${API}/tela?${params}`);
 
@@ -258,7 +267,8 @@ async function render() {
     html += `<div class="secao"><div class="secao-title">📺 Séries <span class="count">(${t.series.length})</span></div><div class="lista">`;
     html += t.series.map(s => {
       const poster = s.episodios.find(f => f.posterUrl);   // um pôster já basta pra série inteira
-      return serieHtml(s, poster ? posterHtml(poster) : '', seletorAudioSerieHtml(s.chave, audiosDasSeries[s.chave]), f => rowHtml(f, true));
+      return serieHtml(s, poster ? posterHtml(poster) : '', seletorAudioSerieHtml(s.chave, audiosDasSeries[s.chave]), f => rowHtml(f, true),
+        { sufixoSerie: dubSerieSelo(s.episodios) });
     }).join('');
     html += `</div></div>`;
   }
@@ -273,7 +283,7 @@ async function render() {
 // (episódios da mesma série já vêm colapsados num cartão só, apontando pro mais novo não visto). Só com os filtros neutros, como o
 // "Continuar assistindo"; sem novidade, não devolve nada e a fileira some.
 async function novidadesHtml(busca) {
-  if (filtroTipo !== 'all' || filtroVisto !== 'all' || busca) return '';
+  if (filtroTipo !== 'all' || filtroVisto !== 'all' || filtroDublagem !== 'all' || busca) return '';
   const lista = await fetchJsonOuNull('/api/catalogo/novidades?limite=20');
   if (!lista || !lista.length) return '';
   return `
@@ -288,7 +298,7 @@ function novidadeRowHtml(n) {
   return `
     <div class="row" onclick="play(${f.id})" title="${tooltipFilme(f)}">
       ${posterHtml(f)}
-      <span class="rtit">${esc(n.rotulo)}</span>
+      <span class="rtit">${esc(n.rotulo)}</span>${dubSelo(f)}${iaSelo(f)}
       ${!f.ehEpisodio && f.anoLancamento ? `<span class="rano">${f.anoLancamento}</span>` : ''}
       <span class="resume">🆕 ${n.novos > 1 ? n.novos + ' novos' : 'novo'}</span>
       ${barraProgresso(f)}
@@ -345,6 +355,19 @@ function iaSelo(f) {
   return f.dubladoIa ? '<span class="ia" title="Tem dublagem em português feita por IA (a faixa original continua no arquivo)">IA</span>' : '';
 }
 
+// Selo "DUB" (f.dublado vem do servidor: probe guardado no banco ou, até a análise rodar, a dica no nome do arquivo).
+function dubSelo(f) {
+  return f.dublado ? '<span class="dub" title="Tem áudio em português (dublado / dual áudio)">DUB</span>' : '';
+}
+
+// Selo "DUB" no cabeçalho da série: quantos episódios têm dublagem (IA conta), só quando algum tem.
+function dubSerieSelo(episodios) {
+  const n = episodios.filter(f => f.dublado || f.dubladoIa).length;
+  if (!n) return '';
+  const todos = n === episodios.length;
+  return `<span class="dub" title="${todos ? 'Todos os episódios têm' : n + ' de ' + episodios.length + ' episódios têm'} áudio em português">DUB${todos ? '' : ' ' + n + '/' + episodios.length}</span>`;
+}
+
 function rowHtml(f, episodio) {
   const retomar = f.posicaoSegundos ? `<span class="resume">▶ ${formatarTempo(f.posicaoSegundos)}</span>` : '';
   let titulo;
@@ -360,7 +383,7 @@ function rowHtml(f, episodio) {
   return `
     <div class="row ${f.assistido ? 'assistido' : ''}" onclick="play(${f.id})" title="${tooltipFilme(f)}">
       ${episodio ? '' : posterHtml(f)}
-      <span class="rtit">${titulo}</span>${iaSelo(f)}
+      <span class="rtit">${titulo}</span>${dubSelo(f)}${iaSelo(f)}
       ${!episodio && f.anoLancamento ? `<span class="rano">${f.anoLancamento}</span>` : ''}
       ${retomar}
       <span class="badge ${f.assistido ? 'on' : ''}" onclick="event.stopPropagation(); toggleAssistido(${f.id})">${f.assistido ? '✓ Assistido' : 'Marcar'}</span>
@@ -380,7 +403,7 @@ function continuarRowHtml(c) {
   return `
     <div class="row" onclick="play(${c.id})" title="${tooltipFilme(c)}">
       ${posterHtml(c)}
-      <span class="rtit">${nome}</span>${iaSelo(c)}
+      <span class="rtit">${nome}</span>${dubSelo(c)}${iaSelo(c)}
       <span class="resume">▶ ${info}</span>
       <button class="remover" title="Tirar de continuar assistindo" onclick="event.stopPropagation(); removerDeContinuar(${c.id})">✕</button>
       ${barraProgresso(c)}
@@ -807,6 +830,7 @@ document.getElementById('filters').addEventListener('click', e => {
   document.querySelectorAll(`.filter-btn[data-grupo="${grupo}"]`).forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   if (grupo === 'tipo') filtroTipo = btn.dataset.filter;
+  else if (grupo === 'dublagem') filtroDublagem = btn.dataset.filter;
   else filtroVisto = btn.dataset.filter;
   render();
 });

@@ -115,6 +115,11 @@ public static class DbInitializer
             );
             """);
 
+        // "tem áudio em português que não é IA" (DubladoPt): coluna nova, NULL nas linhas antigas = ainda não analisadas (voltam à fila do DubladoIaService)
+        var colunasDublagem = db.Database.SqlQueryRaw<string>("""SELECT name AS "Value" FROM pragma_table_info('AnalisesDeDublagem');""").ToList();
+        if (!colunasDublagem.Contains("AudioPtNaoIa"))
+            db.Database.ExecuteSqlRaw("""ALTER TABLE "AnalisesDeDublagem" ADD COLUMN "AudioPtNaoIa" INTEGER NULL;""");
+
         // Bancos antigos podem ter ArquivoPath duplicado (scan rodado 2x antes do índice único).
         // Remove as duplicatas (mantém o menor Id; o FK em cascata leva o progresso junto) e
         // então cria o índice — mesmo nome/definição que o EnsureCreated de um banco novo gera.

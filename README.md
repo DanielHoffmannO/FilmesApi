@@ -442,7 +442,8 @@ filmes ainda sem metadados (roda ~30s depois do boot e reprocessa a cada scan).
 
 | Método | Rota | Descrição |
 |---|---|---|
-| `GET` | `/api/filmes/tela?tipo=&visto=&busca=` | Catálogo já filtrado/agrupado (filme solto, pasta filme+extras, série, franquia) — é isto que `index.html`/`tv.html`/`controle.html` consomem pra montar a tela. |
+| `GET` | `/api/filmes/tela?tipo=&visto=&busca=&dublagem=` | Catálogo já filtrado/agrupado (filme solto, pasta filme+extras, série, franquia) — é isto que `index.html`/`tv.html`/`controle.html` consomem pra montar a tela. `dublagem` (opcional): `qualquer` = dublado ou dublagem por IA, `dublado` = só áudio em português que não é IA, `ia` = só a dublagem por IA; ausente = sem filtro. Digitar "dublado"/"dublados" na `busca` liga o `qualquer`. O campo `dublado` de cada item vem do ffprobe guardado (`AnalisesDeDublagem.AudioPtNaoIa`) ou, até o arquivo ser analisado, da dica no nome (dual, dublado, nacional, PT-BR…). |
+| `GET` | `/api/catalogo/dublados?limite=24` | Fileira "Dublados": `[{filme, novos, rotulo}]` (mesmo formato de `/novidades`), um cartão por série apontando pro próximo episódio dublado não visto (`"Série · 12 episódios dublados"`), filmes soltos como cartão simples; o que ainda não foi visto vem primeiro, depois os mais recentes. |
 | `GET` | `/api/filmes/fila` | Fila do controle: o que ficou pela metade e o próximo episódio das séries vistas nos últimos 14 dias (`[{filme, motivo}]`). |
 | `GET` | `/api/filmes/{id}` | Detalhes de um filme. |
 | `PUT` | `/api/filmes/{id}/assistido` | Alterna "assistido". |

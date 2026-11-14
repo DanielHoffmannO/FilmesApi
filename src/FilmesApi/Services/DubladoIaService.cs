@@ -16,6 +16,9 @@ namespace FilmesApi.Services;
 ///   <item><b>Em dia</b>: a cada <c>DubladoIaIntervaloMinutos</c> (10; 0 desliga) confere o tamanho de cada arquivo (um stat, sem ler o disco). Tamanho
 ///     diferente do guardado = arquivo trocado (o <c>scripts/dublar</c> acrescentou a faixa) — volta à fila antes dos nunca analisados.</item>
 ///   <item>O ffprobe é o do <see cref="MediaProbeService"/> (cacheado): quem abrir o episódio depois não paga de novo.</item>
+///   <item>A mesma leitura das faixas guarda também se há áudio em português que NÃO é IA (<see cref="AnaliseDeDublagem.AudioPtNaoIa"/>, o
+///     <c>dublado</c> do catálogo — ver <see cref="DublagemEmPortugues"/>). Linhas de antes dessa coluna (NULL) voltam à fila depois dos nunca
+///     analisados; enquanto isso o <c>dublado</c> delas vem da dica no nome do arquivo.</item>
 /// </list>
 /// Falha de ffprobe (arquivo ainda sendo escrito, disco lento) não grava nada e só é repetida depois de <see cref="EsperaAposFalha"/>.
 /// </summary>
@@ -56,15 +59,21 @@ public class DubladoIaService(IServiceScopeFactory escopos, IConfiguration confi
         catch (OperationCanceledException) { /* servidor parando */ }
     }
 
-    /// <summary>Marca <c>DubladoIa</c> nos itens da lista a partir do que está guardado no banco — uma consulta barata, sem tocar em disco.
-    /// Chamado por <see cref="FilmeService.ListarAsync"/>.</summary>
+    /// <summary>Marca <c>DubladoIa</c> e <c>Dublado</c> nos itens da lista a partir do que está guardado no banco — uma consulta barata, sem tocar
+    /// em disco. <c>Dublado</c> = a análise por probe, se já existe e é conclusiva; senão a dica no nome do arquivo
+    /// (<see cref="DublagemEmPortugues.Resolver"/>). Chamado por <see cref="FilmeService.ListarAsync"/>.</summary>
     internal static async Task MarcarAsync(AppDbContext db, List<FilmeResponse> lista)
     {
         if (lista.Count == 0) return;
-        var comIa = (await db.AnalisesDeDublagem.AsNoTracking().Where(a => a.DubladoIa).Select(a => a.FilmeId).ToListAsync()).ToHashSet();
-        if (comIa.Count == 0) return;
+        var linhas = (await db.AnalisesDeDublagem.AsNoTracking().Select(a => new { a.FilmeId, a.DubladoIa, a.AudioPtNaoIa }).ToListAsync())
+            .ToDictionary(a => a.FilmeId);
         for (var i = 0; i < lista.Count; i++)
-            if (comIa.Contains(lista[i].Id)) lista[i] = lista[i] with { DubladoIa = true };
+        {
+            linhas.TryGetValue(lista[i].Id, out var linha);
+            var ia = linha?.DubladoIa ?? false;
+            var dublado = DublagemEmPortugues.Resolver(linha?.AudioPtNaoIa, lista[i].ArquivoPath);
+            if (ia || dublado) lista[i] = lista[i] with { DubladoIa = ia, Dublado = dublado };
+        }
     }
 
     /// <summary>Uma rodada. Nunca lança (uma rodada que falha não derruba o timer nem o app). Devolve quantos arquivos foram analisados.</summary>
@@ -96,7 +105,7 @@ public class DubladoIaService(IServiceScopeFactory escopos, IConfiguration confi
 
                 // Sem caminho (sumiu entre a conferência e agora), sem ffprobe ou sem como gravar: não repete já na próxima rodada.
                 var info = await filmes.ResolverCaminhoAsync(item.Id) is { } caminho ? await ProbeSeguroAsync(probe, caminho, ct) : null;
-                if (info is not null && await GravarAsync(db, item, info.Audios.Any(EscolhaAudio.EhDubladoIa), ct)) analisados++;
+                if (info is not null && await GravarAsync(db, item, info.Audios.Any(EscolhaAudio.EhDubladoIa), DublagemEmPortugues.ClassificarAudios(info.Audios), ct)) analisados++;
                 else { _falhas[item.Id] = DateTime.UtcNow; falhas++; }
             }
 
@@ -121,16 +130,16 @@ public class DubladoIaService(IServiceScopeFactory escopos, IConfiguration confi
         return pausa is null ? texto : texto + $" · pausado: {pausa}";
     }
 
-    /// <summary>Quem precisa de análise: sem linha (nunca visto) ou com tamanho diferente do guardado (arquivo trocado). Os trocados vão primeiro —
-    /// é o que o dono acabou de dublar —, depois os nunca vistos, do mais novo pro mais antigo. Arquivo que não dá pra medir (sumiu, disco caído) e
-    /// o que falhou há pouco ficam de fora.</summary>
+    /// <summary>Quem precisa de análise: sem linha (nunca visto), com tamanho diferente do guardado (arquivo trocado) ou com a linha de antes da coluna
+    /// <c>AudioPtNaoIa</c> (nunca olhado pro português). Os trocados vão primeiro — é o que o dono acabou de dublar —, depois os nunca vistos, depois
+    /// as linhas antigas, cada grupo do mais novo pro mais antigo. Arquivo que não dá pra medir (sumiu, disco caído) e o que falhou há pouco ficam de fora.</summary>
     private async Task<List<Item>> PendentesAsync(AppDbContext db, string pastaDeMidia, CancellationToken ct)
     {
         var todos = await db.Filmes.AsNoTracking().Where(f => f.ArquivoPath != null).Select(f => new { f.Id, Caminho = f.ArquivoPath! }).ToListAsync(ct);
-        var feitos = await db.AnalisesDeDublagem.AsNoTracking().ToDictionaryAsync(a => a.FilmeId, a => a.ArquivoBytes, ct);
+        var feitos = await db.AnalisesDeDublagem.AsNoTracking().ToDictionaryAsync(a => a.FilmeId, a => (a.ArquivoBytes, SemPt: a.AudioPtNaoIa == null), ct);
         var agora = DateTime.UtcNow;
 
-        List<Item> trocados = [], novos = [];
+        List<Item> trocados = [], novos = [], antigos = [];
         foreach (var f in todos)
         {
             if (MediaNomeParser.Ignorado(f.Caminho)) continue;
@@ -138,13 +147,14 @@ public class DubladoIaService(IServiceScopeFactory escopos, IConfiguration confi
             var bytes = AnaliseDeAberturaService.TamanhoDe(Path.Combine(pastaDeMidia, f.Caminho));
             if (bytes <= 0) continue;
             if (!feitos.TryGetValue(f.Id, out var guardado)) novos.Add(new Item(f.Id, f.Caminho, bytes));
-            else if (guardado != bytes) trocados.Add(new Item(f.Id, f.Caminho, bytes));
+            else if (guardado.ArquivoBytes != bytes) trocados.Add(new Item(f.Id, f.Caminho, bytes));
+            else if (guardado.SemPt) antigos.Add(new Item(f.Id, f.Caminho, bytes));
         }
-        return [.. trocados, .. novos.OrderByDescending(n => n.Id)];
+        return [.. trocados, .. novos.OrderByDescending(n => n.Id), .. antigos.OrderByDescending(n => n.Id)];
     }
 
     /// <summary>Cria/atualiza a linha do arquivo. false se não deu pra gravar (o filme sumiu do banco no meio — o scan apagou o órfão).</summary>
-    private async Task<bool> GravarAsync(AppDbContext db, Item item, bool dubladoIa, CancellationToken ct)
+    private async Task<bool> GravarAsync(AppDbContext db, Item item, bool dubladoIa, AudioPortugues audioPt, CancellationToken ct)
     {
         try
         {
@@ -152,6 +162,7 @@ public class DubladoIaService(IServiceScopeFactory escopos, IConfiguration confi
             var eraIa = linha?.DubladoIa ?? false;
             if (linha is null) db.AnalisesDeDublagem.Add(linha = new AnaliseDeDublagem { FilmeId = item.Id });
             linha.DubladoIa = dubladoIa;
+            linha.AudioPtNaoIa = audioPt;
             linha.ArquivoBytes = item.Bytes;
             linha.AnalisadoEm = DateTime.UtcNow;
             await db.SaveChangesAsync(ct);
