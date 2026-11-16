@@ -116,6 +116,7 @@ main{padding:16px 24px 40px;max-width:1000px;margin:0 auto}
   <button class="filter-btn active" data-grupo="tipo" data-filter="all">Todos</button>
   <button class="filter-btn" data-grupo="tipo" data-filter="filme">🎬 Filmes</button>
   <button class="filter-btn" data-grupo="tipo" data-filter="serie">📺 Séries</button>
+  <button class="filter-btn" data-grupo="tipo" data-filter="novela">🎭 Novelas</button>
   <span class="filter-sep"></span>
   <span class="filter-label">Status</span>
   <button class="filter-btn active" data-grupo="visto" data-filter="all">Todos</button>
@@ -152,7 +153,7 @@ main{padding:16px 24px 40px;max-width:1000px;margin:0 auto}
 
 <script>
 const API = '/api/filmes';
-let filtroTipo = 'all';   // all | filme | serie
+let filtroTipo = 'all';   // all | filme | serie | novela
 let filtroVisto = 'all';  // all | assistido | nao-assistido
 let filtroDublagem = 'all';  // all | qualquer (dublado ou IA) | ia — a palavra "dublado" na busca liga o 'qualquer' no servidor
 const foldersAbertos = new Set();  // pastas de filme expandidas — sobrevive ao re-render
@@ -226,6 +227,8 @@ async function render() {
   if (nada) {
     mostrarVazio(t.catalogoVazio
       ? `<span class="ico">🎬</span>Catálogo vazio.<br><button onclick="scanMedia()">📂 Escanear a pasta de mídia</button>`
+      : filtroTipo === 'novela' && !q
+      ? `<span class="ico">🎭</span>Nenhuma novela ainda.<br>Coloque os capítulos em <b>novelas/Nome da novela/</b> na pasta de mídia e escaneie.`
       : `<span class="ico">🔍</span>${q ? 'Nada encontrado pra “' + esc(q) + '”.' : 'Nada corresponde a esse filtro.'}`);
     return;
   }
@@ -262,7 +265,7 @@ async function render() {
 
   if (t.series.length) {
     const audiosDasSeries = await carregarAudiosDasSeries();
-    html += `<div class="secao"><div class="secao-title">📺 Séries <span class="count">(${t.series.length})</span></div><div class="lista">`;
+    html += `<div class="secao"><div class="secao-title">${filtroTipo === 'novela' ? '🎭 Novelas' : '📺 Séries'} <span class="count">(${t.series.length})</span></div><div class="lista">`;
     html += t.series.map(s => {
       const poster = s.episodios.find(f => f.posterUrl);   // um pôster já basta pra série inteira
       return serieHtml(s, poster ? posterHtml(poster) : '', seletorAudioSerieHtml(s.chave, audiosDasSeries[s.chave]), f => rowHtml(f, true));

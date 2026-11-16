@@ -176,6 +176,7 @@ html.leg-g video::cue { font-size: 135%; }
     <a href="#" data-fg="tipo" data-fv="all" class="on">Tudo</a>
     <a href="#" data-fg="tipo" data-fv="filme">Filmes</a>
     <a href="#" data-fg="tipo" data-fv="serie">Series</a>
+    <a href="#" data-fg="tipo" data-fv="novela">Novelas</a>
     <span class="sep">|</span>
     <span class="lbl">Dublagem</span>
     <a href="#" data-fg="dublagem" data-fv="all" class="on">Tudo</a>
@@ -383,7 +384,7 @@ html.leg-g video::cue { font-size: 135%; }
       if (nada) {
         grid.innerHTML = '';
         msg.style.display = 'block';
-        msg.innerHTML = t.catalogoVazio ? 'Nenhum filme. Rode o Scan no celular.' : 'Nada nesse filtro.';
+        msg.innerHTML = t.catalogoVazio ? 'Nenhum filme. Rode o Scan no celular.' : (filtroTipo === 'novela' ? 'Nenhuma novela ainda. Coloque os capitulos em novelas/Nome da novela/ e escaneie.' : 'Nada nesse filtro.');
         buildNav();
         return;
       }
@@ -438,7 +439,7 @@ html.leg-g video::cue { font-size: 135%; }
       var sufixoVistos = function (eps) { var v = textoVistos(eps); return v ? ' \u00b7 ' + v : ''; };
       for (i = 0; i < t.series.length; i++) {
         var s = t.series[i], seps = '';
-        if (i === 0) html += '<h2>Series (' + t.series.length + ')</h2>';
+        if (i === 0) html += '<h2>' + (filtroTipo === 'novela' ? 'Novelas' : 'Series') + ' (' + t.series.length + ')</h2>';
         var grupos = agruparPorTemporada(s.episodios);
         if (!grupos) {
           seps = epsHtml(s.episodios);

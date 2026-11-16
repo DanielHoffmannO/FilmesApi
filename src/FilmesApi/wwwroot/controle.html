@@ -195,6 +195,7 @@ input[type=range].vol:focus-visible{outline:2px solid var(--acc);outline-offset:
     <button class="on" data-filter="all" role="tab" aria-selected="true">Todos</button>
     <button data-filter="filme" role="tab" aria-selected="false">Filmes</button>
     <button data-filter="serie" role="tab" aria-selected="false">Séries</button>
+    <button data-filter="novela" role="tab" aria-selected="false">Novelas</button>
   </div>
   <div class="chips"><button class="chip" id="chipDublados" aria-pressed="false" title="Só o que tem áudio em português (dublado ou dublagem por IA)">Dublados</button></div>
   <div id="msg" class="msg">Carregando…</div>
@@ -469,7 +470,7 @@ async function render() {
   if (t.series.length) html += `<div class="sec">Séries · ${t.series.length}</div>` + t.series.map(serieHtmlControle).join('');
 
   msg.style.display = html ? 'none' : 'block';
-  if (!html) msg.textContent = t.catalogoVazio ? 'Nenhum filme. Rode o Scan na lista completa.' : 'Nada nesse filtro.';
+  if (!html) msg.textContent = t.catalogoVazio ? 'Nenhum filme. Rode o Scan na lista completa.' : (filtroTipo === 'novela' ? 'Nenhuma novela ainda. Coloque os capítulos em novelas/Nome da novela/.' : 'Nada nesse filtro.');
   grid.innerHTML = html;
 }
 

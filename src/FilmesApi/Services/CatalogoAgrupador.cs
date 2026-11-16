@@ -35,6 +35,8 @@ public static class CatalogoAgrupador
         bool PassaFiltro(FilmeResponse f) =>
             (visto != "assistido" || f.Assistido) &&
             (visto != "nao-assistido" || !f.Assistido) &&
+            // Novela tem aba própria: fora de "Tudo", "Filmes" e "Séries" (senão apareceria duplicada).
+            (tipo == "novela" ? f.EhNovela : !f.EhNovela) &&
             (tipo != "filme" || !f.EhEpisodio) &&
             (tipo != "serie" || f.EhEpisodio) &&
             PassaDublagem(f) &&

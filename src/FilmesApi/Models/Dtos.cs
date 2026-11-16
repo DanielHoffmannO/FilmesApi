@@ -16,7 +16,8 @@ public record FilmeResponse(
     string? TituloEpisodio = null,
     bool DubladoIa = false,
     bool Dublado = false,
-    string? SerieTitulo = null);
+    string? SerieTitulo = null,
+    bool EhNovela = false);
 
 public record ScanResultado(int Importados, int Removidos, int TitulosLimpos = 0);
 

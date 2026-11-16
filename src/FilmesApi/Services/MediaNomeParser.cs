@@ -18,9 +18,10 @@ namespace FilmesApi.Services;
 /// <param name="Pasta">Pasta pai ("Sem pasta" na raiz de /media) — pro agrupamento "filme + extras".</param>
 /// <param name="TituloEpisodio">Título do episódio que o nome do arquivo traz depois do marcador
 /// ("O Apagador" em <c>... - S01E05 - O Apagador.mp4</c>), sem ruído de release nem site; null quando não tem.</param>
+/// <param name="EhNovela">Mora na pasta de 1º nível <c>novelas/</c> (aba Novelas).</param>
 public record ClassificacaoMidia(
     bool EhEpisodio, bool EhExtra, string? Serie, string? SerieChave,
-    int? Temporada, int? Episodio, string Rotulo, string Pasta, string? TituloEpisodio = null);
+    int? Temporada, int? Episodio, string Rotulo, string Pasta, string? TituloEpisodio = null, bool EhNovela = false);
 
 /// <summary>
 /// Fonte única da classificação série/filme/episódio. Antes essa lógica existia em
@@ -171,6 +172,22 @@ public static partial class MediaNomeParser
     [GeneratedRegex(@"^\s*([0-9]{1,3})(?:\s*-\s*|\s+)\S", RegexOptions.CultureInvariant)]
     private static partial Regex ReEpNumeroAntologia();
 
+    // Novela = tudo que mora numa pasta de 1º nível "novelas" (ou "novela"). Dentro dela, o nome do arquivo costuma ser
+    // só "Capítulo 12" / "Cap 012" / "012 - título": sem SxxExx, então vale um marcador de capítulo ou número no início.
+    [GeneratedRegex(@"(?:cap[ií]tulo|cap)\.?[\s._-]*0*([0-9]{1,4})(?![0-9])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ReCapitulo();
+
+    [GeneratedRegex(@"^\s*0*([0-9]{1,4})(?![0-9])", RegexOptions.CultureInvariant)]
+    private static partial Regex ReNumeroInicio();
+
+    /// <summary>O arquivo está sob a pasta <c>novelas/</c> (1º nível, sem diferenciar maiúscula/acento de plural).</summary>
+    public static bool EhNovela(string? arquivoPath)
+    {
+        var segs = SegmentosPasta(arquivoPath);
+        return segs.Length > 0 && (segs[0].Equals("novelas", StringComparison.OrdinalIgnoreCase)
+                                   || segs[0].Equals("novela", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static string NomeArquivo(string? path) =>
         string.IsNullOrEmpty(path) ? "" : Regex.Replace(path, @"^.*/", "");
 
@@ -279,6 +296,13 @@ public static partial class MediaNomeParser
             m = ReEpNumeroAntologia().Match(nome);
             if (m.Success) return (0, ParseInt(m.Groups[1].Value));
         }
+
+        if (EhNovela(arquivoPath))
+        {
+            m = ReCapitulo().Match(nome);
+            if (!m.Success) m = ReNumeroInicio().Match(nome);
+            if (m.Success) return (TemporadaDaPasta(arquivoPath) ?? 1, ParseInt(m.Groups[1].Value));
+        }
         return null;
     }
 
@@ -287,6 +311,7 @@ public static partial class MediaNomeParser
     public static string ChaveSerie(string? arquivoPath)
     {
         var segs = SegmentosPasta(arquivoPath);
+        if (EhNovela(arquivoPath)) segs = segs[1..];   // "novelas" em si não é o nome de nenhuma novela
         // Sobe da pasta mais interna pra mais externa. Cada nível: se É só um marcador de
         // temporada/arco (season/livro/parte...), pula pro pai sem nem tentar limpar aqui —
         // mesma ideia de antes. Senão, tenta limpar; se sobrar nome (não ficou vazio), é a
@@ -310,6 +335,7 @@ public static partial class MediaNomeParser
         // arquivo solto na raiz: prefixo antes do marcador de episódio
         var n = NomeArquivo(arquivoPath);
         var i = IndiceOuMenos1(ReSxxExx(), n);
+        if (i < 0 && EhNovela(arquivoPath)) i = IndiceOuMenos1(ReCapitulo(), n);
         if (i < 0) { var j = IndiceOuMenos1(ReNxNN(), n); i = j <= 0 ? j : j + 1; }
         if (i < 0) i = IndiceOuMenos1(ReEpNum(), n);
         if (i < 0) i = IndiceOuMenos1(ReTEpColado(), n);

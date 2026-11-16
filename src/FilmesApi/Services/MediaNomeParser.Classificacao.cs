@@ -90,6 +90,7 @@ public static partial class MediaNomeParser
             Episodio: ep,
             Rotulo: MontarRotulo(SemExtensao(NomeArquivo(arquivoPath)), temp, ep),
             Pasta: pasta,
-            TituloEpisodio: TituloDoEpisodio(SemExtensao(NomeArquivo(arquivoPath))));
+            TituloEpisodio: TituloDoEpisodio(SemExtensao(NomeArquivo(arquivoPath))),
+            EhNovela: EhNovela(arquivoPath));
     }
 }

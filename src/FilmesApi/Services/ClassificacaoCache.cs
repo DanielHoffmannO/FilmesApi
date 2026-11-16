@@ -67,5 +67,6 @@ public class ClassificacaoCache
         Rotulo = c.Rotulo,
         Pasta = c.Pasta,
         TituloEpisodio = c.TituloEpisodio,
+        EhNovela = c.EhNovela,
     };
 }
