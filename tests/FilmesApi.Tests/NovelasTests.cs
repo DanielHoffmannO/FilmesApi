@@ -54,3 +54,50 @@ public class NovelasTests
         }
     }
 }
+
+public class NovelasReleaseTests
+{
+    private const string Caminho = "novelas/Avenida.Brasil.720p.WEB-DL.AAC.x264-iND/Avenida.Brasil.E001.720p.WEB-DL.AAC.x264-iND.mkv";
+
+    [Fact]
+    public void Release_brasileiro_E001_vira_capitulo_da_novela_pelo_nome_da_pasta()
+    {
+        var c = MediaNomeParser.Classificar(Caminho, "Avenida Brasil E001 iND");
+        Assert.True(c.EhEpisodio);
+        Assert.True(c.EhNovela);
+        Assert.Equal("Avenida Brasil", c.Serie);
+        Assert.Equal(1, c.Episodio);
+        Assert.Equal("Capítulo 1", c.Rotulo);
+    }
+
+    [Theory]
+    [InlineData("novelas/Avenida Brasil/Avenida.Brasil.Cap.010.mkv", 10)]
+    [InlineData("novelas/Avenida Brasil/Avenida Brasil - 011.mkv", 11)]
+    [InlineData("novelas/Avenida Brasil/Avenida.Brasil.Ep12.720p.mkv", 12)]
+    [InlineData("novelas/Avenida Brasil/Avenida.Brasil.013.720p.WEB-DL.mkv", 13)]
+    [InlineData("novelas/Avenida Brasil/Avenida Brasil Episodio 14.mkv", 14)]
+    public void Variantes_de_marcador(string caminho, int cap)
+    {
+        var c = MediaNomeParser.Classificar(caminho, "T");
+        Assert.True(c.EhEpisodio);
+        Assert.Equal("Avenida Brasil", c.Serie);
+        Assert.Equal(cap, c.Episodio);
+    }
+
+    [Fact]
+    public void Dez_capitulos_formam_uma_novela_so_na_aba_novela()
+    {
+        var todos = Enumerable.Range(1, 10).Reverse().Select(n =>
+        {
+            var p = $"novelas/Avenida.Brasil.720p.WEB-DL.AAC.x264-iND/Avenida.Brasil.E{n:000}.720p.WEB-DL.AAC.x264-iND.mkv";
+            var c = MediaNomeParser.Classificar(p, "Avenida Brasil E" + n);
+            return new FilmeResponse(n, "Avenida Brasil E" + n, null, p, false, DateTime.UtcNow, null, null, null, null, null,
+                c.EhEpisodio, c.EhExtra, c.Serie, c.SerieChave, c.Temporada, c.Episodio, c.Rotulo, c.Pasta, c.TituloEpisodio, false, false, null, c.EhNovela);
+        }).ToList();
+        var t = CatalogoAgrupador.Montar(todos, [], "novela", "all", null);
+        var s = Assert.Single(t.Series);
+        Assert.Equal("Avenida Brasil", s.Nome);
+        Assert.Equal(Enumerable.Range(1, 10), s.Episodios.Select(e => e.Episodio!.Value));
+        Assert.Empty(CatalogoAgrupador.Montar(todos, [], "serie", "all", null).Series);
+    }
+}

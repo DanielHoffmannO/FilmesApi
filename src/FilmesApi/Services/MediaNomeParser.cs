@@ -174,11 +174,19 @@ public static partial class MediaNomeParser
 
     // Novela = tudo que mora numa pasta de 1º nível "novelas" (ou "novela"). Dentro dela, o nome do arquivo costuma ser
     // só "Capítulo 12" / "Cap 012" / "012 - título": sem SxxExx, então vale um marcador de capítulo ou número no início.
-    [GeneratedRegex(@"(?:cap[ií]tulo|cap)\.?[\s._-]*0*([0-9]{1,4})(?![0-9])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"(?<![A-Za-z])(?:cap[ií]tulo|cap|epis[oó]dio|ep|e)\.?[\s._-]*0*([0-9]{1,4})(?![0-9])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ReCapitulo();
 
     [GeneratedRegex(@"^\s*0*([0-9]{1,4})(?![0-9])", RegexOptions.CultureInvariant)]
     private static partial Regex ReNumeroInicio();
+
+    // "Avenida Brasil - 001", "Avenida.Brasil.001.720p": número solto depois de um separador (não "720p", "x264", ano colado em letra).
+    [GeneratedRegex(@"(?<=[\s._-])0*([0-9]{1,4})(?![0-9pPiIkK])", RegexOptions.CultureInvariant)]
+    private static partial Regex ReNumeroSolto();
+
+    // Do 1º token de release (720p, WEB-DL, x264, AAC...) até o fim: o nome da novela vem só do que vem antes.
+    [GeneratedRegex(@"\b(?:1080p|2160p|720p|480p|4k|uhd|hdtv|bluray|bdrip|brrip|web-?dl|web-?rip|webrip|dvdrip|x264|x265|h ?264|h ?265|hevc|aac|ac3|dual|dublado|legendado|nacional)\b.*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ReCorteReleaseNovela();
 
     /// <summary>O arquivo está sob a pasta <c>novelas/</c> (1º nível, sem diferenciar maiúscula/acento de plural).</summary>
     public static bool EhNovela(string? arquivoPath)
@@ -301,6 +309,7 @@ public static partial class MediaNomeParser
         {
             m = ReCapitulo().Match(nome);
             if (!m.Success) m = ReNumeroInicio().Match(nome);
+            if (!m.Success) m = ReNumeroSolto().Match(nome);
             if (m.Success) return (TemporadaDaPasta(arquivoPath) ?? 1, ParseInt(m.Groups[1].Value));
         }
         return null;
@@ -311,7 +320,8 @@ public static partial class MediaNomeParser
     public static string ChaveSerie(string? arquivoPath)
     {
         var segs = SegmentosPasta(arquivoPath);
-        if (EhNovela(arquivoPath)) segs = segs[1..];   // "novelas" em si não é o nome de nenhuma novela
+        var novela = EhNovela(arquivoPath);
+        if (novela) segs = segs[1..];   // "novelas" em si não é o nome de nenhuma novela
         // Sobe da pasta mais interna pra mais externa. Cada nível: se É só um marcador de
         // temporada/arco (season/livro/parte...), pula pro pai sem nem tentar limpar aqui —
         // mesma ideia de antes. Senão, tenta limpar; se sobrar nome (não ficou vazio), é a
@@ -329,6 +339,7 @@ public static partial class MediaNomeParser
             var nome = ReSiteNoComeco().Replace(seg, "");
             nome = RePontos().Replace(nome, " ");
             nome = ReCorteSerie().Replace(nome, "").Trim(' ', '-', '–', '—');
+            if (novela) nome = ReCorteReleaseNovela().Replace(nome, "").Trim(' ', '-', '–', '—');
             if (nome.Length > 0) return nome;
         }
 
@@ -341,6 +352,7 @@ public static partial class MediaNomeParser
         if (i < 0) i = IndiceOuMenos1(ReTEpColado(), n);
         var prefixo = i > 0 ? n[..i] : n;
         prefixo = RePontos().Replace(prefixo, " ").TrimEnd(' ', '-').Trim();
+        if (novela) prefixo = ReCorteReleaseNovela().Replace(prefixo, "").TrimEnd(' ', '-').Trim();
         return prefixo.Length > 0 ? prefixo : n;
     }
 }

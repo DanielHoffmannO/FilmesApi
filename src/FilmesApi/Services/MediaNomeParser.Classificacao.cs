@@ -88,7 +88,7 @@ public static partial class MediaNomeParser
             SerieChave: ChaveAgrupamento(serie),
             Temporada: temp,
             Episodio: ep,
-            Rotulo: MontarRotulo(SemExtensao(NomeArquivo(arquivoPath)), temp, ep),
+            Rotulo: EhNovela(arquivoPath) ? $"Capítulo {ep}" : MontarRotulo(SemExtensao(NomeArquivo(arquivoPath)), temp, ep),
             Pasta: pasta,
             TituloEpisodio: TituloDoEpisodio(SemExtensao(NomeArquivo(arquivoPath))),
             EhNovela: EhNovela(arquivoPath));
