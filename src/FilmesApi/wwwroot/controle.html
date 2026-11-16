@@ -197,7 +197,6 @@ input[type=range].vol:focus-visible{outline:2px solid var(--acc);outline-offset:
     <button data-filter="serie" role="tab" aria-selected="false">Séries</button>
     <button data-filter="novela" role="tab" aria-selected="false">Novelas</button>
   </div>
-  <div class="chips"><button class="chip" id="chipDublados" aria-pressed="false" title="Só o que tem áudio em português (dublado ou dublagem por IA)">Dublados</button></div>
   <div id="msg" class="msg">Carregando…</div>
   <div id="grid"></div>
 </main>
@@ -312,12 +311,6 @@ document.getElementById('filters').addEventListener('click', e => {
   if (!btn) return;
   document.querySelectorAll('#filters button').forEach(b => { b.classList.toggle('on', b === btn); b.setAttribute('aria-selected', b === btn); });
   filtroTipo = btn.dataset.filter;
-  render();
-});
-
-document.getElementById('chipDublados').addEventListener('click', e => {
-  filtroDublados = !filtroDublados;
-  e.currentTarget.setAttribute('aria-pressed', filtroDublados);
   render();
 });
 
