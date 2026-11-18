@@ -105,7 +105,7 @@ header h1{font-size:18px;white-space:nowrap}
 .tile .ok{position:absolute;top:5px;right:5px;background:rgba(0,0,0,.7);color:#7ddf8b;border-radius:10px;font-size:11px;padding:1px 6px}
 .tile .rm{position:absolute;top:0;left:0;width:44px;height:44px;border:0;border-radius:0 0 14px 0;background:rgba(0,0,0,.55);color:#fff;padding:0;font-size:14px}
 .tile .cch{position:absolute;bottom:5px;right:5px;background:rgba(0,0,0,.75);border-radius:10px;font-size:11px;padding:1px 6px;color:#9fd0ff}
-.tile .cch.ok{color:#7ddf8b}
+.tile .cch.pronto{color:#7ddf8b}
 .tile .qtd{position:absolute;bottom:5px;left:5px;background:rgba(0,0,0,.72);color:#fff;border-radius:10px;font-size:11px;padding:1px 7px}
 .tile .rprog{position:absolute;left:0;right:0;bottom:0;height:3px;background:rgba(255,255,255,.18)}
 .tile .rprog>div{height:100%;background:var(--acc)}
@@ -288,7 +288,7 @@ function tile(chave, o) {
         ${o.visto ? '<span class="ok">✓</span>' : ''}
         ${o.remover ? `<button class="rm" title="Tirar de continuar assistindo" aria-label="Tirar de continuar assistindo" onclick="event.stopPropagation(); removerDeContinuar(${o.remover})">✕</button>` : ''}
         ${o.qtd ? `<span class="qtd">${esc(o.qtd)}</span>` : ''}
-        ${o.cache ? `<span class="cch ${o.cache.startsWith('✔') ? 'ok' : ''}" title="Manter no cache">${esc(o.cache)}</span>` : ''}
+        ${o.cache ? `<span class="cch ${o.cache.startsWith('✔') ? 'pronto' : ''}" title="Manter no cache">${esc(o.cache)}</span>` : ''}
         ${pct ? `<div class="rprog"><div style="width:${pct}%"></div></div>` : ''}
       </div>
       <div class="nome">${esc(o.nome)}</div>
@@ -324,7 +324,7 @@ function cartoesDaTela(t) {
   return lista;
 }
 
-// Fileira horizontal (Continuar assistindo / Novidades / Dublados): tocar já reproduz — é o que a pessoa quer ali.
+// Fileira horizontal (Continuar assistindo): tocar já reproduz — é o que a pessoa quer ali.
 function fileira(titulo, cartoes) {
   if (!cartoes.length) return '';
   return `<section class="fileira"><div class="fileira-tit">${titulo} <span class="count">(${cartoes.length})</span></div><div class="trilho">${cartoes.join('')}</div></section>`;
@@ -350,10 +350,7 @@ async function render() {
   }
   const params = new URLSearchParams({ tipo: tipoDaAba[aba], visto: 'all' });
   if (q) params.set('busca', q);
-  const buscaDoInicio = aba === 'inicio'
-    ? Promise.all([fetchJsonOuNull('/api/catalogo/novidades?limite=20'), fetchJsonOuNull('/api/catalogo/dublados?limite=24')])
-    : Promise.resolve([null, null]);
-  const [t, [novidades, dublados], cacheResp] = await Promise.all([fetchJsonOuNull(`${API}/tela?${params}`), buscaDoInicio, fetchJsonOuNull('/api/cache')]);
+  const [t, cacheResp] = await Promise.all([fetchJsonOuNull(`${API}/tela?${params}`), fetchJsonOuNull('/api/cache')]);
   if (cacheResp) cacheEst = { ...cacheResp, itens: new Map(cacheResp.itens.map(i => [i.id, i])) };
 
   if (!t) {
@@ -367,8 +364,6 @@ async function render() {
   if (aba === 'inicio') {
     html += fileira('▶ Continuar assistindo', t.continuarAssistindo.map(c =>
       cartaoDeFilme(c, c.ehEpisodio ? `${codigoEpisodio(c) || c.rotulo || ''}` : `faltam ${formatarTempo(Math.max(0, (c.duracaoSegundos || 0) - c.posicaoSegundos))}`, c.id)));
-    html += fileira('🆕 Novidades', (novidades || []).map(n => cartaoDeFilme(n.filme, n.rotulo.replace(/^.*·\s*/, ''))));
-    html += fileira('🔊 Dublados', (dublados || []).map(n => cartaoDeFilme(n.filme, n.rotulo.replace(/^.*·\s*/, ''))));
   }
   if (cartoes.length) {
     const titulos = { inicio: 'Tudo', serie: 'Séries', filme: 'Filmes', novela: 'Novelas', buscar: 'Resultados' };
