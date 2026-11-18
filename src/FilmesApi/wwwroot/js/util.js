@@ -119,19 +119,20 @@ function grupoHtml(classe, dados, aberto, onclick, tituloHtml, corpoHtml) {
 // episódios). A linha "Faltam: E01–E08" por temporada entraria aqui, no corpo de cada temporada.
 function corpoDaSerieHtml(episodios, audioHtml, linhaHtml, opcoes) {
   var extra = (opcoes && opcoes.temporadaExtra) || function () { return ''; };
+  var antes = (opcoes && opcoes.temporadaCorpo) || function () { return ''; };   // html no CORPO da temporada, antes dos episódios (os interruptores, no index.html)
   var linhas = function (eps) { return eps.map(linhaHtml).join(''); };
   var grupos = agruparPorTemporada(episodios);
   if (!grupos) {
     var t = episodios.length && episodios[0].temporada;
     var unica = t > 0 ? extra(t) : '';
-    return audioHtml + (unica ? '<div class="serie-opcoes">' + unica + '</div>' : '') + linhas(episodios);
+    return audioHtml + (unica ? '<div class="serie-opcoes">' + unica + '</div>' : '') + (t > 0 ? antes(t) : '') + linhas(episodios);
   }
   return audioHtml + grupos.map(function (g) {
     var vistos = textoVistos(g.episodios);
     return grupoHtml(' temporada', 'data-temp="' + attr(g.chave) + '"', temporadaEstaAberta(g.chave), 'cliqueTemporada(this)',
       esc(g.rotulo) + ' <span class="count">(' + contagemEpisodios(g.episodios.length) + ')</span>' +
         (vistos ? ' <span class="count">' + vistos + '</span>' : '') + (g.numero > 0 ? extra(g.numero) : ''),
-      linhas(g.episodios));
+      (g.numero > 0 ? antes(g.numero) : '') + linhas(g.episodios));
   }).join('');
 }
 

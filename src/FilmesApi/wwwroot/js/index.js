@@ -107,6 +107,18 @@ function fileira(titulo, cartoes) {
   return `<section class="fileira"><div class="fileira-tit">${titulo} <span class="count">(${cartoes.length})</span></div><div class="trilho">${cartoes.join('')}</div></section>`;
 }
 
+// Cartão do "Continuar assistindo": abre a ficha do título (enviar para a TV / assistir aqui) — o episódio abre a ficha da série.
+function cartaoDaFila(i) {
+  const f = i.filme;
+  const ep = f.ehEpisodio ? (f.temporada != null ? `T${f.temporada} · ` : '') + (codigoEpisodio(f) || f.rotulo || '') : (f.anoLancamento || '');
+  const chave = f.ehEpisodio && itens.has('s:' + f.serieChave) ? 's:' + f.serieChave : itens.has('f:' + f.id) ? 'f:' + f.id : null;
+  return tile('', {
+    nome: f.ehEpisodio ? (f.serie || f.titulo) : f.titulo, poster: f.posterUrl, pct: i.motivo === 'proximo' ? 0 : pctProgresso(f),
+    sub: i.motivo === 'proximo' ? `A seguir · ${ep}` : ep,
+    remover: i.motivo === 'proximo' ? 0 : f.id, onclick: chave ? `abrirFicha('${attr(chave)}')` : `play(${f.id})`,
+  });
+}
+
 function cartaoDeFilme(f, sub, remover) {
   return tile('', {
     nome: f.ehEpisodio ? (f.serie || f.titulo) : f.titulo, poster: f.posterUrl, visto: false, pct: pctProgresso(f),
@@ -128,7 +140,8 @@ async function render() {
   }
   const params = new URLSearchParams({ tipo: tipoDaAba[aba], visto: 'all' });
   if (q) params.set('busca', q);
-  const [t, cacheResp] = await Promise.all([fetchJsonOuNull(`${API}/tela?${params}`), fetchJsonOuNull('/api/cache')]);
+  const [t, cacheResp, fila] = await Promise.all([fetchJsonOuNull(`${API}/tela?${params}`), fetchJsonOuNull('/api/cache'),
+    aba === 'inicio' ? fetchJsonOuNull(`${API}/fila`) : null]);   // fila = Continuar assistindo + "A seguir" (o próximo episódio de série vista há pouco)
   if (cacheResp) cacheEst = { ...cacheResp, itens: new Map(cacheResp.itens.map(i => [i.id, i])) };
 
   if (!t) {
@@ -140,8 +153,7 @@ async function render() {
 
   let html = '';
   if (aba === 'inicio') {
-    html += fileira('▶ Continuar assistindo', t.continuarAssistindo.map(c =>
-      cartaoDeFilme(c, c.ehEpisodio ? `${codigoEpisodio(c) || c.rotulo || ''}` : `faltam ${formatarTempo(Math.max(0, (c.duracaoSegundos || 0) - c.posicaoSegundos))}`, c.id)));
+    html += fileira('▶ Continuar assistindo', (fila || t.continuarAssistindo.map(f => ({ filme: f, motivo: 'continuar' }))).map(cartaoDaFila));
   }
   if (cartoes.length) {
     const titulos = { inicio: 'Tudo', serie: 'Séries', filme: 'Filmes', novela: 'Novelas', buscar: 'Resultados' };
@@ -207,6 +219,43 @@ function trocarTokenDoScan() {
   msgScanErro(novo ? 'Token guardado neste aparelho.' : 'Token apagado.');
 }
 
+const ICONES = {
+  tv: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="12" rx="2"/><path d="M16 3l-4 4l-4-4"/></svg>',
+  fila: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h11M4 12h11M4 17h6M18 13v8M14 17h8"/></svg>',
+};
+
+// "Tocar a seguir": entra no fim da fila manual da TV (toca antes do próximo episódio da série; com a TV parada, só toca).
+async function tocarASeguir(id) {
+  try {
+    const r = await fetch(`${PLAYER_API}/fila/${id}`, { method: 'POST' });
+    if (r.status === 409) { msgScanErro('A fila da TV está cheia.'); return; }
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    msgScanErro(d.resultado === 'JaNaFila' ? 'Já está na fila da TV.' : '➕ Toca a seguir na TV.');
+    consultarAgora();
+  } catch { msgScanErro('Não consegui falar com a TV.'); }
+}
+
+// ─── Controle da TV: a folha com o controle completo (play/pausa, barra, volume, abertura/créditos/próximo, idioma e legenda, sono, fila…) ───
+// É a página controle-tv.html em modo embutido (?embed=1): a MESMA lógica e o mesmo visual do controle de sempre, sem duplicar código.
+function abrirControleTv() {
+  const f = document.getElementById('tvFrame'), sheet = document.getElementById('tvSheet');
+  fecharFicha();
+  f.src = '/controle-tv.html?embed=1';
+  sheet.classList.add('on'); sheet.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+}
+function fecharControleTv() {
+  const f = document.getElementById('tvFrame'), sheet = document.getElementById('tvSheet');
+  sheet.classList.remove('on'); sheet.setAttribute('aria-hidden', 'true');
+  f.src = 'about:blank';   // para o poll do controle enquanto a folha está fechada
+  document.body.style.overflow = '';
+  consultarAgora();
+}
+window.addEventListener('message', e => {
+  if (e.origin === location.origin && e.data && e.data.tipo === 'fechar-controle') fecharControleTv();
+});
+
 // ─── Celular ⇄ TV (sem fila, sem confirmação: o último envio vale) ───────
 const PLAYER_API = '/api/player';
 
@@ -264,7 +313,7 @@ async function consultarAgora() {
   caixa.innerHTML = `
     <div class="fio" style="width:${pct}%"></div>
     ${info.posterUrl ? `<img src="${attr(pw(info.posterUrl, 185))}" alt="">` : '<img alt="">'}
-    <a class="txt" href="/controle.html" title="Abrir o controle completo da TV"><small>${est.playing ? 'Tocando na TV' : 'Pausado na TV'}${esc(pos)}</small><b>${esc(nome)}</b></a>
+    <a class="txt" role="button" tabindex="0" onclick="abrirControleTv()" title="Abrir o controle completo da TV"><small>${est.playing ? 'Tocando na TV' : 'Pausado na TV'}${esc(pos)}</small><b>${esc(nome)}</b></a>
     <button onclick="fetch('${PLAYER_API}/play-pause',{method:'POST'}).then(consultarAgora)" aria-label="${est.playing ? 'Pausar a TV' : 'Tocar na TV'}" title="${est.playing ? 'Pausar' : 'Tocar'}">${est.playing ? ico.pausa : ico.toca}</button>
     <button onclick="continuarNoCelular()" aria-label="Continuar no celular" title="Continuar no celular">${ico.celular}</button>`;
   caixa.classList.add('on');
@@ -299,7 +348,7 @@ async function abrirConfig() {
     <button class="sheet-x" onclick="fecharFicha()" aria-label="Fechar">✕</button>
     <div class="sheet-tit">Configurações</div>
     <div class="cfg-lista">
-      <a href="/controle.html">🎛 Controle da TV <small>completo</small></a>
+      <button onclick="abrirControleTv()">🎛 Controle da TV <small>completo</small></button>
       <button onclick="fecharFicha(); scanMedia()">📂 Escanear a pasta de mídia</button>
       <button onclick="trocarTokenDoScan()">🔑 Token do scan <small>neste aparelho</small></button>
       <a href="/diagnostico.html">🩺 Diagnóstico do catálogo</a>
@@ -333,6 +382,38 @@ function buscarDigitando() {
 }
 
 // ─── Ficha do título (folha que sobe de baixo) ──────────────────────────
+// ─── Padrões da série e interruptores da temporada (mesmas rotas do controle da TV) ───
+let prefsTemporadas = {};   // chave da série -> { "1": { pularAbertura, proximoAutomatico } }
+
+function pilulasHtml(chave, n) {
+  const p = (prefsTemporadas[chave] || {})[n] || {};
+  const pil = (campo, rotulo) =>
+    `<button class="pill" role="switch" aria-checked="${!!p[campo]}" onclick="alternarInterruptor(this, '${attr(chave)}', ${n}, '${campo}')">${rotulo}</button>`;
+  return `<div class="pills">${pil('pularAbertura', 'Pular abertura')}${pil('proximoAutomatico', 'Próximo automático')}</div>`;
+}
+
+async function alternarInterruptor(el, chave, temp, campo) {
+  const novo = el.getAttribute('aria-checked') !== 'true';
+  const r = await fetch(`/api/series/${encodeURIComponent(chave)}/temporadas/${temp}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [campo]: novo })
+  }).catch(() => null);
+  if (!r || !r.ok) { msgScanErro('Não consegui salvar. Tente de novo.'); return; }
+  ((prefsTemporadas[chave] ||= {})[temp] ||= {})[campo] = novo;
+  el.setAttribute('aria-checked', novo);
+}
+
+function seletorLegendaSerieHtml(chave, atual) {
+  const op = (valor, rotulo) => `<option value="${valor}"${(atual || '') === valor ? ' selected' : ''}>${rotulo}</option>`;
+  return `<label class="serie-audio">Legenda padrão: <select data-chave="${attr(chave)}" onchange="definirLegendaSerie(this)">` +
+    op('', 'Automática') + op('off', 'Desligada') + op('por', 'Português') + op('eng', 'Inglês') + '</select></label>';
+}
+
+function definirLegendaSerie(select) {
+  return fetch('/api/series/' + encodeURIComponent(select.getAttribute('data-chave')) + '/legenda', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idioma: select.value || null })
+  }).then(r => { if (!r.ok) msgScanErro('Não consegui salvar a legenda padrão.'); });
+}
+
 function sinopseHtml(texto) {
   if (!texto) return '';
   return `<p class="sinopse" id="sinopse">${esc(texto)}</p>${texto.length > 180 ? '<button class="mais" onclick="document.getElementById(\'sinopse\').classList.toggle(\'aberta\'); this.textContent = this.textContent === \'mais\' ? \'menos\' : \'mais\'">mais</button>' : ''}`;
@@ -350,6 +431,7 @@ async function montarFicha(chave) {
     const retomar = f.posicaoSegundos ? `▶ Continuar aqui (${formatarTempo(f.posicaoSegundos)})` : '▶ Assistir aqui';
     acoes = `<button class="pri" onclick="enviarParaTv(${f.id})">📺 Enviar para a TV</button>
       <button onclick="play(${f.id})">${retomar}</button>
+      <button onclick="tocarASeguir(${f.id})">➕ Tocar a seguir</button>
       ${botaoCacheHtml([f.id], cacheDoFilme(f.id) ? 'filme-fixado' : 'filme')}
       <button onclick="toggleAssistido(${f.id})">${f.assistido ? '✓ Assistido' : 'Marcar como assistido'}</button>
       <a href="/api/filmes/${f.id}/download" download title="Baixar o arquivo original" class="btn-baixar">⬇ Baixar</a>`;
@@ -374,13 +456,21 @@ async function montarFicha(chave) {
     const idsNaoVistos = s.episodios.filter(e => !e.assistido && !e.ehExtra).map(e => e.id);
     const idsFixados = s.episodios.filter(e => cacheEst.itens.has(e.id)).map(e => e.id);
     acoes += botaoCacheHtml(idsFixados.length ? idsFixados : idsNaoVistos, idsFixados.length ? 'serie-fixada' : 'serie');
-    const audios = await carregarAudiosDasSeries();
-    corpo = corpoDaSerieHtml(s.episodios, seletorAudioSerieHtml(s.chave, audios[s.chave]), f => rowHtml(f, true));
+    // padrão da série (áudio e legenda) e os interruptores de cada temporada (pular abertura / próximo automático) — os mesmos do controle da TV
+    const [padroes, prefsTemp] = await Promise.all([
+      fetchJsonOuNull('/api/series/padroes').then(m => m || {}), fetchJsonOuNull('/api/series/temporadas').then(m => m || {})]);
+    prefsTemporadas = prefsTemp;
+    const pd = padroes[s.chave] || {};
+    corpo = corpoDaSerieHtml(s.episodios, seletorAudioSerieHtml(s.chave, pd.audio) + seletorLegendaSerieHtml(s.chave, pd.legenda), f => rowHtml(f, true),
+      { temporadaCorpo: n => pilulasHtml(s.chave, n) });
   }
   if (fichaAberta !== chave && fichaAberta !== null && !itens.has(fichaAberta)) return;
   const abertoAntes = els.sheetBox.scrollTop;
+  const naTv = estadoTv && estadoTv.filmeId != null && (it.tipo === 'filme' ? it.f.id === estadoTv.filmeId
+    : it.tipo === 'serie' && it.s.episodios.some(e => e.id === estadoTv.filmeId));
   els.sheetBox.innerHTML = `
     <button class="sheet-x" onclick="fecharFicha()" aria-label="Fechar">✕</button>
+    ${naTv ? '<div class="agora-tag">📺 Tocando na TV agora</div>' : ''}
     <div class="ficha">
       ${poster ? `<img src="${attr(pw(poster, 500))}" alt="">` : '<div class="semp">🎬</div>'}
       <div><h2>${esc(titulo)}</h2><div class="meta">${esc(meta)}</div>${sinopseHtml(sinopse)}</div>
@@ -461,13 +551,17 @@ function rowHtml(f, episodio) {
   } else {
     titulo = esc(f.titulo);
   }
+  const naTv = estadoTv && estadoTv.filmeId === f.id;
   return `
-    <div class="row ${f.assistido ? 'assistido' : ''}" onclick="play(${f.id})" title="${tooltipFilme(f)}">
+    <div class="row ${f.assistido ? 'assistido' : ''}${naTv ? ' tc' : ''}" onclick="play(${f.id})" title="${tooltipFilme(f)}">
       ${episodio ? '' : posterHtml(f)}
       <span class="rtit">${titulo}</span>
       ${!episodio && f.anoLancamento ? `<span class="rano">${f.anoLancamento}</span>` : ''}
       ${retomar}
-      <span class="badge ${f.assistido ? 'on' : ''}" onclick="event.stopPropagation(); toggleAssistido(${f.id})">${f.assistido ? '✓ Assistido' : 'Marcar'}</span>
+      ${naTv ? '<span class="resume">📺 na TV</span>' : ''}
+      <button class="rbtn" aria-label="Enviar para a TV" title="Enviar para a TV" onclick="event.stopPropagation(); enviarParaTv(${f.id})">${ICONES.tv}</button>
+      <button class="rbtn" aria-label="Tocar a seguir na TV" title="Tocar a seguir" onclick="event.stopPropagation(); tocarASeguir(${f.id})">${ICONES.fila}</button>
+      <span class="badge ${f.assistido ? 'on' : ''}" role="button" aria-label="${f.assistido ? 'Assistido: desmarcar' : 'Marcar como assistido'}" title="${f.assistido ? 'Assistido' : 'Marcar como assistido'}" onclick="event.stopPropagation(); toggleAssistido(${f.id})">${f.assistido ? '✓' : '○'}</span>
       <a class="baixar" href="/api/filmes/${f.id}/download" download title="Baixar o arquivo original" onclick="event.stopPropagation()">⬇</a>
       ${barraProgresso(f)}
     </div>`;
@@ -523,7 +617,8 @@ async function scanMedia() {
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
-    if (els.player.classList.contains('active')) closePlayer();
+    if (document.getElementById('tvSheet').classList.contains('on')) fecharControleTv();
+    else if (els.player.classList.contains('active')) closePlayer();
     else if (fichaAberta) fecharFicha();
     els.busca.blur();
   }
@@ -535,3 +630,4 @@ document.addEventListener('keydown', e => {
 });
 configurarProgresso();
 load();
+if (/[?&]tv=1\b/.test(location.search)) abrirControleTv();   // /controle.html redireciona pra cá

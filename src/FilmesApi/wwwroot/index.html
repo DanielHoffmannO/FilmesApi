@@ -24,6 +24,7 @@
 <header>
   <h1>🎬 Filmes</h1>
   <div class="actions">
+    <button onclick="abrirControleTv()" aria-label="Controle da TV" title="Controle da TV"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="12" rx="2"/><path d="M16 3l-4 4l-4-4"/></svg></button>
     <button onclick="scanMedia()" aria-label="Escanear a pasta de mídia" title="Escanear a pasta de mídia">📂 Scan</button>
     <button onclick="abrirConfig()" aria-label="Configurações" title="Configurações">⚙</button>
   </div>
@@ -44,6 +45,8 @@
   <button data-aba="novela"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h9v7a4.5 4.5 0 0 1-9 0z"/><path d="M11 12h9v1a4.5 4.5 0 0 1-8 2.8"/><path d="M6.5 9h1M10 9h1M6.5 13c1 1 2.5 1 3.5 0"/></svg>Novelas</button>
   <button data-aba="buscar"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l5 5"/></svg>Buscar</button>
 </nav>
+
+<div id="tvSheet" aria-hidden="true"><iframe id="tvFrame" title="Controle da TV"></iframe></div>
 
 <div id="sheet" onclick="if (event.target === this) fecharFicha()"><div class="sheet-box" id="sheetBox"></div></div>
 

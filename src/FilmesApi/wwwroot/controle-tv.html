@@ -181,13 +181,45 @@ input[type=range].vol:focus-visible{outline:2px solid var(--acc);outline-offset:
 .toast button{color:var(--acc-txt);font-weight:600;font-size:13.5px;padding:0 12px;min-height:40px;border-radius:8px}
 .toast button:active{background:var(--s2)}
 @keyframes toast-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+/* ─── Modo embutido (?embed=1): a folha "Controle da TV" do index.html carrega esta página num iframe. Sem a lista (o index tem a biblioteca):
+   cabeçalho com ✕, capa do que toca e a barra de controle — a mesma de sempre. ─── */
+.embed-cab,.embed-capa,.embed-ocioso{display:none}
+body.embed{display:flex;flex-direction:column;height:100dvh;overflow:hidden;padding-bottom:0}
+body.embed .top,body.embed main{display:none}
+body.embed .embed-cab{display:flex;align-items:center;justify-content:space-between;padding:10px 8px 4px 20px;flex:none}
+.embed-cab h1{font-size:19px;font-weight:650;letter-spacing:-.01em}
+body.embed .embed-capa{display:flex;flex:1;min-height:0;gap:16px;padding:8px 20px calc(var(--remote-h, 0px) + 12px);overflow-y:auto;max-width:640px;width:100%;margin:0 auto;align-items:flex-start}
+.embed-capa img{width:36%;max-width:180px;aspect-ratio:2/3;object-fit:cover;border-radius:10px;background:var(--s2);flex:none}
+.embed-capa .ct{min-width:0;flex:1}
+.embed-capa b{display:block;font-size:17px;font-weight:650;line-height:1.25;overflow-wrap:break-word}
+.embed-capa small{display:block;color:var(--mut);font-size:13px;margin:3px 0 10px}
+.embed-capa p{font-size:13.5px;line-height:1.45;color:#cfcfcf}
+body.embed .embed-ocioso{flex:1;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;color:var(--mut);padding:0 32px 60px}
+body.embed .embed-ocioso.on{display:flex}
+.embed-ocioso svg{width:44px;height:44px;opacity:.5}
+.embed-ocioso b{color:var(--txt);font-size:16px}
+.embed-ocioso button{height:48px;padding:0 22px;border-radius:24px;background:var(--s2);border:1px solid var(--line);color:var(--txt);font-size:15px}
+body.embed .embed-capa.off{display:none}
 </style>
 </head>
 <body>
+<script>if (/[?&]embed=1/.test(location.search)) document.body.classList.add('embed');</script>
 
 <div class="top">
   <h1>Controle da TV</h1>
   <a class="ib" href="/" aria-label="Lista completa" data-ico="grid"></a>
+</div>
+
+<div class="embed-cab">
+  <h1>Controle da TV</h1>
+  <button class="ib" onclick="fecharEmbed()" aria-label="Fechar o controle" data-ico="close"></button>
+</div>
+<div class="embed-capa off" id="embedCapa"><img id="capaImg" alt=""><div class="ct"><b id="capaTit"></b><small id="capaSub"></small><p id="capaSin"></p></div></div>
+<div class="embed-ocioso" id="embedOcioso">
+  <span data-ico="tv"></span><b>A TV está parada</b>
+  <span>Escolha um título na biblioteca e toque em "Enviar para a TV".</span>
+  <button onclick="abrirFila()">Ver "tocar a seguir"</button>
+  <button onclick="fecharEmbed()">Voltar à biblioteca</button>
 </div>
 
 <main>
@@ -269,6 +301,7 @@ input[type=range].vol:focus-visible{outline:2px solid var(--acc);outline-offset:
 <script>
 const API = '/api/filmes';
 const PLAYER_API = '/api/player';
+const EMBED = document.body.classList.contains('embed');   // dentro da folha do index.html: sem lista, só o controle
 
 // ─── Configuração (valores antes soltos pelo código) ───────────────────────
 const SEEK_STEP_S = 30;      // avanço/retrocesso dos botões «30s / 30s»
@@ -484,6 +517,34 @@ async function enviarParaTv(id) {
   fetch(`${API}/${id}/pre-aquecer`, { method: 'POST' }).catch(() => {});
   await fetch(`${PLAYER_API}/selecionar/${id}`, { method: 'POST' });
   pollRemote();
+}
+
+// Modo embutido: pede ao index.html (a página de fora) que feche a folha.
+function fecharEmbed() { try { parent.postMessage({ tipo: 'fechar-controle' }, location.origin); } catch (e) { /* sem pai: nada a fechar */ } }
+
+// Modo embutido: a capa (pôster, nome e sinopse) do que toca, ou o aviso de TV parada.
+function atualizarCapa() {
+  if (!EMBED) return;
+  const f = filmeAtualRemoto, capa = document.getElementById('embedCapa');
+  document.getElementById('embedOcioso').classList.toggle('on', !f);
+  capa.classList.toggle('off', !f);
+  if (!f) return;
+  const img = document.getElementById('capaImg');
+  img.style.display = f.posterUrl ? '' : 'none';
+  if (f.posterUrl) img.src = f.posterUrl.replace('/w342/', '/w500/');
+  document.getElementById('capaTit').textContent = f.ehEpisodio && f.serie ? f.serie : f.titulo;
+  document.getElementById('capaSub').textContent = f.ehEpisodio
+    ? [f.temporada != null ? 'T' + f.temporada : '', codigoEp(f), f.tituloEpisodio].filter(Boolean).join(' · ')
+    : [f.anoLancamento, f.tituloOriginal && f.tituloOriginal !== f.titulo ? f.tituloOriginal : ''].filter(Boolean).join(' · ');
+  document.getElementById('capaSin').textContent = f.sinopse || '';
+}
+
+// Padrões da série e interruptores da temporada: a lista os carrega junto do /tela; no modo embutido (sem lista) vêm daqui.
+async function carregarPadroes() {
+  [padroes, prefsTemporadas] = await Promise.all([
+    fetchJsonOuNull('/api/series/padroes').then(m => m || {}),
+    fetchJsonOuNull('/api/series/temporadas').then(m => m || {}),
+  ]);
 }
 
 // ─── Fila manual "tocar a seguir" (o servidor guarda; a TV toca o primeiro ao fim do que passa) ───
@@ -1061,7 +1122,8 @@ async function pollRemote() {
       // Só re-renderiza se realmente parou de tocar algo (transição real) -- no primeiro poll
       // da página (estadoAnterior undefined) "nada tocando" já é exatamente o que o render()
       // inicial (linha ~303) desenhou, então um 2º fetch de /tela aqui seria só desperdício.
-      if (estadoAnterior && estadoAnterior.filmeId !== null) render();
+      if (estadoAnterior && estadoAnterior.filmeId !== null && !EMBED) render();
+      atualizarCapa();
     } else {
       bar.classList.add('active');
       if (trocouFilme) {
@@ -1072,6 +1134,7 @@ async function pollRemote() {
         remoteCarregarCreditos(estado.filmeId);
         filmeAtualRemoto = await fetchJsonOuNull(`${API}/${estado.filmeId}`);
         atualizarBotaoProximoEp(estado.filmeId);
+        atualizarCapa();
       }
       const f = filmeAtualRemoto;
       document.getElementById('remoteTitulo').textContent = f ? (f.ehEpisodio && f.serie ? f.serie : f.titulo) : 'Reproduzindo…';
@@ -1092,7 +1155,7 @@ async function pollRemote() {
       document.getElementById('remoteTempoDec').textContent = pos || dur ? mmss(pos) : '';
       document.getElementById('remoteTempoRest').textContent = dur ? '−' + mmss(dur - pos) : '';
       atualizarBotaoDireita(pos, dur);
-      if (trocouFilme) render();
+      if (trocouFilme && !EMBED) render();
     }
     atualizarLinhaIa();
     const proxBox = document.getElementById('remoteProximo');
@@ -1105,7 +1168,7 @@ async function pollRemote() {
   }
 }
 
-render();
+if (EMBED) carregarPadroes(); else render();
 pollRemote();
 </script>
 </body>
