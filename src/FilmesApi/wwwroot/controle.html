@@ -265,6 +265,7 @@ input[type=range].vol:focus-visible{outline:2px solid var(--acc);outline-offset:
 </div>
 
 <script src="/js/util.js"></script>
+<script src="/js/player-regras.js"></script>
 <script>
 const API = '/api/filmes';
 const PLAYER_API = '/api/player';
@@ -592,17 +593,13 @@ async function remoteCarregarAbertura(id) {
 async function remoteCarregarCreditos(id) {
   remoteCreditos = await fetchJsonOuNull(`${API}/${id}/creditos`);
 }
-function dentroDaAbertura(pos) {
-  const a = remoteAbertura;
-  return !!a && pos >= a.inicioSegundos - 5 && pos < a.fimSegundos - 1;
-}
-function nosCreditos(pos) {
-  return !!remoteCreditos && remoteTemProximo && pos >= remoteCreditos.inicioSegundos;
-}
+// as regras puras moram em js/player-regras.js (compartilhadas com o player local do index.html)
+function dentroDaAbertura(pos) { return aberturaContem(remoteAbertura, pos); }
+function nosCreditos(pos) { return creditosAlcancados(remoteCreditos, remoteTemProximo, pos); }
 function pintarFaixa(id, ini, fim, dur) {
-  const el = document.getElementById(id);
-  el.style.display = ini != null && dur ? 'block' : 'none';
-  if (ini != null && dur) { el.style.left = (100 * ini / dur) + '%'; el.style.width = (100 * (fim - ini) / dur) + '%'; }
+  const el = document.getElementById(id), f = faixaEmPercentual(ini, fim, dur);
+  el.style.display = f ? 'block' : 'none';
+  if (f) { el.style.left = f.left + '%'; el.style.width = f.width + '%'; }
 }
 // O botão contextual só é redesenhado quando muda de forma (não a cada poll): neutro "30s »", vermelho "Pular abertura" / "Próximo episódio".
 let ctaModo = null;
