@@ -204,3 +204,4 @@ body.com-agora main{padding-bottom:calc(var(--h-nav) + var(--h-agora) + 16px + e
 #proximoBox .go{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
 #proximoBox .prox-acoes{display:flex;gap:8px;flex-wrap:wrap}
 #proximoBox .prox-acoes button{margin:0;flex:1 1 auto}
+.cfg-item small{color:var(--mut);font-size:12px;margin-left:6px}

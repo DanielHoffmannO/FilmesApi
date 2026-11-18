@@ -40,15 +40,16 @@ function cacheDoFilme(id) {
   const c = cacheEst.itens.get(id);
   return !c ? '' : c.pronto ? '✔' : '⬇';
 }
-function cacheDaSerie(eps) {
+function cacheDaSerie(eps, chave) {
+  const seguida = cacheEst.seguidas.get(chave);
   const marcados = eps.filter(e => cacheEst.itens.has(e.id));
-  if (!marcados.length) return '';
+  if (!marcados.length) return seguida ? `👁 ${seguida.prontos}/${seguida.janela.length}` : '';   // seguida: prontos da janela
   const prontos = marcados.filter(e => cacheEst.itens.get(e.id).pronto).length;
   return prontos === marcados.length ? `✔ ${prontos}` : `⬇ ${prontos}/${marcados.length}`;
 }
 
 const tipoDaAba = { inicio: 'all', serie: 'serie', filme: 'filme', novela: 'novela', buscar: 'all' };
-let cacheEst = { itens: new Map(), tetoFixadoBytes: 0, fixadoProntoBytes: 0, remuxBytes: 0, remuxTetoBytes: 0 };   // 'Manter no cache' (GET /api/cache)
+let cacheEst = { itens: new Map(), seguidas: new Map(), tetoFixadoBytes: 0, fixadoProntoBytes: 0, remuxBytes: 0, remuxTetoBytes: 0 };   // 'Manter no cache' (GET /api/cache)
 let itens = new Map();     // chave -> {tipo:'filme'|'serie'|'pasta', ...} do último render (a ficha lê daqui)
 let fichaAberta = null;
 let padroesDaSerie = null;   // série aberta na ficha: o botão de ajustes leva à folha de padrões dela no controle da TV    // chave do que está na ficha
@@ -91,7 +92,7 @@ function cartoesDaTela(t) {
     itens.set(k, { tipo: 'serie', s });
     const pst = s.episodios.find(f => f.posterUrl);
     const vistos = s.episodios.filter(e => e.assistido).length;
-    lista.push({ nome: s.nome, sort: s.nome, poster: pst && pst.posterUrl, visto: vistos === s.episodios.length, cache: cacheDaSerie(s.episodios),
+    lista.push({ nome: s.nome, sort: s.nome, poster: pst && pst.posterUrl, visto: vistos === s.episodios.length, cache: cacheDaSerie(s.episodios, s.chave),
                  qtd: contagemEpisodios(s.episodios.length).replace(' episódios', ' eps').replace(' episódio', ' ep'),
                  onclick: `abrirFicha('${attr(k)}')` });
   });
@@ -133,7 +134,7 @@ async function render() {
   if (q) params.set('busca', q);
   const [t, cacheResp, fila] = await Promise.all([fetchJsonOuNull(`${API}/tela?${params}`), fetchJsonOuNull('/api/cache'),
     aba === 'inicio' ? fetchJsonOuNull(`${API}/fila`) : null]);   // fila = Continuar assistindo + "A seguir" (o próximo episódio de série vista há pouco)
-  if (cacheResp) cacheEst = { ...cacheResp, itens: new Map(cacheResp.itens.map(i => [i.id, i])) };
+  if (cacheResp) cacheEst = { ...cacheResp, itens: new Map(cacheResp.itens.map(i => [i.id, i])), seguidas: new Map((cacheResp.seguidas || []).map(s => [s.chave, s])) };
 
   if (!t) {
     mostrarVazio('<span class="ico">📡</span>Não consegui falar com o servidor.<br><button class="tentar" onclick="load()">Tentar de novo</button>');
@@ -173,6 +174,28 @@ function botaoCacheHtml(ids, modo) {
   if (modo === 'filme-fixado') return `<button class="no-cache" onclick="desafixarCache(${lista})" aria-label="No cache: tocar para remover" title="Tocar para remover do cache">✔ No cache</button>`;
   if (modo === 'serie') return `<button onclick="fixarCache(${lista})" title="Manter os ${ids.length} episódios não vistos no cache">⬇ Manter no cache <small>${ids.length}</small></button>`;
   return `<button class="no-cache" onclick="desafixarCache(${lista})" aria-label="${ids.length} no cache: tocar para remover" title="Tocar para remover do cache">✔ No cache <small>${ids.length}</small></button>`;
+}
+
+// "Seguir no cache": o servidor mantém pronta a janela dos próximos episódios não assistidos da série (novela ou série) e a empurra conforme se assiste.
+function botaoSeguirHtml(chave) {
+  const s = cacheEst.seguidas.get(chave);
+  if (!s) return `<button onclick="seguirSerie('${attr(chave)}')" title="Mantém prontos no cache os próximos episódios não assistidos">👁 Seguir no cache</button>`;
+  return `<button class="no-cache" onclick="deixarDeSeguirSerie('${attr(chave)}')" aria-label="Seguindo: ${s.prontos} de ${s.janela.length} prontos. Tocar para parar" title="Tocar para parar de seguir">✔ Seguindo <small>${s.prontos}/${s.janela.length}</small></button>`;
+}
+
+async function seguirSerie(chave) {
+  const r = await postarJson('/api/cache/serie', { chave });
+  msgScanErro(r ? '👁 Seguindo: os próximos episódios ficam prontos no cache.' : 'Não consegui seguir esta série.');
+  await render();
+}
+
+async function deixarDeSeguirSerie(chave) {
+  try {
+    const r = await fetch(`/api/cache/serie?chave=${encodeURIComponent(chave)}`, { method: 'DELETE' });
+    msgScanErro(r.ok ? 'Parou de seguir. O que já está pronto sai do cache pelas regras normais.' : 'Não consegui parar de seguir.');
+  } catch { msgScanErro('Não consegui parar de seguir.'); }
+  await render();
+  if (document.getElementById('cfgCache')) abrirConfig();
 }
 
 async function postarJson(url, corpo) {
@@ -367,7 +390,8 @@ async function abrirConfig() {
     cacheHtml = `
       <div class="cfg-info" id="cfgCache">Cache de reprodução: <b>${gb(c.remuxBytes)} GB</b>${c.remuxTetoBytes ? ` de ${gb(c.remuxTetoBytes)} GB` : ''} usados.<br>
         Mantidos: <b>${c.itens.length}</b> (${prontos} pronto(s), ${gb(c.fixadoProntoBytes)}${c.tetoFixadoBytes ? ` de ${gb(c.tetoFixadoBytes)}` : ''} GB). O que está marcado nunca é apagado.</div>
-      ${c.itens.map(i => `<div class="cfg-item"><span title="${attr(i.nome)}">${i.pronto ? '✔' : i.preparando ? '⏳' : '⬇'} ${esc(i.nome)}</span><button onclick="desafixarCache([${i.id}])" aria-label="Remover do cache">✕</button></div>`).join('')}`;
+      ${c.itens.map(i => `<div class="cfg-item"><span title="${attr(i.nome)}">${i.pronto ? '✔' : i.preparando ? '⏳' : '⬇'} ${esc(i.nome)}</span><button onclick="desafixarCache([${i.id}])" aria-label="Remover do cache">✕</button></div>`).join('')}
+      ${(c.seguidas || []).map(sg => `<div class="cfg-item"><span title="${attr(sg.nome)}">👁 ${esc(sg.nome)} <small>seguindo · ${sg.prontos}/${sg.janela.length} prontos${sg.preparando ? ' · preparando' : ''}</small></span><button onclick="deixarDeSeguirSerie('${attr(sg.chave)}')" aria-label="Parar de seguir ${attr(sg.nome)}">✕</button></div>`).join('')}`;
   }
   els.sheetBox.scrollTop = 0;
   els.sheetBox.innerHTML = `
@@ -450,6 +474,7 @@ async function montarFicha(chave) {
     const idsNaoVistos = s.episodios.filter(e => !e.assistido && !e.ehExtra).map(e => e.id);
     const idsFixados = s.episodios.filter(e => cacheEst.itens.has(e.id)).map(e => e.id);
     acoes += botaoCacheHtml(idsFixados.length ? idsFixados : idsNaoVistos, idsFixados.length ? 'serie-fixada' : 'serie');
+    acoes += botaoSeguirHtml(s.chave);
     corpo = corpoDaSerieHtml(s.episodios, '', f => rowHtml(f, true));   // padrões de áudio/legenda/abertura moram na folha do controle da TV (botão de ajustes da ficha)
     padroesDaSerie = { chave: s.chave, nome: s.nome };
   }
