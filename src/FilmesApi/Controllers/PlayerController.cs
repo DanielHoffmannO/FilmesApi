@@ -18,10 +18,9 @@ public class PlayerController : ControllerBase
     private readonly HlsTranscodeService? _transcode;
     private readonly ILogger _log;
 
-    public PlayerController(PlayerStateService state, AutomacaoDoPlayer automacao, FilmeService filmes) : this(state, automacao, filmes, null, null) { }
-
-    [ActivatorUtilitiesConstructor]
-    public PlayerController(PlayerStateService state, AutomacaoDoPlayer automacao, FilmeService filmes, HlsTranscodeService? transcode, ILogger<PlayerController>? log)
+    /// <summary><paramref name="transcode"/> e <paramref name="log"/> são opcionais: a injeção os resolve em produção; os testes do estado do player não precisam deles.</summary>
+    public PlayerController(PlayerStateService state, AutomacaoDoPlayer automacao, FilmeService filmes,
+        HlsTranscodeService? transcode = null, ILogger<PlayerController>? log = null)
     {
         _transcode = transcode;
         _log = (ILogger?)log ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;

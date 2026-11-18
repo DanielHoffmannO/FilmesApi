@@ -16,21 +16,22 @@ public class CacheController(CacheFixadoService fixados, HlsTranscodeService tra
     [HttpGet]
     public async Task<IActionResult> Obter()
     {
-        var catalogo = (await filmes.ListarAsync()).ToDictionary(f => f.Id);
+        // o catálogo só é lido pra dar nome aos fixados: sem fixados (o caso comum), nem lê
+        var ordem = fixados.Ordem;
+        var catalogo = ordem.Count == 0 ? [] : (await filmes.ListarAsync()).ToDictionary(f => f.Id);
         string Nome(int id) => !catalogo.TryGetValue(id, out var f) ? $"#{id}"
             : f.EhEpisodio ? $"{f.Serie} · {(string.IsNullOrEmpty(f.Rotulo) ? f.Titulo : f.Rotulo)}" : f.Titulo;
-        var itens = fixados.Ordem.Select(id =>
+        var itens = ordem.Select(id =>
         {
             var bytes = transcode.BytesDoRemux(id);
             return new { id, nome = Nome(id), pronto = bytes is not null, preparando = bytes is null && transcode.RemuxEmAndamento(id), bytes = bytes ?? 0 };
         }).ToList();
-        var teto = transcode.TetoRemuxBytes;
         return Ok(new
         {
-            tetoFixadoBytes = fixados.TetoFixadoBytes == long.MaxValue ? 0 : fixados.TetoFixadoBytes,
+            tetoFixadoBytes = TetoParaJson(fixados.TetoFixadoBytes),
             fixadoProntoBytes = itens.Sum(i => i.bytes),
             remuxBytes = transcode.BytesTotaisDoRemux(),
-            remuxTetoBytes = teto == long.MaxValue ? 0 : teto,
+            remuxTetoBytes = TetoParaJson(transcode.TetoRemuxBytes),
             itens,
         });
     }
@@ -38,7 +39,7 @@ public class CacheController(CacheFixadoService fixados, HlsTranscodeService tra
     [HttpPost("fixar")]
     public async Task<IActionResult> Fixar([FromBody] IdsRequest req)
     {
-        if (req.Ids is not { Length: > 0 and <= MaxIds }) return BadRequest(new { mensagem = $"mande de 1 a {MaxIds} ids" });
+        if (IdsInvalidos(req)) return IdsInvalidosResposta();
         var novos = await fixados.FixarAsync(req.Ids);
         return Ok(new { novos, total = fixados.Fixados.Count });
     }
@@ -46,10 +47,16 @@ public class CacheController(CacheFixadoService fixados, HlsTranscodeService tra
     [HttpPost("desafixar")]
     public async Task<IActionResult> Desafixar([FromBody] IdsRequest req)
     {
-        if (req.Ids is not { Length: > 0 and <= MaxIds }) return BadRequest(new { mensagem = $"mande de 1 a {MaxIds} ids" });
+        if (IdsInvalidos(req)) return IdsInvalidosResposta();
         var removidos = await fixados.DesafixarAsync(req.Ids);
         return Ok(new { removidos, total = fixados.Fixados.Count });
     }
+
+    // "sem teto" (long.MaxValue) vai pro JSON como 0
+    private static long TetoParaJson(long teto) => teto == long.MaxValue ? 0 : teto;
+
+    private static bool IdsInvalidos(IdsRequest req) => req.Ids is not { Length: > 0 and <= MaxIds };
+    private BadRequestObjectResult IdsInvalidosResposta() => BadRequest(new { mensagem = $"mande de 1 a {MaxIds} ids" });
 
     /// <summary>Apaga o cache de reprodução que NÃO está fixado (e não está em uso). Os fixados ficam.</summary>
     [HttpPost("limpar")]
