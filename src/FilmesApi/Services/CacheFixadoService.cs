@@ -25,13 +25,14 @@ internal static class PoliticaCacheFixado
 public class CacheFixadoService(IServiceScopeFactory escopos, HlsTranscodeService transcode, IConfiguration config,
     ILogger<CacheFixadoService> logger) : BackgroundService
 {
-    private volatile IReadOnlySet<int> _fixados = new HashSet<int>();
-    private volatile IReadOnlyList<int> _ordem = [];
+    // A lista (na ordem de marcação) e o conjunto andam juntos num só valor imutável: quem lê nunca vê um sem o outro.
+    private sealed record EstadoFixados(IReadOnlyList<int> Ordem, IReadOnlySet<int> Conjunto);
+    private volatile EstadoFixados _estado = new([], new HashSet<int>());
     private readonly SemaphoreSlim _acorda = new(0);
     private readonly HashSet<int> _avisados = [];   // já logou "adiado"/"arquivo fora do ar" desta vez — não repete a cada rodada
 
-    public IReadOnlySet<int> Fixados => _fixados;
-    public IReadOnlyList<int> Ordem => _ordem;
+    public IReadOnlySet<int> Fixados => _estado.Conjunto;
+    public IReadOnlyList<int> Ordem => _estado.Ordem;
 
     public long TetoFixadoBytes => ParaBytes(config.GetValue<double?>("CacheFixadoMaxGB") ?? 40);
     private long LimiteDaRodadaBytes => ParaBytes(config.GetValue<double?>("CacheFixadoGbPorRodada") ?? 5, semLimiteQuandoZero: false);
@@ -44,8 +45,7 @@ public class CacheFixadoService(IServiceScopeFactory escopos, HlsTranscodeServic
         using var escopo = escopos.CreateScope();
         var linhas = await escopo.ServiceProvider.GetRequiredService<AppDbContext>().CacheFixados.AsNoTracking()
             .OrderBy(c => c.FixadoEm).Select(c => c.FilmeId).ToListAsync();
-        _ordem = linhas;
-        _fixados = linhas.ToHashSet();
+        _estado = new EstadoFixados(linhas, linhas.ToHashSet());
     }
 
     /// <summary>Fixa os que existem no catálogo e ainda não estavam fixados; devolve quantos entraram. Acorda a preparação.</summary>
@@ -62,7 +62,7 @@ public class CacheFixadoService(IServiceScopeFactory escopos, HlsTranscodeServic
         await CarregarAsync();
         if (novos.Count > 0)
         {
-            logger.LogInformation("Cache fixado: {Novos} título(s) marcados para manter ({Total} no total).", novos.Count, _fixados.Count);
+            logger.LogInformation("Cache fixado: {Novos} título(s) marcados para manter ({Total} no total).", novos.Count, Fixados.Count);
             _acorda.Release();
         }
         return novos.Count;
@@ -105,7 +105,7 @@ public class CacheFixadoService(IServiceScopeFactory escopos, HlsTranscodeServic
     /// <summary>Uma rodada: percorre os fixados na ordem em que foram marcados e prepara a cópia dos que faltam, um de cada vez.</summary>
     internal async Task RodadaAsync(CancellationToken ct)
     {
-        var ordem = _ordem;
+        var ordem = Ordem;
         if (ordem.Count == 0) return;
         var teto = TetoFixadoBytes;
         var limite = LimiteDaRodadaBytes;

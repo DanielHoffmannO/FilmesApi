@@ -203,9 +203,7 @@ public partial class HlsTranscodeService
         long tamanho;
         try { tamanho = new FileInfo(origem).Length; }
         catch (IOException) { return false; }
-        // o que o despejo por teto tiraria sem dó (episódio já visto e parado há mais de 30 min) conta como espaço livre
-        var noCache = Math.Max(0, MedirCacheRemux().Bytes - BytesDeRemuxAssistidoDespejavel());
-        if (!PoliticaPreAquecimento.CabeNoCache(noCache, tamanho, _remuxCacheMaxBytes))
+        if (!CabeSemExpulsar(tamanho))
         {
             _logger.LogInformation("Pré-aquecimento do filme {Id} adiado: o remux ({Mb:F0} MB) não cabe no teto do cache sem expulsar nada.", filmeId, tamanho / 1048576.0);
             return false;

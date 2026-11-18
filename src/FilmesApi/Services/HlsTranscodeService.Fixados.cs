@@ -8,13 +8,14 @@ public partial class HlsTranscodeService
     /// <summary>Tamanho do remux pronto deste filme, ou null se não existe.</summary>
     internal long? BytesDoRemux(int filmeId)
     {
-        try { return File.Exists(CaminhoRemux(filmeId)) ? new FileInfo(CaminhoRemux(filmeId)).Length : null; }
+        try { var fi = new FileInfo(CaminhoRemux(filmeId)); return fi.Exists ? fi.Length : null; }
         catch (IOException) { return null; }
     }
 
-    /// <summary>O remux de <paramref name="tamanho"/> bytes cabe no teto SEM expulsar nada? (mesma conta do <see cref="PreAquecerRemux"/>, sem logar.)</summary>
+    /// <summary>O remux de <paramref name="tamanho"/> bytes cabe no teto SEM expulsar nada? (a conta do pré-aquecimento e do cache fixado.)</summary>
     internal bool CabeSemExpulsar(long tamanho)
     {
+        // o que o despejo por teto tiraria sem dó (episódio já visto, não fixado e parado há mais de 30 min) conta como espaço livre
         var noCache = Math.Max(0, MedirCacheRemux().Bytes - BytesDeRemuxAssistidoDespejavel());
         return PoliticaPreAquecimento.CabeNoCache(noCache, tamanho, _remuxCacheMaxBytes);
     }
@@ -28,7 +29,7 @@ public partial class HlsTranscodeService
     {
         var agora = DateTime.UtcNow;
         var ganchos = GanchosDeCache();
-        var (entradas, sobras) = LimpezaDeCache.Listar(PastaHls, PastaRemux, ganchos.UltimoAcesso);
+        var (entradas, _) = LimpezaDeCache.Listar(PastaHls, PastaRemux, ganchos.UltimoAcesso);   // sobras (.tmp/.audio soltos) ficam pra limpeza automática
         var itens = 0;
         long bytes = 0;
         foreach (var e in entradas)
@@ -37,7 +38,6 @@ public partial class HlsTranscodeService
             ganchos.Apagar(e.Id, e.Tipo);
             itens++; bytes += e.Bytes;
         }
-        _ = sobras;   // sobras (.tmp/.audio soltos) ficam pra limpeza automática
         _logger.LogInformation("Limpar cache (pedido pelo dono): {Itens} itens, {Gb:F1} GB; {Fix} fixados preservados.", itens, bytes / 1073741824.0, fixados.Count);
         return new ResumoLimpeza(itens, bytes);
     }

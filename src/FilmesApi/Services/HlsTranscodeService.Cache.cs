@@ -25,10 +25,13 @@ public partial class HlsTranscodeService
 
     private Func<int, bool> EhAssistido()
     {
-        IReadOnlySet<int> conjunto;
-        try { conjunto = ObterAssistidos(); }
-        catch (Exception ex) { _logger.LogWarning(ex, "Não consegui ler os assistidos; o despejo segue só por LRU."); conjunto = new HashSet<int>(); }
-        return conjunto.Contains;
+        // preguiçoso: a consulta ao banco só roda se alguém perguntar (o despejo por teto volta antes quando o cache está abaixo dele)
+        var conjunto = new Lazy<IReadOnlySet<int>>(() =>
+        {
+            try { return ObterAssistidos(); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Não consegui ler os assistidos; o despejo segue só por LRU."); return new HashSet<int>(); }
+        });
+        return id => conjunto.Value.Contains(id);
     }
 
     /// <summary>De onde o despejo e a limpeza sabem o que está fixado ("Manter no cache"): NUNCA é expulso. Ligado no Program.cs.</summary>
