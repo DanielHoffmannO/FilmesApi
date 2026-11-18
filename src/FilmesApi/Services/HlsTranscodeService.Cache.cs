@@ -11,7 +11,7 @@ public partial class HlsTranscodeService
         if (_remuxCacheMaxBytes == long.MaxValue) return;
         try
         {
-            foreach (var (nome, bytes) in DespejarExcedenteRemux(_remuxCachePath, _remuxCacheMaxBytes, DateTime.UtcNow, EhAssistido()))
+            foreach (var (nome, bytes) in DespejarExcedenteRemux(_remuxCachePath, _remuxCacheMaxBytes, DateTime.UtcNow, EhAssistido(), EhFixado()))
                 _logger.LogInformation("Cache de remux acima do teto: despejando {Nome} ({Mb} MB).", nome, bytes / 1024 / 1024);
         }
         catch (Exception ex)
@@ -31,6 +31,15 @@ public partial class HlsTranscodeService
         return conjunto.Contains;
     }
 
+    /// <summary>De onde o despejo e a limpeza sabem o que está fixado ("Manter no cache"): NUNCA é expulso. Ligado no Program.cs.</summary>
+    internal Func<IReadOnlySet<int>> ObterFixados { get; set; } = () => new HashSet<int>();
+
+    private Func<int, bool> EhFixado()
+    {
+        try { return ObterFixados().Contains; }
+        catch (Exception ex) { _logger.LogWarning(ex, "Não consegui ler os fixados; o despejo por teto não vai tocar em nada por precaução."); return _ => true; }
+    }
+
     /// <summary>Bytes de remux de episódios já assistidos e fora da margem de uso: o que o despejo por teto expulsaria primeiro.</summary>
     internal long BytesDeRemuxAssistidoDespejavel()
     {
@@ -38,13 +47,14 @@ public partial class HlsTranscodeService
         {
             if (!Directory.Exists(_remuxCachePath)) return 0;
             var visto = EhAssistido();
+            var fixado = EhFixado();
             var corte = DateTime.UtcNow - CachesDeDisco.MargemDeUsoNaExpulsao;
             long total = 0;
             foreach (var caminho in Directory.EnumerateFiles(_remuxCachePath, NomesDeCache.PadraoRemux))
             {
                 var fi = new FileInfo(caminho);
                 var ponto = fi.Name.IndexOf('.');
-                if (ponto > 0 && int.TryParse(fi.Name[..ponto], out var id) && visto(id) && fi.LastWriteTimeUtc < corte) total += fi.Length;
+                if (ponto > 0 && int.TryParse(fi.Name[..ponto], out var id) && visto(id) && !fixado(id) && fi.LastWriteTimeUtc < corte) total += fi.Length;
             }
             return total;
         }
@@ -56,7 +66,7 @@ public partial class HlsTranscodeService
     /// apagou. O tamanho é lido UMA vez, antes de apagar: <c>FileInfo.Delete()</c> invalida o
     /// cache do próprio FileInfo e ler <c>.Length</c> depois lança FileNotFoundException — era o
     /// que abortava a limpeza (com warning no log) logo na 1ª remoção de cada rodada.</summary>
-    internal static List<(string Nome, long Bytes)> DespejarExcedenteRemux(string pasta, long tetoBytes, DateTime agoraUtc, Func<int, bool>? assistido = null)
+    internal static List<(string Nome, long Bytes)> DespejarExcedenteRemux(string pasta, long tetoBytes, DateTime agoraUtc, Func<int, bool>? assistido = null, Func<int, bool>? fixado = null)
     {
         var despejados = new List<(string Nome, long Bytes)>();
         if (!Directory.Exists(pasta)) return despejados;
@@ -84,6 +94,7 @@ public partial class HlsTranscodeService
         {
             if (total <= alvo) break;
             if (a.Mtime >= corte) continue;  // acessado há pouco, pode estar em uso
+            if (fixado is not null && int.TryParse(a.Nome[..Math.Max(0, a.Nome.IndexOf('.'))], out var idFixo) && fixado(idFixo)) continue;   // "Manter no cache": nunca sai
             try { File.Delete(a.Caminho); File.Delete(CaminhoFaixaDoRemux(a.Caminho)); }
             catch (IOException) { continue; }
             catch (UnauthorizedAccessException) { continue; }

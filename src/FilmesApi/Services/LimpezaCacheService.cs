@@ -40,7 +40,7 @@ public class LimpezaCacheService(IServiceScopeFactory escopos, HlsTranscodeServi
                 TimeSpan.FromMinutes(config.GetValue<double?>("LimpezaCacheCarenciaMinutos") ?? 120),
                 TimeSpan.FromDays(config.GetValue<double?>("HlsValidadeDias") ?? 14));
             var assistidos = await AssistidosAsync();
-            var resumo = LimpezaDeCache.Varrer(transcode.PastaHls, transcode.PastaRemux, assistidos, DateTime.UtcNow, op, transcode.GanchosDeCache());
+            var resumo = LimpezaDeCache.Varrer(transcode.PastaHls, transcode.PastaRemux, assistidos, DateTime.UtcNow, op, transcode.GanchosDeCache(), transcode.ObterFixados());
             if (resumo.Itens > 0)
                 logger.LogInformation("Limpeza do cache: {Itens} itens, {Gb:F1} GB.", resumo.Itens, resumo.Bytes / 1073741824.0);
             medicao?.Ok(resumo.Itens > 0 ? $"{resumo.Itens} itens, {resumo.Bytes / 1073741824.0:F1} GB" : "nada a apagar");

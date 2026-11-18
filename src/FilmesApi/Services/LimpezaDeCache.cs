@@ -114,7 +114,7 @@ internal static class LimpezaDeCache
 
     /// <summary>Uma passada de limpeza. Idempotente: rodar de novo logo em seguida não acha mais nada.</summary>
     internal static ResumoLimpeza Varrer(string hlsDir, string remuxDir, IReadOnlyDictionary<int, bool> assistidos,
-        DateTime agora, OpcoesLimpeza op, GanchosDeCache cache)
+        DateTime agora, OpcoesLimpeza op, GanchosDeCache cache, IReadOnlySet<int>? fixados = null)
     {
         var (entradas, sobras) = Listar(hlsDir, remuxDir, cache.UltimoAcesso);
         var itens = 0;
@@ -122,6 +122,7 @@ internal static class LimpezaDeCache
 
         foreach (var e in entradas)
         {
+            if (fixados is not null && fixados.Contains(e.Id)) continue;   // "Manter no cache": a limpeza não toca
             if (!Apagar(e, Classificar(e.Id, assistidos), assistidos.Count == 0, agora, op) || cache.TemJob(e.Id, e.Tipo)) continue;
             cache.Apagar(e.Id, e.Tipo);
             itens++;

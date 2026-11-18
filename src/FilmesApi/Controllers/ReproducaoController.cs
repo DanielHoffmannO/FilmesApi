@@ -93,7 +93,9 @@ public class ReproducaoController : ControllerBase
         return Ok(new
         {
             compativel = compat == CompatibilidadeDireta.Compativel,
-            remuxavel = compat == CompatibilidadeDireta.SoAudioIncompativel,
+            // com a cópia pronta no cache ("Manter no cache"), a TV sem HLS toca o .mp4 do NVMe em vez do original do SSD USB
+            remuxavel = compat == CompatibilidadeDireta.SoAudioIncompativel
+                || (compat != CompatibilidadeDireta.Compativel && _transcode.ObterRemuxPronto(id) is not null),
         });
     }
 

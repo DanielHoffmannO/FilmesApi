@@ -46,6 +46,8 @@ builder.Services.AddHostedService<DubladoIaService>();
 builder.Services.AddSaudeBiblioteca();   // varredura diária da biblioteca (truncados, duplicatas…); ver SaudeBibliotecaService
 builder.Services.AddSingleton<BackupService>();   // singleton + hosted: o POST /api/admin/backup chama ExecutarAsync()
 builder.Services.AddHostedService(sp => sp.GetRequiredService<BackupService>());
+builder.Services.AddSingleton<CacheFixadoService>();   // "Manter no cache": singleton + hosted, o CacheController e o despejo leem os fixados
+builder.Services.AddHostedService(sp => sp.GetRequiredService<CacheFixadoService>());
 builder.Services.AddSingleton<LimpezaCacheService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<LimpezaCacheService>());
 builder.Services.AddSingleton<NomesPersonalizadosService>();
@@ -98,6 +100,10 @@ using (var scope = app.Services.CreateScope())
 {
     DbInitializer.Executar(scope.ServiceProvider.GetRequiredService<AppDbContext>());
 }
+// Os fixados ("Manter no cache") valem desde o 1º segundo: nem o despejo nem a limpeza tocam neles.
+var cacheFixado = app.Services.GetRequiredService<CacheFixadoService>();
+cacheFixado.CarregarAsync().GetAwaiter().GetResult();
+app.Services.GetRequiredService<HlsTranscodeService>().ObterFixados = () => cacheFixado.Fixados;
 
 // Poda do cache HLS fora do caminho de boot: varre até 20 GB de arquivos calculando
 // tamanho, e em SD card isso segurava o start antes de aceitar a primeira request.
