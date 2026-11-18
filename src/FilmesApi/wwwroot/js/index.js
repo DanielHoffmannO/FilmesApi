@@ -352,7 +352,8 @@ window.addEventListener('scroll', () => {
   caixa.classList.toggle('recolhida', y > ultimoScrollY && y > 80);
   ultimoScrollY = y;
 }, { passive: true });
-setInterval(() => { if (!document.hidden) consultarAgora(); }, 3000);
+// com a folha do controle aberta, o iframe já consulta o estado a cada 1 s: não repete aqui atrás dela (fecharControleTv() consulta na volta)
+setInterval(() => { if (!document.hidden && !document.getElementById('tvSheet').classList.contains('on')) consultarAgora(); }, 3000);
 consultarAgora();
 
 // ─── Configurações (menu simples; as opções reais entram aqui conforme forem aprovadas) ───
