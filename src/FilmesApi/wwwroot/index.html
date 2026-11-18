@@ -57,14 +57,19 @@
   <div class="converting" id="converting" role="status" aria-live="polite"></div>
   <div id="sobreVideo">
     <div id="trilhoLocal"><i id="trilhoAbertura"></i><i id="trilhoCreditos"></i></div>
-    <button id="ctaLocal" class="cta neutro" onclick="acaoDoBotaoLocal()"></button>
-    <div id="avisoLocal" role="status"></div>
-  </div>
-  <div id="proximoBox">
-    <div class="lbl">Próximo episódio <span id="proximoSeg"></span></div>
-    <div class="tit" id="proximoTit"></div>
-    <button class="go" onclick="irProximo()">▶ Assistir agora</button>
-    <button onclick="cancelarProximoPeloUsuario()">Cancelar</button>
+    <!-- UM overlay de ação por vez, na parte de baixo, acima da barra do player (prioridade: próximo automático > aviso > botão) -->
+    <div id="acaoLocal" data-vez="">
+      <div id="avisoLocal" role="status"></div>
+      <button id="ctaLocal" class="cta neutro" onclick="acaoDoBotaoLocal()"></button>
+      <div id="proximoBox">
+        <div class="lbl">Próximo episódio <span id="proximoSeg"></span></div>
+        <div class="tit" id="proximoTit"></div>
+        <div class="prox-acoes">
+          <button class="go" onclick="irProximo()">▶ Assistir agora</button>
+          <button onclick="cancelarProximoPeloUsuario()">Cancelar</button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 

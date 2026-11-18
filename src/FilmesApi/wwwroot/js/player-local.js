@@ -130,6 +130,7 @@ async function play(id, ehRetry, semRecuo) {
   duracaoConfiavel = false;
   reproducaoConcluida = false;
   reiniciarContextoLocal();
+  fetch(`${API}/${id}/pre-aquecer?paraTv=1`, { method: 'POST' }).catch(() => {});   // quem assiste no celular costuma mandar pra TV: deixa a cópia mp4 dela pronta (e a do próximo)
   carregarContextoLocal(id);   // abertura, créditos, próximo e interruptores da temporada: chegam em segundo plano
   const prog = await fetchJsonOuNull(`${API}/${id}/progresso`);
   if (prog && prog.posicaoSegundos) posicaoParaRetomar = (ehRetry || semRecuo) ? prog.posicaoSegundos : recuarRetomada(prog.posicaoSegundos, RETOMAR_RECUO_S, RETOMAR_MIN_SEGUNDOS);
@@ -245,7 +246,7 @@ async function ofereceProximo(id) {
   // O token (proximoOfertaId) resolve isso não importa o intervalo entre as 2 chamadas: só a
   // resposta da ÚLTIMA ofereceProximo (que "ganhou" o token por último) monta o timer.
   cancelarProximo();
-  const contagem = contagemNoFim(estadoLocalDoPlayer(ctxLocal), PROXIMO_COUNTDOWN_S);   // null = cancelou o próximo automático neste episódio: fica parado no fim
+  const contagem = contagemNoFim(estadoLocalDoPlayer(Object.assign({}, ctxLocal, { seekTras: false }), duracaoLocal()), PROXIMO_COUNTDOWN_S);   // null = cancelou o próximo automático neste episódio: fica parado no fim (voltar a imagem não cancela o FIM: ended oferece normal)
   if (contagem === null) return;
   const meuToken = ++proximoOfertaId;
   let prox;
@@ -367,6 +368,8 @@ function configurarProgresso() {
   });
 
   ['pointerdown', 'pointermove', 'touchstart', 'keydown'].forEach(ev => els.player.addEventListener(ev, marcarAtividadeLocal, { passive: true }));
+  // voltar a imagem (seek pra trás de mais de 2 s) desliga o próximo automático pro resto do episódio
+  video.addEventListener('seeking', () => { if (ctxLocal.id === filmeAtual && video.currentTime < ctxLocal.ultimaPos - 2) ctxLocal.seekTras = true; });
   video.addEventListener('timeupdate', atualizarControlesLocais);
   window.addEventListener('orientationchange', () => setTimeout(atualizarControlesLocais, 250));
   video.addEventListener('loadedmetadata', atualizarControlesLocais);
@@ -415,7 +418,7 @@ const PROXIMO_ENSINA_RESTANTE_S = 90;   // apertar "Próximo" a ≤ isto do fim 
 let ctxLocal = novoContextoLocal();
 function novoContextoLocal() {
   return { id: null, filme: null, abertura: null, creditos: null, prox: null, pularAbertura: false, proximoAutomatico: false,
-           jaPulou: false, jaProximo: false, cancelado: false, modo: null, atividade: 0 };
+           jaPulou: false, jaProximo: false, cancelado: false, seekTras: false, ultimaPos: 0, modo: null, atividade: 0 };
 }
 function reiniciarContextoLocal() {
   ctxLocal = novoContextoLocal();
@@ -456,16 +459,27 @@ function atualizarControlesLocais() {
       const inicio = c.abertura.inicioSegundos;
       video.currentTime = destino;
       avisoLocal('Abertura pulada', { rotulo: 'Voltar', fazer: () => { video.currentTime = Math.max(0, inicio - 1); } });
-    } else if (c.prox && decidirProximoAutomatico(estadoLocalDoPlayer(c), pos, c.jaProximo)) {
+    } else if (c.prox && decidirProximoAutomatico(estadoLocalDoPlayer(c, duracaoLocal()), pos, c.jaProximo, duracaoLocal())) {
       c.jaProximo = true;
       ofereceProximo(filmeAtual);   // a contagem de 5 s (e o "Cancelar") é a mesma oferta do fim do episódio
     }
   }
 
-  const modo = modoDoBotaoDireita(c.abertura, c.creditos, !!c.prox, pos);
+  const modo = modoDoBotaoDireita(c.abertura, c.creditos, !!c.prox, pos, duracaoLocal());
+  if (!video.seeking) c.ultimaPos = pos;
   pintarBotaoLocal(modo);
   pintarTrilhoLocal();
 }
+
+// Quem aparece no overlay de ação (um por vez): o card do próximo automático, senão o aviso, senão o botão contextual.
+function arbitrarAcaoLocal() {
+  const c = document.getElementById('acaoLocal');
+  const vez = els.proximoBox.classList.contains('on') ? 'proximo'
+    : document.getElementById('avisoLocal').classList.contains('on') ? 'aviso'
+    : document.getElementById('ctaLocal').classList.contains('on') ? 'cta' : '';
+  if (c.dataset.vez !== vez) c.dataset.vez = vez;
+}
+new MutationObserver(arbitrarAcaoLocal).observe(document.getElementById('acaoLocal'), { subtree: true, attributes: true, attributeFilter: ['class'] });
 
 function pintarBotaoLocal(modo) {
   const b = document.getElementById('ctaLocal');
@@ -541,7 +555,7 @@ function posicionarSobreVideo() {
 function pintarTrilhoLocal() {
   const tr = document.getElementById('trilhoLocal'), c = ctxLocal, dur = duracaoLocal();
   const fa = c.abertura ? faixaEmPercentual(c.abertura.inicioSegundos, c.abertura.fimSegundos, dur) : null;
-  const fc = c.creditos ? faixaEmPercentual(c.creditos.inicioSegundos, dur, dur) : null;
+  const fc = creditosPlausiveis(c.creditos, dur) ? faixaEmPercentual(c.creditos.inicioSegundos, dur, dur) : null;
   if (!dur || (!fa && !fc)) { tr.classList.remove('on'); return; }
   const pinta = (id, f) => { const z = document.getElementById(id); z.style.display = f ? 'block' : 'none'; if (f) { z.style.left = f.left + '%'; z.style.width = f.width + '%'; } };
   pinta('trilhoAbertura', fa); pinta('trilhoCreditos', fc);
@@ -556,7 +570,7 @@ function avisoLocal(texto, acao) {
   if (acao) el.querySelector('button').onclick = () => { el.classList.remove('on'); acao.fazer(); };
   el.classList.add('on');
   clearTimeout(avisoTimer);
-  avisoTimer = setTimeout(() => el.classList.remove('on'), 6000);
+  avisoTimer = setTimeout(() => el.classList.remove('on'), 4000);
 }
 
 // Toque/mouse no player: mostra o "30s »" um instante.

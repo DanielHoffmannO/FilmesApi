@@ -150,24 +150,12 @@ button:focus-visible,a:focus-visible,.tile:focus-visible{outline:2px solid var(-
 /* camada alinhada à imagem do vídeo (posicionada por JS): botão contextual, faixas da barra e aviso */
 #sobreVideo{position:absolute;pointer-events:none;z-index:104}
 #sobreVideo>*{pointer-events:auto}
-#ctaLocal{position:absolute;right:12px;bottom:76px;height:48px;min-width:48px;padding:0 20px;border-radius:24px;font-size:15px;font-weight:600;display:none;background:var(--acc);border-color:var(--acc);color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.5)}
-#ctaLocal.neutro{background:rgba(27,27,27,.92);border-color:#3a3a3a;font-weight:500}
-#ctaLocal.on{display:inline-flex;align-items:center;justify-content:center}
 #trilhoLocal{position:absolute;left:0;right:0;bottom:66px;height:4px;pointer-events:none;display:none}
 #trilhoLocal.on{display:block}
 #trilhoLocal i{position:absolute;top:0;height:4px;border-radius:2px;background:rgba(255,255,255,.55)}
 #trilhoLocal #trilhoCreditos{background:rgba(229,9,20,.75)}
-#avisoLocal{position:absolute;left:12px;bottom:76px;max-width:calc(100% - 150px);display:none;align-items:center;gap:6px;background:rgba(20,20,20,.94);border:1px solid var(--line);border-radius:24px;padding:0 6px 0 16px;min-height:48px;font-size:13.5px}
-#avisoLocal.on{display:flex}
-#avisoLocal button{height:44px;padding:0 14px;border-radius:22px;color:var(--acc-txt);background:none;border:0;font-weight:600}
-#proximoBox{display:none;position:absolute;left:max(12px,env(safe-area-inset-left));right:max(12px,env(safe-area-inset-right));bottom:max(86px,calc(env(safe-area-inset-bottom) + 70px));margin:0 auto;max-width:420px;background:rgba(20,20,20,.97);border:1px solid var(--line);border-radius:16px;padding:14px 16px;z-index:106}
-#proximoBox.on{display:block}
-#proximoBox .lbl{font-size:11.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.08em}
-#proximoBox .tit{font-size:14.5px;margin:4px 0 12px;color:#fff}
-#proximoBox button{height:44px;padding:0 18px;margin-right:8px}
-#proximoBox .go{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
 @media(orientation:landscape) and (max-height:500px){
-  #ctaLocal,#avisoLocal{bottom:62px}
+  #acaoLocal{bottom:calc(62px + env(safe-area-inset-bottom))}
   #trilhoLocal{bottom:54px}
   :root{--h-nav:44px;--h-agora:44px}
 }
@@ -235,3 +223,21 @@ body.com-agora main{padding-bottom:calc(var(--h-nav) + var(--h-agora) + 16px + e
 .corpo-ficha .row .rbtn{width:40px;height:40px}
 .corpo-ficha .row .rep{color:#bdbdbd}
 .corpo-ficha .row.assistido .rep{color:var(--mut)}
+
+/* ─── Overlay de ação único (player local): um container em coluna, acima da barra do player, respeitando a área segura. Nada com posição própria. ─── */
+#acaoLocal{position:absolute;left:max(12px,env(safe-area-inset-left));right:max(12px,env(safe-area-inset-right));bottom:calc(76px + env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+#acaoLocal>*{display:none;max-width:100%}
+#acaoLocal>.on{display:flex}
+#acaoLocal[data-vez=proximo]>:not(#proximoBox),#acaoLocal[data-vez=aviso]>#ctaLocal{display:none!important}   /* prioridade: próximo automático > aviso > botão */
+#ctaLocal{height:48px;min-width:48px;padding:0 20px;border-radius:24px;font-size:15px;font-weight:600;align-items:center;justify-content:center;background:var(--acc);border-color:var(--acc);color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.5)}
+#ctaLocal.neutro{background:rgba(27,27,27,.92);border-color:#3a3a3a;font-weight:500}
+#avisoLocal{align-self:flex-start;align-items:center;gap:6px;background:rgba(20,20,20,.94);border:1px solid var(--line);border-radius:24px;padding:0 6px 0 16px;min-height:48px;font-size:13.5px}
+#avisoLocal button{height:44px;padding:0 14px;border-radius:22px;color:var(--acc-txt);background:none;border:0;font-weight:600}
+#proximoBox{flex-direction:column;align-self:stretch;max-width:none;background:rgba(20,20,20,.97);border:1px solid var(--line);border-radius:16px;padding:14px 16px}
+#proximoBox.on{display:flex}
+#proximoBox .lbl{font-size:11.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.08em}
+#proximoBox .tit{font-size:14.5px;margin:4px 0 12px;color:#fff}
+#proximoBox button{height:44px;padding:0 18px;margin-right:8px}
+#proximoBox .go{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+#proximoBox .prox-acoes{display:flex;gap:8px;flex-wrap:wrap}
+#proximoBox .prox-acoes button{margin:0;flex:1 1 auto}

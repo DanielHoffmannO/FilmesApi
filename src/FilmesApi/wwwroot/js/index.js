@@ -264,14 +264,39 @@ window.addEventListener('message', e => {
 const PLAYER_API = '/api/player';
 
 async function enviarParaTv(id) {
-  fetch(`${API}/${id}/pre-aquecer`, { method: 'POST' }).catch(() => {});   // aquece o remux enquanto a TV carrega
+  fetch(`${API}/${id}/pre-aquecer?paraTv=1`, { method: 'POST' }).catch(() => {});   // aquece o remux (e o do próximo) enquanto a TV carrega
   try {
     const r = await fetch(`${PLAYER_API}/selecionar/${id}`, { method: 'POST' });
     if (!r.ok) throw new Error();
-    msgScanErro('📺 Enviado para a TV');
     fecharFicha();
     consultarAgora();
+    acompanharPreparoTv(id);
   } catch { msgScanErro('Não consegui falar com a TV.'); }
+}
+
+// Feedback do envio: a TV só toca o .mp4 quando o servidor termina de preparar (áudio 5.1 → AAC leva ~1,5 min se a cópia não estava pronta). Mostra o estado
+// real — porcentagem e segundos — em vez de silêncio; some quando a TV pode tocar.
+let preparoTvToken = 0, preparoTvTimer = null;
+function mostrarPreparoTv(texto, fixo) {
+  const msg = document.getElementById('scanMsg');
+  clearTimeout(preparoTvTimer);
+  msg.textContent = texto; msg.style.display = 'block';
+  if (!fixo) preparoTvTimer = setTimeout(() => { msg.style.display = 'none'; }, SCAN_MSG_DURATION_MS + 1500);
+}
+async function acompanharPreparoTv(id) {
+  const meu = ++preparoTvToken, t0 = Date.now();
+  mostrarPreparoTv('📺 Enviado para a TV');
+  const pd = await fetchJsonOuNull(`${API}/${id}/pode-direto`);
+  if (meu !== preparoTvToken || !pd || !pd.remuxavel) return;   // sem remux: a TV toca direto, nada a esperar
+  for (let i = 0; i < 150 && meu === preparoTvToken; i++) {
+    const s = await fetchJsonOuNull(`${API}/${id}/remux-status`);
+    const seg = Math.round((Date.now() - t0) / 1000);
+    if (meu !== preparoTvToken) return;
+    if (!s || s.status === 'disponivel') { mostrarPreparoTv(seg > 3 ? `▶ Pronto para a TV (${seg}s)` : '📺 Enviado para a TV'); return; }
+    if (s.status === 'erro') { mostrarPreparoTv('A TV não conseguiu preparar este vídeo.'); return; }
+    mostrarPreparoTv(`⏳ Preparando para a TV… ${s.progresso != null ? s.progresso + '% · ' : ''}${seg}s`, true);
+    await new Promise(r => setTimeout(r, 2000));
+  }
 }
 
 // Do player do celular para a TV: grava onde parou, manda o mesmo título (a TV retoma dali) e fecha o player local.
