@@ -252,4 +252,23 @@ function ordenarPorIdioma(itens, pegar) {
   return chaves.map(function (k) { return k.it; });
 }
 
-// ─── Áudio padrão por série (index.html e controle.html; a TV só obedece o servidor) ───
+// ─── Requisições (index, player local e controle da TV) ───
+
+// Opções do fetch com corpo JSON: fetch(url, opcoesJson('POST', { idx: 2 })).
+function opcoesJson(metodo, corpo) {
+  return { method: metodo, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) };
+}
+
+// Interruptor de uma temporada (pularAbertura / proximoAutomatico): PUT /api/series/{chave}/temporadas/{n}. Devolve Promise<boolean> (nunca rejeita).
+function salvarInterruptorDaTemporada(serie, temporada, campo, valor) {
+  var corpo = {}; corpo[campo] = valor;
+  return fetch('/api/series/' + encodeURIComponent(serie) + '/temporadas/' + temporada, opcoesJson('PUT', corpo))
+    .then(function (r) { return r.ok; }).catch(function () { return false; });
+}
+
+// "5" -> "05" (três dígitos ficam como estão).
+function pad2(n) { var s = String(n); return s.length < 2 ? '0' + s : s; }
+
+// Miniatura pequena na grade (w185) e pôster maior só na ficha (w500): o TMDb serve o mesmo arquivo em vários tamanhos, trocando o segmento "/w342/" da
+// URL guardada — se a URL não tiver esse segmento, usa como veio.
+function pw(url, largura) { return url ? url.replace('/w342/', '/w' + largura + '/') : ''; }

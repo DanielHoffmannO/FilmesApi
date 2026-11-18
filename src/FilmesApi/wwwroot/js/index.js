@@ -34,9 +34,6 @@ async function load() {
 // episódios) vêm prontos de /api/filmes/tela — esta tela só desenha o que chega, sem
 // nenhuma lógica própria de agrupar (era assim que o mesmo bug precisava ser corrigido
 // em 3 lugares diferentes: index.html, controle.html e tv.html).
-// Miniatura pequena na grade (w185) e pôster maior só na ficha (w500): o TMDb serve o mesmo arquivo em vários tamanhos,
-// trocando o segmento "/w342/" da URL guardada — se a URL não tiver esse segmento, usa como veio.
-const pw = (url, w) => url ? url.replace('/w342/', `/w${w}/`) : '';
 
 // Indicador do "Manter no cache": ✔ pronto, ⬇ marcado (preparando/na fila), '' nada.
 function cacheDoFilme(id) {
@@ -180,7 +177,7 @@ function botaoCacheHtml(ids, modo) {
 
 async function postarJson(url, corpo) {
   try {
-    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+    const r = await fetch(url, opcoesJson('POST', corpo));
     return r.ok ? r.json() : null;
   } catch { return null; }
 }
@@ -314,8 +311,7 @@ async function continuarNoCelular() {
   if (!est || est.filmeId == null) return;
   const id = est.filmeId;
   if (est.posSegundos > 15) {
-    await fetch(`${API}/${id}/progresso`, { method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ posicao: est.posSegundos, duracao: est.duracaoSegundos > 0 ? est.duracaoSegundos : null }) }).catch(() => {});
+    await fetch(`${API}/${id}/progresso`, opcoesJson('PUT', { posicao: est.posSegundos, duracao: est.duracaoSegundos > 0 ? est.duracaoSegundos : null })).catch(() => {});
   }
   await fetch(`${PLAYER_API}/parar`, { method: 'POST' }).catch(() => {});
   consultarAgora();
@@ -499,7 +495,6 @@ function barraProgresso(item) {
 
 // formatarTempo() vem de /js/util.js.
 
-const pad2 = n => String(n).padStart(2, '0');
 
 // "S01E02" quando dá pra saber temporada/episódio; null senão (chamador decide o fallback).
 function codigoEpisodio(f) {

@@ -389,15 +389,8 @@ function configurarProgresso() {
 function salvarProgresso() {
   const video = els.video;
   if (filmeAtual == null || reproducaoConcluida || !(video.currentTime > 15)) return Promise.resolve();
-  return fetch(`${API}/${filmeAtual}/progresso`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      posicao: video.currentTime,
-      duracao: duracaoConfiavel && isFinite(video.duration) && video.duration > 0 ? video.duration : null
-    }),
-    keepalive: true
-  }).catch(() => {});
+  const corpo = { posicao: video.currentTime, duracao: duracaoConfiavel && isFinite(video.duration) && video.duration > 0 ? video.duration : null };
+  return fetch(`${API}/${filmeAtual}/progresso`, Object.assign(opcoesJson('PUT', corpo), { keepalive: true })).catch(() => {});
 }
 
 
@@ -502,7 +495,7 @@ async function pularAberturaLocal() {
   els.video.currentTime = c.abertura.fimSegundos;
   const f = c.filme;
   if (!c.pularAbertura && f && f.serieChave && f.temporada != null) {
-    if (await salvarInterruptorLocal(f.serieChave, f.temporada, 'pularAbertura', true)) {
+    if (await salvarInterruptorDaTemporada(f.serieChave, f.temporada, 'pularAbertura', true)) {
       c.pularAbertura = true;
       avisoLocal(`Pulo automático da abertura ligado na temporada ${f.temporada}.`, { rotulo: 'Desligar', fazer: () => desligarInterruptorLocal('pularAbertura') });
     }
@@ -514,7 +507,7 @@ async function proximoEpisodioLocal() {
   const c = ctxLocal, prox = c.prox, f = c.filme;
   if (!prox) return;
   if (!c.proximoAutomatico && f && f.serieChave && f.temporada != null && proximoManualEnsina(c.creditos, posLocal(), duracaoLocal(), PROXIMO_ENSINA_RESTANTE_S)) {
-    if (await salvarInterruptorLocal(f.serieChave, f.temporada, 'proximoAutomatico', true)) {
+    if (await salvarInterruptorDaTemporada(f.serieChave, f.temporada, 'proximoAutomatico', true)) {
       c.proximoAutomatico = true;
       avisoLocal(`Próximo automático ligado na temporada ${f.temporada}.`, null);
     }
@@ -523,17 +516,10 @@ async function proximoEpisodioLocal() {
   play(prox.id, false, true);
 }
 
-async function salvarInterruptorLocal(serie, temp, campo, valor) {
-  const r = await fetch(`/api/series/${encodeURIComponent(serie)}/temporadas/${temp}`, {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [campo]: valor })
-  }).catch(() => null);
-  return !!r && r.ok;
-}
-
 async function desligarInterruptorLocal(campo) {
   const c = ctxLocal, f = c.filme;
   if (!f || !f.serieChave) return;
-  if (await salvarInterruptorLocal(f.serieChave, f.temporada, campo, false)) c[campo] = false;
+  if (await salvarInterruptorDaTemporada(f.serieChave, f.temporada, campo, false)) c[campo] = false;
 }
 
 // A camada #sobreVideo cobre o elemento <video> (que ocupa a tela toda; a imagem fica centralizada e a barra nativa embaixo): o botão, as faixas e o

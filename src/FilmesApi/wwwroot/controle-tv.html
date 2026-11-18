@@ -353,7 +353,7 @@ document.getElementById('filters').addEventListener('click', e => {
 // "E02" (ou "E23-24" nos arquivos duplos) a partir do rótulo do servidor; sem SxxExx, o número do episódio.
 function codigoEp(f) {
   const m = /E\d+(?:-E?\d+)?/i.exec(f.rotulo || '');
-  return m ? m[0].toUpperCase() : (f.episodio != null ? 'E' + String(f.episodio).padStart(2, '0') : '');
+  return m ? m[0].toUpperCase() : (f.episodio != null ? 'E' + pad2(f.episodio) : '');
 }
 const tocandoAgora = f => !!(ultimoEstadoRemoto && ultimoEstadoRemoto.filmeId === f.id);
 
@@ -509,7 +509,7 @@ let filmeAtualRemoto = null;  // cache do filme tocando agora — só busca de n
 function mmss(s) {
   s = Math.max(0, Math.round(s || 0));
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
-  return (h ? h + ':' + String(m).padStart(2, '0') : String(m)) + ':' + String(sec).padStart(2, '0');
+  return (h ? h + ':' + pad2(m) : String(m)) + ':' + pad2(sec);
 }
 
 async function enviarParaTv(id) {
@@ -531,7 +531,7 @@ function atualizarCapa() {
   if (!f) return;
   const img = document.getElementById('capaImg');
   img.style.display = f.posterUrl ? '' : 'none';
-  if (f.posterUrl) img.src = f.posterUrl.replace('/w342/', '/w500/');
+  if (f.posterUrl) img.src = pw(f.posterUrl, 500);
   document.getElementById('capaTit').textContent = f.ehEpisodio && f.serie ? f.serie : f.titulo;
   document.getElementById('capaSub').textContent = f.ehEpisodio
     ? [f.temporada != null ? 'T' + f.temporada : '', codigoEp(f), f.tituloEpisodio].filter(Boolean).join(' · ')
@@ -624,10 +624,7 @@ async function remotePlayPause() {
 }
 
 async function remoteSeek(delta) {
-  await fetch(`${PLAYER_API}/seek`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ delta })
-  });
+  await fetch(`${PLAYER_API}/seek`, opcoesJson('POST', { delta }));
   pollRemote();
 }
 
@@ -636,10 +633,7 @@ async function remoteScrub(e) {
   const bar = document.getElementById('remoteProg').getBoundingClientRect();
   if (!dur || !bar.width) return;
   const frac = Math.max(0, Math.min(1, (e.clientX - bar.left) / bar.width));
-  await fetch(`${PLAYER_API}/seek-abs`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pos: frac * dur })
-  });
+  await fetch(`${PLAYER_API}/seek-abs`, opcoesJson('POST', { pos: frac * dur }));
   pollRemote();
 }
 
@@ -693,10 +687,7 @@ async function remotePularAbertura() {
 
 async function remoteVolume(valor) {
   document.getElementById('remoteVolume').style.setProperty('--v', (100 * valor) + '%');
-  await fetch(`${PLAYER_API}/volume`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ valor: Number(valor) })
-  });
+  await fetch(`${PLAYER_API}/volume`, opcoesJson('POST', { valor: Number(valor) }));
 }
 
 // ■ Parar: manda parar e, com a TV parada, FECHA o controle e volta pra biblioteca (embutido: fecha a folha no index; direto: vai pra "/").
@@ -782,7 +773,7 @@ function atualizarLinhaIa() {
 
 // Troca a faixa de áudio da TV (a TV regera o HLS/remux — não é instantâneo). Mesmo caminho da folha "Idioma e legenda".
 async function remoteTrocarAudio(idx) {
-  await fetch(`${PLAYER_API}/audio`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idx }) });
+  await fetch(`${PLAYER_API}/audio`, opcoesJson('POST', { idx }));
   remoteAudios = remoteAudios.map(a => ({ ...a, atual: a.idx === idx }));
   if (padroes[filmeAtualRemoto?.serieChave]) await gravarEscolhaComoPadraoDaSerie();
   atualizarLinhaIa();
@@ -811,10 +802,7 @@ document.getElementById('grid').addEventListener('click', async e => {
 }, true);
 
 async function definirInterruptor(serie, temp, campo, novo) {
-  const r = await fetch(`/api/series/${encodeURIComponent(serie)}/temporadas/${temp}`, {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [campo]: novo })
-  }).catch(() => null);
-  if (!r || !r.ok) { toast('Não consegui salvar. Tente de novo.'); return false; }
+  if (!await salvarInterruptorDaTemporada(serie, temp, campo, novo)) { toast('Não consegui salvar. Tente de novo.'); return false; }
   ((prefsTemporadas[serie] ||= {})[temp] ||= {})[campo] = novo;
   pintarInterruptores();
   return true;
@@ -846,8 +834,7 @@ function tratarAviso(aviso, instancia) {
   ultimoAviso = aviso.versao;
   const f = filmeAtualRemoto, ab = ultimoEstadoRemoto && ultimoEstadoRemoto.abertura;
   const acoes = {
-    voltar: ab && { rotulo: 'Voltar', fazer: () => fetch(`${PLAYER_API}/seek-abs`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pos: ab.inicio }) }).then(pollRemote) },
+    voltar: ab && { rotulo: 'Voltar', fazer: () => fetch(`${PLAYER_API}/seek-abs`, opcoesJson('POST', { pos: ab.inicio })).then(pollRemote) },
     desligar: f && f.serieChave && { rotulo: 'Desligar', fazer: () => definirInterruptor(f.serieChave, f.temporada, 'pularAbertura', false) },
     'desligar-proximo': f && f.serieChave && { rotulo: 'Desligar', fazer: () => definirInterruptor(f.serieChave, f.temporada, 'proximoAutomatico', false) },
     cancelar: { rotulo: 'Cancelar', fazer: () => fetch(`${PLAYER_API}/proximo-cancelar`, { method: 'POST' }).then(pollRemote) },
@@ -857,9 +844,7 @@ function tratarAviso(aviso, instancia) {
 }
 
 async function salvarPadrao(chave, tipo, valor) {   // tipo: 'audio' | 'legenda'
-  const r = await fetch(`/api/series/${encodeURIComponent(chave)}/${tipo}`, {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idioma: valor || null })
-  }).catch(() => null);
+  const r = await fetch(`/api/series/${encodeURIComponent(chave)}/${tipo}`, opcoesJson('PUT', { idioma: valor || null })).catch(() => null);
   if (!r || !r.ok) { toast('Não consegui salvar o padrão da série.'); return false; }
   const p = padroes[chave] ||= {};
   if (valor) p[tipo] = valor; else delete p[tipo];
@@ -1021,19 +1006,19 @@ document.getElementById('folhaCorpo').addEventListener('click', async e => {
   else if (fo === 's-legenda') await salvarPadrao(folha.chave, 'legenda', v);
   else if (fo === 'audio') {
     const idx = Number(v);
-    await fetch(`${PLAYER_API}/audio`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idx }) });
+    await fetch(`${PLAYER_API}/audio`, opcoesJson('POST', { idx }));
     remoteAudios = remoteAudios.map(a => ({ ...a, atual: a.idx === idx }));
     if (padroes[filmeAtualRemoto?.serieChave]) await gravarEscolhaComoPadraoDaSerie();
     pollRemote();
   } else if (fo === 'legenda') {
     const idx = Number(v);
-    await fetch(`${PLAYER_API}/legenda`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idx }) });
+    await fetch(`${PLAYER_API}/legenda`, opcoesJson('POST', { idx }));
     if (ultimoEstadoRemoto) ultimoEstadoRemoto = { ...ultimoEstadoRemoto, legendaIdx: idx };
     if (padroes[filmeAtualRemoto?.serieChave]) await gravarEscolhaComoPadraoDaSerie();
     pollRemote();
   } else if (fo === 'leg-tam' || fo === 'leg-pos') {
     const corpo = fo === 'leg-tam' ? { tamanho: v } : { posicao: v };
-    await fetch(`${PLAYER_API}/legenda-estilo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+    await fetch(`${PLAYER_API}/legenda-estilo`, opcoesJson('POST', corpo));
     if (ultimoEstadoRemoto) ultimoEstadoRemoto = { ...ultimoEstadoRemoto, ...(fo === 'leg-tam' ? { legendaTamanho: v } : { legendaPosicao: v }) };
     pollRemote();
   } else if (fo === 'sw-temp') {
@@ -1088,9 +1073,7 @@ async function remoteContinuar() {
 
 // minutos > 0: parar em N minutos; aoFim: parar ao fim do episódio; (0, false) cancela. Um pedido novo substitui o anterior.
 async function definirSono(minutos, aoFim, aviso) {
-  const r = await fetch(`${PLAYER_API}/sono`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minutos, aoFimDoEpisodio: aoFim })
-  }).catch(() => null);
+  const r = await fetch(`${PLAYER_API}/sono`, opcoesJson('POST', { minutos, aoFimDoEpisodio: aoFim })).catch(() => null);
   if (!r || !r.ok) { toast('Não consegui armar o sono. Tente de novo.'); return; }
   fecharSono();
   toast(aviso);
