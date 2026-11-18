@@ -104,6 +104,8 @@ header h1{font-size:18px;white-space:nowrap}
 .tile .sem{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:8px;font-size:12.5px;color:var(--mut);background:linear-gradient(160deg,var(--s3),var(--s1))}
 .tile .ok{position:absolute;top:5px;right:5px;background:rgba(0,0,0,.7);color:#7ddf8b;border-radius:10px;font-size:11px;padding:1px 6px}
 .tile .rm{position:absolute;top:0;left:0;width:44px;height:44px;border:0;border-radius:0 0 14px 0;background:rgba(0,0,0,.55);color:#fff;padding:0;font-size:14px}
+.tile .cch{position:absolute;bottom:5px;right:5px;background:rgba(0,0,0,.75);border-radius:10px;font-size:11px;padding:1px 6px;color:#9fd0ff}
+.tile .cch.ok{color:#7ddf8b}
 .tile .qtd{position:absolute;bottom:5px;left:5px;background:rgba(0,0,0,.72);color:#fff;border-radius:10px;font-size:11px;padding:1px 7px}
 .tile .rprog{position:absolute;left:0;right:0;bottom:0;height:3px;background:rgba(255,255,255,.18)}
 .tile .rprog>div{height:100%;background:var(--acc)}
@@ -137,6 +139,10 @@ nav#abas button.on{color:var(--acc-txt)}
 .cfg-lista a,.cfg-lista button{display:flex;align-items:center;gap:12px;width:100%;min-height:52px;padding:0 16px;border:0;border-top:1px solid var(--line);border-radius:0;background:none;color:var(--txt);font-size:15px;text-decoration:none;text-align:left;height:auto}
 .cfg-lista>:first-child{border-top:0}
 .cfg-lista small{color:var(--mut);font-size:12px;margin-left:auto}
+.cfg-info{padding:12px 16px;color:var(--mut);font-size:13px;line-height:1.45;border-top:1px solid var(--line)}
+.cfg-item{display:flex;align-items:center;gap:8px;min-height:48px;padding:0 8px 0 16px;border-top:1px solid var(--line);font-size:13.5px}
+.cfg-item span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cfg-item button{height:44px;width:44px;padding:0;flex:none;border-radius:50%}
 .sheet-tit{font-size:19px;font-weight:650;margin:4px 40px 0 0}
 .btn-tv{position:absolute;top:16px;left:24px;z-index:101;height:44px;border-radius:22px;background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600;padding:0 16px}
 #agora{position:fixed;left:0;right:0;bottom:calc(58px + env(safe-area-inset-bottom));z-index:39;display:none;align-items:center;gap:8px;background:var(--s2);border-top:1px solid var(--line);padding:6px 8px 6px 10px;min-height:56px}
@@ -255,7 +261,20 @@ async function load() {
 // trocando o segmento "/w342/" da URL guardada — se a URL não tiver esse segmento, usa como veio.
 const pw = (url, w) => url ? url.replace('/w342/', `/w${w}/`) : '';
 
+// Indicador do "Manter no cache": ✔ pronto, ⬇ marcado (preparando/na fila), '' nada.
+function cacheDoFilme(id) {
+  const c = cacheEst.itens.get(id);
+  return !c ? '' : c.pronto ? '✔' : '⬇';
+}
+function cacheDaSerie(eps) {
+  const marcados = eps.filter(e => cacheEst.itens.has(e.id));
+  if (!marcados.length) return '';
+  const prontos = marcados.filter(e => cacheEst.itens.get(e.id).pronto).length;
+  return prontos === marcados.length ? `✔ ${prontos}` : `⬇ ${prontos}/${marcados.length}`;
+}
+
 const tipoDaAba = { inicio: 'all', serie: 'serie', filme: 'filme', novela: 'novela', buscar: 'all' };
+let cacheEst = { itens: new Map(), tetoFixadoBytes: 0, fixadoProntoBytes: 0, remuxBytes: 0, remuxTetoBytes: 0 };   // 'Manter no cache' (GET /api/cache)
 let itens = new Map();     // chave -> {tipo:'filme'|'serie'|'pasta', ...} do último render (a ficha lê daqui)
 let fichaAberta = null;    // chave do que está na ficha
 
@@ -269,6 +288,7 @@ function tile(chave, o) {
         ${o.visto ? '<span class="ok">✓</span>' : ''}
         ${o.remover ? `<button class="rm" title="Tirar de continuar assistindo" aria-label="Tirar de continuar assistindo" onclick="event.stopPropagation(); removerDeContinuar(${o.remover})">✕</button>` : ''}
         ${o.qtd ? `<span class="qtd">${esc(o.qtd)}</span>` : ''}
+        ${o.cache ? `<span class="cch ${o.cache.startsWith('✔') ? 'ok' : ''}" title="Manter no cache">${esc(o.cache)}</span>` : ''}
         ${pct ? `<div class="rprog"><div style="width:${pct}%"></div></div>` : ''}
       </div>
       <div class="nome">${esc(o.nome)}</div>
@@ -282,7 +302,7 @@ function cartoesDaTela(t) {
   const filmeTile = f => {
     itens.set('f:' + f.id, { tipo: 'filme', f });
     return { nome: f.titulo, sort: f.titulo, poster: f.posterUrl, visto: f.assistido, pct: pctProgresso(f),
-             sub: f.anoLancamento ? String(f.anoLancamento) : '', onclick: `abrirFicha('f:${f.id}')` };
+             sub: f.anoLancamento ? String(f.anoLancamento) : '', cache: cacheDoFilme(f.id), onclick: `abrirFicha('f:${f.id}')` };
   };
   t.filmesSoltos.forEach(f => lista.push(filmeTile(f)));
   t.pastasFilme.forEach(p => {
@@ -296,7 +316,7 @@ function cartoesDaTela(t) {
     itens.set(k, { tipo: 'serie', s });
     const pst = s.episodios.find(f => f.posterUrl);
     const vistos = s.episodios.filter(e => e.assistido).length;
-    lista.push({ nome: s.nome, sort: s.nome, poster: pst && pst.posterUrl, visto: vistos === s.episodios.length,
+    lista.push({ nome: s.nome, sort: s.nome, poster: pst && pst.posterUrl, visto: vistos === s.episodios.length, cache: cacheDaSerie(s.episodios),
                  qtd: contagemEpisodios(s.episodios.length).replace(' episódios', ' eps').replace(' episódio', ' ep'),
                  onclick: `abrirFicha('${attr(k)}')` });
   });
@@ -333,7 +353,8 @@ async function render() {
   const buscaDoInicio = aba === 'inicio'
     ? Promise.all([fetchJsonOuNull('/api/catalogo/novidades?limite=20'), fetchJsonOuNull('/api/catalogo/dublados?limite=24')])
     : Promise.resolve([null, null]);
-  const [t, [novidades, dublados]] = await Promise.all([fetchJsonOuNull(`${API}/tela?${params}`), buscaDoInicio]);
+  const [t, [novidades, dublados], cacheResp] = await Promise.all([fetchJsonOuNull(`${API}/tela?${params}`), buscaDoInicio, fetchJsonOuNull('/api/cache')]);
+  if (cacheResp) cacheEst = { ...cacheResp, itens: new Map(cacheResp.itens.map(i => [i.id, i])) };
 
   if (!t) {
     mostrarVazio('<span class="ico">🔍</span>Não consegui falar com o servidor.');
@@ -366,6 +387,51 @@ async function render() {
   }
   window.scrollTo(0, scrollAntes);
   if (fichaAberta) { if (itens.has(fichaAberta)) montarFicha(fichaAberta); else fecharFicha(); }   // ficha aberta reflete o que mudou (visto, progresso)
+}
+
+// ─── "Manter no cache": cópia pronta no NVMe (não depende do SSD USB de mídia) ───
+function botaoCacheHtml(ids, modo) {
+  if (!ids.length) return '';
+  const lista = JSON.stringify(ids);
+  if (modo === 'filme') return `<button onclick="fixarCache(${lista})">⬇ Manter no cache</button>`;
+  if (modo === 'filme-fixado') return `<button onclick="desafixarCache(${lista})">✔ No cache · remover</button>`;
+  if (modo === 'serie') return `<button onclick="fixarCache(${lista})">⬇ Manter ${ids.length} não vistos no cache</button>`;
+  return `<button onclick="desafixarCache(${lista})">✔ ${ids.length} no cache · remover</button>`;
+}
+
+async function postarJson(url, corpo) {
+  try {
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+    return r.ok ? r.json() : null;
+  } catch { return null; }
+}
+
+async function fixarCache(ids) {
+  const r = await postarJson('/api/cache/fixar', { ids: ids.slice(0, 500) });
+  msgScanErro(r ? (r.novos ? `⬇ ${r.novos} marcado(s). A cópia é preparada aos poucos.` : 'Já estava no cache.') : 'Não consegui marcar.');
+  await render();
+}
+
+async function desafixarCache(ids) {
+  const r = await postarJson('/api/cache/desafixar', { ids });
+  msgScanErro(r ? 'Removido de "Manter no cache".' : 'Não consegui remover.');
+  await render();
+  if (document.getElementById('cfgCache')) abrirConfig();
+}
+
+async function limparCache() {
+  if (!confirm('Apagar o cache de reprodução? O que está marcado em "Manter no cache" fica.')) return;
+  const r = await postarJson('/api/cache/limpar', {});
+  msgScanErro(r ? `🧹 ${r.itens} item(ns), ${(r.bytes / 1073741824).toFixed(1)} GB liberados.` : 'Não consegui limpar.');
+  abrirConfig();
+}
+
+function trocarTokenDoScan() {
+  let atual = ''; try { atual = localStorage.getItem('adminToken') || ''; } catch { /* storage bloqueado */ }
+  const novo = prompt('Token de administrador do scan (deixe vazio para apagar):', atual);
+  if (novo === null) return;
+  try { if (novo) localStorage.setItem('adminToken', novo); else localStorage.removeItem('adminToken'); } catch { /* storage bloqueado */ }
+  msgScanErro(novo ? 'Token guardado neste aparelho.' : 'Token apagado.');
 }
 
 // ─── Celular ⇄ TV (sem fila, sem confirmação: o último envio vale) ───────
@@ -428,8 +494,18 @@ setInterval(() => { if (!document.hidden) consultarAgora(); }, 3000);
 consultarAgora();
 
 // ─── Configurações (menu simples; as opções reais entram aqui conforme forem aprovadas) ───
-function abrirConfig() {
+async function abrirConfig() {
   fichaAberta = null;
+  const c = await fetchJsonOuNull('/api/cache');
+  const gb = n => (n / 1073741824).toFixed(1);
+  let cacheHtml = '<div class="cfg-info">Não consegui ler o cache agora.</div>';
+  if (c) {
+    const prontos = c.itens.filter(i => i.pronto).length;
+    cacheHtml = `
+      <div class="cfg-info" id="cfgCache">Cache de reprodução: <b>${gb(c.remuxBytes)} GB</b>${c.remuxTetoBytes ? ` de ${gb(c.remuxTetoBytes)} GB` : ''} usados.<br>
+        Mantidos: <b>${c.itens.length}</b> (${prontos} pronto(s), ${gb(c.fixadoProntoBytes)}${c.tetoFixadoBytes ? ` de ${gb(c.tetoFixadoBytes)}` : ''} GB). O que está marcado nunca é apagado.</div>
+      ${c.itens.map(i => `<div class="cfg-item"><span title="${attr(i.nome)}">${i.pronto ? '✔' : i.preparando ? '⏳' : '⬇'} ${esc(i.nome)}</span><button onclick="desafixarCache([${i.id}])" aria-label="Remover do cache">✕</button></div>`).join('')}`;
+  }
   els.sheetBox.scrollTop = 0;
   els.sheetBox.innerHTML = `
     <button class="sheet-x" onclick="fecharFicha()" aria-label="Fechar">✕</button>
@@ -437,8 +513,13 @@ function abrirConfig() {
     <div class="cfg-lista">
       <a href="/controle.html">🎛 Controle da TV <small>completo</small></a>
       <button onclick="fecharFicha(); scanMedia()">📂 Escanear a pasta de mídia</button>
+      <button onclick="trocarTokenDoScan()">🔑 Token do scan <small>neste aparelho</small></button>
       <a href="/diagnostico.html">🩺 Diagnóstico do catálogo</a>
       <a href="/status.html">📊 Status do servidor</a>
+    </div>
+    <div class="sheet-tit" style="margin-top:20px;font-size:16px">⬇ Manter no cache</div>
+    <div class="cfg-lista">${cacheHtml}
+      <button onclick="limparCache()">🧹 Limpar cache <small>mantém os marcados</small></button>
     </div>`;
   els.sheet.classList.add('on');
   document.body.style.overflow = 'hidden';
@@ -481,6 +562,7 @@ async function montarFicha(chave) {
     const retomar = f.posicaoSegundos ? `▶ Continuar aqui (${formatarTempo(f.posicaoSegundos)})` : '▶ Assistir aqui';
     acoes = `<button class="pri" onclick="enviarParaTv(${f.id})">📺 Enviar para a TV</button>
       <button onclick="play(${f.id})">${retomar}</button>
+      ${botaoCacheHtml([f.id], cacheDoFilme(f.id) ? 'filme-fixado' : 'filme')}
       <button onclick="toggleAssistido(${f.id})">${f.assistido ? '✓ Assistido' : 'Marcar como assistido'}</button>
       <a href="/api/filmes/${f.id}/download" download title="Baixar o arquivo original" class="btn-baixar">⬇ Baixar</a>`;
   } else if (it.tipo === 'pasta') {
@@ -501,6 +583,9 @@ async function montarFicha(chave) {
     const nomeAlvo = esc(codigoEpisodio(alvo) || alvo.rotulo || '');
     acoes = alvo ? `<button class="pri" onclick="enviarParaTv(${alvo.id})">📺 Enviar para a TV · ${nomeAlvo}</button>
       <button onclick="play(${alvo.id})">${emAndamento ? '▶ Continuar aqui' : '▶ Assistir aqui'}</button>` : '';
+    const idsNaoVistos = s.episodios.filter(e => !e.assistido && !e.ehExtra).map(e => e.id);
+    const idsFixados = s.episodios.filter(e => cacheEst.itens.has(e.id)).map(e => e.id);
+    acoes += botaoCacheHtml(idsFixados.length ? idsFixados : idsNaoVistos, idsFixados.length ? 'serie-fixada' : 'serie');
     const audios = await carregarAudiosDasSeries();
     corpo = corpoDaSerieHtml(s.episodios, seletorAudioSerieHtml(s.chave, audios[s.chave]), f => rowHtml(f, true));
   }
@@ -752,9 +837,15 @@ async function play(id, ehRetry, semRecuo) {
   }, 1000);
   converting.innerHTML = 'Preparando vídeo…<br><button onclick="closePlayer()">Cancelar</button>';
 
+  // Cópia pronta no NVMe ("Manter no cache")? Toca o .mp4 dela em vez do original do SSD USB.
+  let viaCache = false;
+  if (cacheEst.itens.get(id)?.pronto) {
+    const rs = await fetchJsonOuNull(`${API}/${id}/remux-status`);
+    viaCache = !!rs && rs.status === 'disponivel';
+  }
   let status;
   try {
-    status = await checarStatus(id);
+    status = viaCache ? 'compativel' : await checarStatus(id);
     while (status === 'preparando') {
       await new Promise(r => setTimeout(r, POLL_PREPARANDO_MS));
       if (filmeAtual !== id) return;  // fechou/trocou de filme durante a espera
@@ -774,7 +865,7 @@ async function play(id, ehRetry, semRecuo) {
   if (status === 'compativel') {
     duracaoConfiavel = true;
     const frag = posicaoParaRetomar > RETOMAR_MIN_SEGUNDOS ? `#t=${Math.floor(posicaoParaRetomar)}` : '';
-    video.src = `${API}/${id}/stream${frag}`;  // fragmento = começa na retomada, sem pulo
+    video.src = `${API}/${id}/${viaCache ? 'remux' : 'stream'}${frag}`;  // fragmento = começa na retomada, sem pulo
     video.play();
   } else {
     iniciarHls(video, `${API}/${id}/hls/playlist.m3u8`, posicaoParaRetomar);
