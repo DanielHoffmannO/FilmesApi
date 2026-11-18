@@ -48,3 +48,13 @@ Cada passo: 1287 testes .NET e os 6 `tools/verificar-*.js` passando; telas confe
 ## Não testado em aparelho real
 
 Tudo acima foi conferido por testes, verificadores node e prints headless. Não foi testado em celular/TV: a folha do controle em iPhone, o player com vídeo real, o pré-aquecimento sob carga e o `tv.html` (não mudou nesta rodada).
+
+## Rodada 2 (19/11/2026) — decisões do HoffServ e itens pequenos
+
+Inventário rediffado: rotas, páginas, tabelas, chaves, tipos e métodos **sem diferença**; funções do front iguais à rodada 1 (nenhuma nova remoção).
+
+- `player local: 'Proximo' ensina o automatico a 180 s` — fonte da verdade: `ProximoManual.RestantePadraoSegundos` (180, configurável por `ProximoRestanteSegundos`); o front usa a constante `PROXIMO_ENSINA_RESTANTE_PADRAO_S` em `js/player-regras.js` (antes 90 s com comentário "igual ao servidor"). Coberto em `tools/verificar-regras.js` (170 s ensina, 190 s não).
+- `controle: pre-aquecer com paraTv=1` — o controle da TV passa a aquecer como o index (a proteção de slot livre/placa fria continua no servidor).
+- `metadados: pausa de 300 ms so depois de chamada real ao TMDB` — antes cada episódio resolvido pelo cache de série esperava 300 ms (35 capítulos ≈ 10 s); teste de tempo em `MetadadosPorSerieTests` (< 5 s).
+- `remux: progresso fora do lock` — `ObterStatusRemux` lia o tamanho do original (SSD USB) com o lock preso a cada poll de 2 s.
+- **Fica como está:** `MedirCacheRemux` sem cache (um total em memória/TTL poderia subestimar o uso logo após gravar e permitir estourar o teto; sem teste de carga, risco > ganho).

@@ -45,8 +45,9 @@ public partial class HlsTranscodeService
                 _remuxJobs[filmeId] = Task.Run(() => ExecutarRemuxAsync(filmeId, origem, cts.Token));
             }
             _ultimoAcesso[filmeId] = DateTime.UtcNow;  // disparo e cada poll contam como interesse (ver ExecutarRemuxAsync)
-            return (RemuxStatus.Preparando, EstimarProgressoRemux(filmeId, origem));
         }
+        // fora do lock: o progresso lê o tamanho do .tmp e do ORIGINAL (SSD USB) a cada poll de 2 s e não precisa dele
+        return (RemuxStatus.Preparando, EstimarProgressoRemux(filmeId, origem));
     }
 
     private int? EstimarProgressoRemux(int filmeId, string origem)
