@@ -257,7 +257,14 @@ function fecharControleTv() {
   consultarAgora();
 }
 window.addEventListener('message', e => {
-  if (e.origin === location.origin && e.data && e.data.tipo === 'fechar-controle') fecharControleTv();
+  if (e.origin !== location.origin || !e.data || e.data.tipo !== 'fechar-controle') return;
+  if (e.data.parou) {   // ■ Parar no controle: a TV parou — a barra "Tocando na TV" e o estado velho saem já, sem esperar o próximo poll
+    estadoTv = null;
+    document.getElementById('agora').classList.remove('on');
+    document.body.classList.remove('com-agora');
+  }
+  fecharControleTv();
+  if (e.data.parou) render();   // a lista reflete o que mudou (posição salva, "na TV agora")
 });
 
 // ─── Celular ⇄ TV (sem fila, sem confirmação: o último envio vale) ───────

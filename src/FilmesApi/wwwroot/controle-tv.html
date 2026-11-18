@@ -520,7 +520,7 @@ async function enviarParaTv(id) {
 }
 
 // Modo embutido: pede ao index.html (a página de fora) que feche a folha.
-function fecharEmbed() { try { parent.postMessage({ tipo: 'fechar-controle' }, location.origin); } catch (e) { /* sem pai: nada a fechar */ } }
+function fecharEmbed(parou) { try { parent.postMessage({ tipo: 'fechar-controle', parou: !!parou }, location.origin); } catch (e) { /* sem pai: nada a fechar */ } }
 
 // Modo embutido: a capa (pôster, nome e sinopse) do que toca, ou o aviso de TV parada.
 function atualizarCapa() {
@@ -699,9 +699,13 @@ async function remoteVolume(valor) {
   });
 }
 
+// ■ Parar: manda parar e, com a TV parada, FECHA o controle e volta pra biblioteca (embutido: fecha a folha no index; direto: vai pra "/").
+// Se o parar falhar (TV/servidor fora), avisa e fica aqui.
 async function remoteParar() {
-  await fetch(`${PLAYER_API}/parar`, { method: 'POST' });
-  pollRemote();
+  const res = await fetch(`${PLAYER_API}/parar`, { method: 'POST' }).catch(() => null);
+  if (!res || !res.ok) { toast('Não consegui parar a TV. Tente de novo.'); return; }
+  if (EMBED) fecharEmbed(true);
+  else location.href = '/';
 }
 
 // A TV mesma oferece o próximo episódio (com contagem regressiva) ao terminar um — isso só
