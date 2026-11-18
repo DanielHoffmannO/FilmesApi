@@ -19,7 +19,12 @@ public class MetadataService : BackgroundService
     private readonly RegistroDeTarefas? _tarefas;
     private readonly NomesPersonalizadosService? _nomes;
     private readonly SemaphoreSlim _acordar = new(0, 1);
-    private readonly HashSet<string> _overridesAplicados = [];   // "chave|id" já invalidados neste processo (evita laço se o id der 404)
+    private readonly HashSet<string> _overridesAplicados = [];
+    // Um match por SÉRIE (não por episódio), guardado entre lotes: 35 capítulos de uma novela = 1 busca. Erro também fica (1 h) pra não repetir a cada lote.
+    private readonly Dictionary<string, (TmdbResultado? Res, DateTime Quando)> _cacheSeries = [];
+    private static readonly TimeSpan ValidadeDoErroDeSerie = TimeSpan.FromHours(1);
+    private readonly HashSet<string> _semMatchLogado = [];   // "tipo|termo" já avisado neste processo
+    private bool _varreuSemMatch;   // "chave|id" já invalidados neste processo (evita laço se o id der 404)
 
     public MetadataService(IServiceScopeFactory escopos, TmdbService tmdb, ILogger<MetadataService> logger,
         RegistroDeTarefas? tarefas = null, NomesPersonalizadosService? nomes = null)
@@ -143,7 +148,67 @@ public class MetadataService : BackgroundService
         _logger.LogInformation("Metadados: {N} episódio(s) voltam pro enriquecimento pra guardar o nome da série no TMDB.", voltam.Count);
     }
 
-    private async Task<int> ProcessarLoteAsync(CancellationToken ct)
+    /// <summary>Uma vez por execução: episódio que passou pelo enriquecimento SEM match (ex.: novela buscada pelo nome do arquivo) volta pra fila — agora
+    /// o match é por série. Filme sem match não volta (nada mudou pra ele).</summary>
+    private async Task ReenriquecerEpisodiosSemMatchAsync(AppDbContext db, CancellationToken ct)
+    {
+        if (_varreuSemMatch || !_tmdb.Habilitado) return;
+        _varreuSemMatch = true;
+
+        var candidatos = await db.Filmes.Where(f => f.ArquivoPath != null && f.MetadadosEm != null && f.TmdbId == null).ToListAsync(ct);
+        var voltam = candidatos.Where(f => MediaNomeParser.EhEpisodio(f.ArquivoPath)).ToList();
+        if (voltam.Count == 0) return;
+        foreach (var f in voltam) f.MetadadosEm = null;
+        await db.SaveChangesAsync(ct);
+        _logger.LogInformation("Metadados: {N} episódio(s) sem match voltam pro enriquecimento (agora por série).", voltam.Count);
+    }
+
+    /// <summary>Busca no TMDB: série primeiro pelo NOME DA SÉRIE (pasta) — um resultado vale pra todos os episódios — e só se não achar tenta
+    /// o título tirado do arquivo; filme pelo título. Registra o motivo quando não casa. Lança em erro de transporte (o lote para).</summary>
+    private async Task<TmdbResultado?> ResolverAsync(Models.Filme filme, string titulo, int? ano, bool serie, int? overrideId, CancellationToken ct)
+    {
+        TmdbResultado? res = null;
+        if (overrideId is int idForcado)
+        {
+            // id inexistente (404) devolve null: cai na busca normal em vez de deixar o item sem metadados
+            res = await _tmdb.BuscarPorIdAsync(idForcado, serie, ct);
+            if (res is null) await Task.Delay(TimeSpan.FromMilliseconds(300), ct);
+        }
+        if (res is not null) return res;
+
+        if (serie)
+        {
+            var nome = MediaNomeParser.ChaveSerie(filme.ArquivoPath);
+            var chaveSerie = $"tv|{MediaNomeParser.NormalizarBusca(nome)}|{ano}";
+            if (_cacheSeries.TryGetValue(chaveSerie, out var guardado) && (guardado.Res is not null || DateTime.UtcNow - guardado.Quando < ValidadeDoErroDeSerie))
+                res = guardado.Res;
+            else
+            {
+                res = string.IsNullOrWhiteSpace(nome) ? null : await _tmdb.BuscarAsync(nome, ano, serie: true, ct);
+                await Task.Delay(TimeSpan.FromMilliseconds(300), ct);
+                _cacheSeries[chaveSerie] = (res, DateTime.UtcNow);
+                if (res is null) AvisarSemMatch("tv", nome, titulo);
+            }
+            if (res is not null || string.IsNullOrWhiteSpace(titulo) || MediaNomeParser.NormalizarBusca(titulo) == MediaNomeParser.NormalizarBusca(nome)) return res;
+        }
+        if (string.IsNullOrWhiteSpace(titulo)) return null;
+        // o título do arquivo também fica em cache (série cujo nome da pasta não casou: não repete a busca por episódio de mesmo título)
+        var chaveTitulo = $"{(serie ? "tvt" : "mv")}|{MediaNomeParser.NormalizarBusca(titulo)}|{ano}";
+        if (_cacheSeries.TryGetValue(chaveTitulo, out var g2) && (g2.Res is not null || DateTime.UtcNow - g2.Quando < ValidadeDoErroDeSerie)) return g2.Res;
+        res = await _tmdb.BuscarAsync(titulo, ano, serie, ct);
+        _cacheSeries[chaveTitulo] = (res, DateTime.UtcNow);
+        if (res is null) AvisarSemMatch(serie ? "tv" : "movie", titulo, null);
+        return res;
+    }
+
+    private void AvisarSemMatch(string tipo, string buscado, string? alternativa)
+    {
+        if (!_semMatchLogado.Add($"{tipo}|{buscado}|{alternativa}")) return;
+        _logger.LogInformation("Metadados: sem match no TMDB (/search/{Tipo}) para '{Buscado}'{Alt} — use o campo tmdbId do diagnóstico se souber o id.",
+            tipo, buscado, alternativa is { Length: > 0 } ? $" (e pelo título do arquivo '{alternativa}')" : "");
+    }
+
+    internal async Task<int> ProcessarLoteAsync(CancellationToken ct)
     {
         using var escopo = _escopos.CreateScope();
         var db = escopo.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -151,6 +216,7 @@ public class MetadataService : BackgroundService
         await InvalidarOverridesNovosAsync(db, ct);
         await ReenriquecerTitulosNaoLatinosAsync(db, ct);
         await ReenriquecerSeriesSemNomeAsync(db, ct);
+        await ReenriquecerEpisodiosSemMatchAsync(db, ct);
 
         var pendentes = await db.Filmes
             .Where(f => f.MetadadosEm == null && f.ArquivoPath != null)
@@ -172,17 +238,7 @@ public class MetadataService : BackgroundService
 
             if (!cache.TryGetValue(chave, out var res))
             {
-                try
-                {
-                    if (overrideId is int idForcado)
-                    {
-                        // id inexistente (404) devolve null: cai na busca normal em vez de deixar o item sem metadados
-                        res = await _tmdb.BuscarPorIdAsync(idForcado, serie, ct);
-                        if (res is null) await Task.Delay(TimeSpan.FromMilliseconds(300), ct);
-                    }
-                    if (res is null)
-                        res = string.IsNullOrWhiteSpace(titulo) ? null : await _tmdb.BuscarAsync(titulo, ano, serie, ct);
-                }
+                try { res = await ResolverAsync(filme, titulo, ano, serie, overrideId, ct); }
                 catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
                 {
                     // TMDB fora do ar / timeout: para o lote aqui. Os restantes (e este) ficam

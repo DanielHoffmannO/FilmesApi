@@ -107,6 +107,9 @@ function render(d) {
         `<tr><td>${esc(u.serie)} ${campoTmdb(u.serie)}</td><td>T${esc(u.temporada)}E${esc(String(u.episodio).padStart(2, '0'))}</td><td>${arquivo(u.arquivo)}</td></tr>`).join('')}</table>`),
     secao('Solto na raiz, parece episódio', 'Está na raiz de /media sem marcador que o parser entenda, mas o nome parece de episódio.', d.soltosQueParecemEpisodio,
       it => `<table>${it.map(a => `<tr><td>${arquivo(a)}</td></tr>`).join('')}</table>`),
+    secao('Sem pôster/sinopse (TMDb)', 'O TMDb não casou (ou ainda não rodou). "Buscado" é o termo da busca; se o resultado for outro título, cole o id de themoviedb.org/tv/NNN aqui — vale em segundos.', d.semMetadados || [],
+      it => `<table><tr><th>Título</th><th>Buscado</th><th></th></tr>${it.map(m =>
+        `<tr><td>${esc(m.nome)}<div class="size">${esc(m.itens)} ${m.itens === 1 ? 'item' : 'itens'}</div></td><td><span class="path">/search/${esc(m.tipo)}: ${esc(m.buscado)}</span></td><td>${campoTmdb(m.chave)}</td></tr>`).join('')}</table>`),
     secao('Sugestões de nomes', 'Séries que parecem a mesma sob nomes diferentes, ou com nome de exibição de release. "aplicar" grava a entrada no nomes.json (vale em segundos); "copiar" só põe a linha na área de transferência.', d.sugestoesDeNomes,
       it => `<table><tr><th>Série</th><th>Sugestão</th><th></th></tr>${it.map((s, i) => `<tr><td>${esc(s.serie)}<div class="size">${esc(s.motivo)}</div></td><td><span class="path">${esc(s.secao)}: ${esc(s.chave)} → ${esc(s.valor)}</span></td><td><button data-n="${i}">aplicar</button> <button data-c="${i}">copiar</button> ${campoTmdb(s.serie)}</td></tr>`).join('')}</table>`),
     secao('Suspeito de propaganda', 'Menos de 60 MB com nome de uploader (1XBET, BLUDV, COMANDOTORRENTS, LAPUMIA), ou "Sample". Não dá pra apagar (torrent em seed)? Cole a linha na lista "ignorar" do nomes.json: o arquivo some do catálogo e continua no disco.', d.suspeitosDePropaganda,

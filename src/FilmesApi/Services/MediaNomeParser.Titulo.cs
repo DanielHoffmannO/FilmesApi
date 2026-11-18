@@ -108,6 +108,11 @@ public static partial class MediaNomeParser
     // só pra tentar achar um ano no nome da série.
     private static (string Titulo, int? Ano) TituloParaBusca(string? arquivoPath, string? tituloFallback, bool permiteFallbackSerie)
     {
+        // Novela: o nome do arquivo é "Nome.E001.720p.WEB-DL…-iND" (marcador que o corte abaixo não conhece) e o TMDB não acha nada com isso;
+        // o que vale é o nome da novela, que vem da pasta (ChaveSerie já tira o ruído de release).
+        if (permiteFallbackSerie && EhNovela(arquivoPath) && ChaveSerie(arquivoPath) is { Length: > 2 } nomeDaNovela)
+            return (nomeDaNovela, null);
+
         var n = SemExtensao(NomeArquivo(arquivoPath));
         if (string.IsNullOrWhiteSpace(n)) n = tituloFallback ?? "";
         // Domínio do uploader grudado no COMEÇO do nome do arquivo ("COMANDO.LA-Ainda.Estou...")

@@ -17,6 +17,10 @@ public record UmEpisodioDiag(string Serie, int Temporada, int Episodio, ArquivoD
 /// <summary><c>EntradaIgnorar</c>: o caminho já entre aspas, pronto pra colar na lista <c>ignorar</c> do <c>nomes.json</c>.</summary>
 public record SuspeitoDiag(ArquivoDiag Arquivo, string Motivo, string EntradaIgnorar);
 
+/// <summary>Quem está sem pôster nem sinopse (o TMDB não casou, ou ainda não rodou): <c>Buscado</c> é o termo que a busca usa (<c>/search/{Tipo}</c>) e
+/// <c>Chave</c> o nome pra fixar o tmdbId no nomes.json (campo "tmdb" do diagnóstico).</summary>
+public record SemMetadadosDiag(string Nome, string Chave, string Buscado, string Tipo, int Itens, int ExemploId);
+
 public record DiagnosticoResponse(
     int TotalArquivos,
     List<FaltandoDiag> Faltando,
@@ -24,7 +28,8 @@ public record DiagnosticoResponse(
     List<UmEpisodioDiag> SerieComUmEpisodio,
     List<ArquivoDiag> SoltosQueParecemEpisodio,
     List<SuspeitoDiag> SuspeitosDePropaganda,
-    List<SugestaoNome> SugestoesDeNomes);
+    List<SugestaoNome> SugestoesDeNomes,
+    List<SemMetadadosDiag>? SemMetadados = null);
 
 /// <summary>
 /// O que dá pra descobrir olhando o catálogo inteiro: que episódios faltam, o que está repetido, o que o
@@ -67,7 +72,28 @@ public static partial class DiagnosticoCatalogo
             series.Select(UmSoEpisodio).OfType<UmEpisodioDiag>().ToList(),
             SoltosQueParecemEpisodio(catalogo),
             Suspeitos(catalogo, ComTamanho),
-            SugestoesDeNomes.Analisar(catalogo));
+            SugestoesDeNomes.Analisar(catalogo),
+            SemMetadados(catalogo));
+    }
+
+    /// <summary>Séries (um item por série) e filmes sem pôster nem sinopse, com o termo que a busca do TMDB usa — pra ver o que não casou.</summary>
+    internal static List<SemMetadadosDiag> SemMetadados(IReadOnlyList<FilmeResponse> catalogo)
+    {
+        static bool Sem(FilmeResponse f) => string.IsNullOrEmpty(f.PosterUrl) && string.IsNullOrEmpty(f.Sinopse);
+        var lista = new List<SemMetadadosDiag>();
+        foreach (var g in catalogo.Where(f => f.EhEpisodio && !f.EhExtra).GroupBy(f => f.SerieChave ?? f.Serie ?? ""))
+        {
+            var itens = g.ToList();
+            if (!itens.All(Sem)) continue;   // um episódio com metadados já mostra a série
+            var nomeBusca = MediaNomeParser.ChaveSerie(itens[0].ArquivoPath);
+            lista.Add(new SemMetadadosDiag(MediaNomeParser.NomeExibicao(g.Key, itens[0].Serie ?? nomeBusca), MediaNomeParser.NormalizarBusca(nomeBusca), nomeBusca, "tv", itens.Count, itens[0].Id));
+        }
+        foreach (var f in catalogo.Where(f => !f.EhEpisodio && !f.EhExtra && Sem(f)))
+        {
+            var (busca, _) = MediaNomeParser.TituloParaBusca(f.ArquivoPath, f.Titulo);
+            lista.Add(new SemMetadadosDiag(f.Titulo, MediaNomeParser.NormalizarBusca(busca), busca, "movie", 1, f.Id));
+        }
+        return [.. lista.OrderBy(x => x.Nome, StringComparer.OrdinalIgnoreCase)];
     }
 
     private static List<SerieAgregada> AgruparPorSerie(IReadOnlyList<FilmeResponse> catalogo)
