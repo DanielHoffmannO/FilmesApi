@@ -2,14 +2,14 @@
    vêm de css/base.css (compartilhado com controle.html). Aqui só o que é específico
    desta tela. */
 /* Visual alinhado ao do controle.html (tokens, pílulas, cartões, linhas de 48 px); marcação e comportamento seguem os mesmos. */
-:root{--bg:#0d0d0d;--s1:#141414;--s2:#1b1b1b;--s3:#242424;--line:#262626;--txt:#ececec;--mut:#8b8b8b;--mut2:#7d7d7d;--acc:#e50914;--acc-soft:rgba(229,9,20,.14);--acc-txt:#ff7b82;--r:12px}
+:root{--h-nav:52px;--h-agora:52px;--bg:#0d0d0d;--s1:#141414;--s2:#1b1b1b;--s3:#242424;--line:#262626;--txt:#ececec;--mut:#8b8b8b;--mut2:#7d7d7d;--acc:#e50914;--acc-soft:rgba(229,9,20,.14);--acc-txt:#ff7b82;--r:12px}
 body{background:var(--bg);color:var(--txt);-webkit-font-smoothing:antialiased}
 header{background:var(--bg);border-bottom:1px solid var(--line);padding:14px 24px}
 h1{font-size:19px;font-weight:650;letter-spacing:-.01em}
 .actions{display:flex;gap:10px;align-items:center}
 button{background:var(--s2);color:var(--txt);border:1px solid var(--line);padding:0 14px;height:36px;border-radius:18px;cursor:pointer;font:inherit;font-size:13px;transition:background .15s,border-color .15s}
 button:hover{background:var(--s3)}
-main{padding:12px 16px calc(84px + env(safe-area-inset-bottom));max-width:1100px;margin:0 auto}
+main{padding:12px 16px calc(var(--h-nav) + 16px + env(safe-area-inset-bottom));max-width:1100px;margin:0 auto}
 .secao{margin-bottom:28px}
 .secao-title{font-size:11.5px;letter-spacing:.08em;color:var(--mut2);padding:0 4px;margin-bottom:8px}
 .secao-title .count{color:var(--mut2);font-weight:400}
@@ -51,11 +51,11 @@ main{padding:12px 16px calc(84px + env(safe-area-inset-bottom));max-width:1100px
 .empty button{margin-top:16px}
 .scan-msg{position:fixed;bottom:20px;right:20px;background:var(--ok);color:#000;padding:10px 16px;border-radius:var(--r);font-size:13px;display:none}
 /* ─── Grade de pôsteres, fileiras, abas e ficha (mobile-first) ─── */
-header{padding:10px 16px;gap:10px}
+header{padding:6px 16px;gap:10px}
 header h1{font-size:18px;white-space:nowrap}
 .actions{flex-wrap:nowrap}
 .actions button{white-space:nowrap}
-.actions button{height:44px;min-width:44px;padding:0 12px}
+.actions button{height:40px;min-width:40px;padding:0 12px}
 .busca-wrap{display:none;padding:0 0 12px}
 .busca-wrap.on{display:block}
 #busca{width:100%;height:48px;border-radius:24px;border:1px solid var(--line);background:var(--s1);color:var(--txt);padding:0 18px;font-size:16px}
@@ -71,7 +71,8 @@ header h1{font-size:18px;white-space:nowrap}
 .tile img{width:100%;height:100%;object-fit:cover;display:block}
 .tile .sem{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:8px;font-size:12.5px;color:var(--mut);background:linear-gradient(160deg,var(--s3),var(--s1))}
 .tile .ok{position:absolute;top:5px;right:5px;background:rgba(0,0,0,.7);color:#7ddf8b;border-radius:10px;font-size:11px;padding:1px 6px}
-.tile .rm{position:absolute;top:0;left:0;width:44px;height:44px;border:0;border-radius:0 0 14px 0;background:rgba(0,0,0,.55);color:#fff;padding:0;font-size:14px}
+.tile .rm{position:absolute;top:4px;left:4px;width:28px;height:28px;border:0;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;padding:0;font-size:12px;line-height:1}
+.tile .rm::after{content:'';position:absolute;inset:-6px}   /* área de toque de 40 px sem o botão parecer grande */
 .tile .cch{position:absolute;top:5px;left:5px;background:rgba(0,0,0,.75);border-radius:10px;font-size:11px;padding:1px 6px;color:#9fd0ff}
 .tile .cch.pronto{color:#7ddf8b}
 .tile .qtd{position:absolute;bottom:5px;left:5px;background:rgba(0,0,0,.72);color:#fff;border-radius:10px;font-size:11px;padding:1px 7px}
@@ -79,10 +80,6 @@ header h1{font-size:18px;white-space:nowrap}
 .tile .rprog>div{height:100%;background:var(--acc)}
 .tile .nome{font-size:12.5px;margin-top:5px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .tile .sub{font-size:11.5px;color:var(--mut);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-nav#abas{position:fixed;left:0;right:0;bottom:0;z-index:40;display:flex;background:rgba(13,13,13,.97);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
-nav#abas button{flex:1;height:58px;border:0;border-radius:0;background:none;color:var(--mut);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px}
-nav#abas button span{font-size:20px;line-height:1}
-nav#abas button.on{color:var(--acc-txt)}
 #sheet{position:fixed;inset:0;z-index:60;display:none;background:rgba(0,0,0,.6)}
 #sheet.on{display:block}
 .sheet-box{position:absolute;left:0;right:0;bottom:0;max-height:92vh;overflow-y:auto;background:var(--bg);border-radius:18px 18px 0 0;border-top:1px solid var(--line);padding:16px 16px calc(24px + env(safe-area-inset-bottom));max-width:720px;margin:0 auto;animation:sobe .22s ease-out}
@@ -112,14 +109,6 @@ nav#abas button.on{color:var(--acc-txt)}
 .cfg-item span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cfg-item button{height:44px;width:44px;padding:0;flex:none;border-radius:50%}
 .sheet-tit{font-size:19px;font-weight:650;margin:4px 40px 0 0}
-#agora{position:fixed;left:0;right:0;bottom:calc(58px + env(safe-area-inset-bottom));z-index:39;display:none;align-items:center;gap:8px;background:var(--s2);border-top:1px solid var(--line);padding:6px 8px 6px 10px;min-height:56px}
-#agora.on{display:flex}
-#agora img{width:30px;height:44px;border-radius:4px;object-fit:cover;background:var(--s3);flex:none}
-#agora .txt{flex:1;min-width:0;color:var(--txt);text-decoration:none;line-height:1.25}
-#agora .txt small{display:block;color:var(--acc-txt);font-size:11px}
-#agora .txt b{display:block;font-weight:500;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#agora button{height:44px;min-width:44px;padding:0 12px;border-radius:22px;flex:none}
-body.com-agora main{padding-bottom:calc(150px + env(safe-area-inset-bottom))}
 @media(min-width:700px){.posters{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:16px 14px}.trilho .tile{flex-basis:140px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
 
@@ -180,8 +169,7 @@ button:focus-visible,a:focus-visible,.tile:focus-visible{outline:2px solid var(-
 @media(orientation:landscape) and (max-height:500px){
   #ctaLocal,#avisoLocal{bottom:62px}
   #trilhoLocal{bottom:54px}
-  nav#abas button{height:48px}
-  nav#abas button span{font-size:17px}
+  :root{--h-nav:44px;--h-agora:44px}
 }
 
 /* ficha: texto não vaza da coluna (a 360 px o título e a sinopse saíam cortados) e as ações viram uma grade */
@@ -197,3 +185,23 @@ button:focus-visible,a:focus-visible,.tile:focus-visible{outline:2px solid var(-
 .ficha h2{margin:0 0 4px;overflow-wrap:break-word;hyphens:auto}
 .ficha img,.ficha .semp{flex:0 0 32%}
 .sheet-tit{margin-right:0}
+
+/* ─── Barras de baixo compactas: abas (52 px) e "Tocando na TV" (52 px, uma linha) ─── */
+nav#abas{position:fixed;left:0;right:0;bottom:0;z-index:40;display:flex;background:rgba(13,13,13,.98);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+nav#abas button{flex:1;min-width:0;height:var(--h-nav);border:0;border-radius:0;background:none;color:var(--mut);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:0;font-size:11px;position:relative}
+nav#abas button svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+nav#abas button.on{color:var(--acc-txt)}
+nav#abas button.on::before{content:'';position:absolute;top:0;left:30%;right:30%;height:2px;border-radius:0 0 2px 2px;background:var(--acc-txt)}
+#agora{position:fixed;left:0;right:0;bottom:calc(var(--h-nav) + env(safe-area-inset-bottom));z-index:39;display:none;align-items:center;gap:6px;height:var(--h-agora);background:var(--s2);border-top:1px solid var(--line);padding:0 4px 0 8px;transition:transform .2s ease}
+#agora.on{display:flex}
+#agora.recolhida{transform:translateY(calc(100% + var(--h-nav) + env(safe-area-inset-bottom)));pointer-events:none}
+#agora img{width:28px;height:40px;border-radius:4px;object-fit:cover;background:var(--s3);flex:none}
+#agora .txt{flex:1;min-width:0;color:var(--txt);text-decoration:none;line-height:1.2}
+#agora .txt small{display:block;color:var(--acc-txt);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#agora .txt b{display:block;font-weight:500;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#agora button{width:40px;height:40px;min-width:40px;padding:0;border-radius:50%;flex:none;display:inline-flex;align-items:center;justify-content:center;background:none;border:0}
+#agora button svg{width:20px;height:20px;fill:none;stroke:var(--txt);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#agora button svg.cheio{fill:var(--txt);stroke:none}
+#agora .fio{position:absolute;left:0;top:-1px;height:2px;background:var(--acc);border-radius:0 2px 2px 0}
+body.com-agora main{padding-bottom:calc(var(--h-nav) + var(--h-agora) + 16px + env(safe-area-inset-bottom))}
+.scan-msg{bottom:calc(var(--h-nav) + var(--h-agora) + 14px + env(safe-area-inset-bottom))}

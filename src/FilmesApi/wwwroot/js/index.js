@@ -255,14 +255,29 @@ async function consultarAgora() {
   if (!info) { info = tvFilmeInfo[est.filmeId] = await fetchJsonOuNull(`${API}/${est.filmeId}`) || {}; }
   const nome = info.ehEpisodio ? `${info.serie || ''} · ${codigoEpisodio(info) || info.rotulo || ''}` : (info.titulo || 'Tocando na TV');
   const pos = est.posSegundos > 0 ? ` · ${formatarTempo(est.posSegundos)}` : '';
+  const pct = est.duracaoSegundos > 0 ? Math.min(100, 100 * est.posSegundos / est.duracaoSegundos) : 0;
+  const ico = {
+    pausa: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>',
+    toca: '<svg class="cheio" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5z"/></svg>',
+    celular: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>',
+  };
   caixa.innerHTML = `
+    <div class="fio" style="width:${pct}%"></div>
     ${info.posterUrl ? `<img src="${attr(pw(info.posterUrl, 185))}" alt="">` : '<img alt="">'}
-    <a class="txt" href="/controle.html" title="Abrir o controle completo da TV"><small>${est.playing ? '▶ Tocando na TV' : '⏸ Pausado na TV'}${esc(pos)}</small><b>${esc(nome)}</b></a>
-    <button onclick="fetch('${PLAYER_API}/play-pause',{method:'POST'}).then(consultarAgora)" aria-label="Play ou pausa">${est.playing ? '⏸' : '▶'}</button>
-    <button onclick="continuarNoCelular()" title="Continuar no celular">📱 No celular</button>`;
+    <a class="txt" href="/controle.html" title="Abrir o controle completo da TV"><small>${est.playing ? 'Tocando na TV' : 'Pausado na TV'}${esc(pos)}</small><b>${esc(nome)}</b></a>
+    <button onclick="fetch('${PLAYER_API}/play-pause',{method:'POST'}).then(consultarAgora)" aria-label="${est.playing ? 'Pausar a TV' : 'Tocar na TV'}" title="${est.playing ? 'Pausar' : 'Tocar'}">${est.playing ? ico.pausa : ico.toca}</button>
+    <button onclick="continuarNoCelular()" aria-label="Continuar no celular" title="Continuar no celular">${ico.celular}</button>`;
   caixa.classList.add('on');
   document.body.classList.add('com-agora');
 }
+// Rolando a grade pra baixo a barra recolhe (mais área pra ver); subindo, volta.
+let ultimoScrollY = 0;
+window.addEventListener('scroll', () => {
+  const y = window.scrollY, caixa = document.getElementById('agora');
+  if (Math.abs(y - ultimoScrollY) < 8) return;
+  caixa.classList.toggle('recolhida', y > ultimoScrollY && y > 80);
+  ultimoScrollY = y;
+}, { passive: true });
 setInterval(() => { if (!document.hidden) consultarAgora(); }, 3000);
 consultarAgora();
 
