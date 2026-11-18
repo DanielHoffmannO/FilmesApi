@@ -19,19 +19,20 @@ public class MetadataService : BackgroundService
     private readonly RegistroDeTarefas? _tarefas;
     private readonly NomesPersonalizadosService? _nomes;
     private readonly SemaphoreSlim _acordar = new(0, 1);
-    private readonly HashSet<string> _overridesAplicados = [];
+    private readonly HashSet<string> _overridesAplicados = [];   // "chave|id" já invalidados neste processo (evita laço se o id der 404)
     // Um match por SÉRIE (não por episódio), guardado entre lotes: 35 capítulos de uma novela = 1 busca. Erro também fica (1 h) pra não repetir a cada lote.
     private readonly Dictionary<string, (TmdbResultado? Res, DateTime Quando)> _cacheSeries = [];
     private static readonly TimeSpan ValidadeDoErroDeSerie = TimeSpan.FromHours(1);
     private readonly HashSet<string> _semMatchLogado = [];   // "tipo|termo" já avisado neste processo
-    private bool _varreuSemMatch;   // "chave|id" já invalidados neste processo (evita laço se o id der 404)
+    private bool _varreuSemMatch;   // a varredura de episódios sem match já rodou neste processo
+    private bool _overridesSujos = true;   // há override novo (ou é o 1º lote) pra conferir; só o nomes.json mexendo religa   // "chave|id" já invalidados neste processo (evita laço se o id der 404)
 
     public MetadataService(IServiceScopeFactory escopos, TmdbService tmdb, ILogger<MetadataService> logger,
         RegistroDeTarefas? tarefas = null, NomesPersonalizadosService? nomes = null)
     {
         _nomes = nomes;
         if (nomes is not null)
-            nomes.TmdbMudou += () => { try { _acordar.Release(); } catch (SemaphoreFullException) { /* já acordado */ } };
+            nomes.TmdbMudou += () => { _overridesSujos = true; try { _acordar.Release(); } catch (SemaphoreFullException) { /* já acordado */ } };
         _tarefas = tarefas;
         _escopos = escopos;
         _tmdb = tmdb;
@@ -97,6 +98,8 @@ public class MetadataService : BackgroundService
     private async Task InvalidarOverridesNovosAsync(AppDbContext db, CancellationToken ct)
     {
         var overrides = _nomes?.TmdbOverrides;
+        if (!_overridesSujos) return;   // nenhum override novo desde a última conferência: não relê o catálogo inteiro a cada lote
+        _overridesSujos = false;
         if (overrides is null || overrides.Count == 0) return;
 
         var candidatos = await db.Filmes.Where(f => f.ArquivoPath != null && f.MetadadosEm != null).ToListAsync(ct);
