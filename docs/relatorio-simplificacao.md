@@ -58,3 +58,14 @@ Inventário rediffado: rotas, páginas, tabelas, chaves, tipos e métodos **sem 
 - `metadados: pausa de 300 ms so depois de chamada real ao TMDB` — antes cada episódio resolvido pelo cache de série esperava 300 ms (35 capítulos ≈ 10 s); teste de tempo em `MetadadosPorSerieTests` (< 5 s).
 - `remux: progresso fora do lock` — `ObterStatusRemux` lia o tamanho do original (SSD USB) com o lock preso a cada poll de 2 s.
 - **Fica como está:** `MedirCacheRemux` sem cache (um total em memória/TTL poderia subestimar o uso logo após gravar e permitir estourar o teto; sem teste de carga, risco > ganho).
+
+## Rodada 3 (19/11/2026) — duas funcionalidades (não são refatoração)
+
+Inventário rediffado: **as únicas diferenças são as da função A** — rotas `GET/POST/DELETE /api/cache/serie` (80 → 83), tabela `SerieSeguida` (+ `SeriesSeguidas` no contexto) e as chaves `CacheSeguirJanela` e `CacheSeguirLiberaAposHoras`. Nada removido.
+
+**A. Seguir série no cache** (`PoliticaSeguirSerie` pura + `SeguirSerieService` + integração com `CacheFixadoService`): janela de 5 episódios não assistidos depois do último assistido (mais o que está em andamento); episódio novo entra sozinho; assistido fica protegido 24 h e sai; mesma máquina de preparo do "Manter no cache" (ocioso, um por vez, limite por rodada, só o que cabe, nunca expulsa protegido). 14 testes novos (política e serviço sobre o catálogo real, persistência, proteção).
+
+**B. Metadados** (busca no TMDb): a série é buscada pelo **nome de exibição** (apelidos padrão e `nomes.json`) — "Hora da Aventura" → "Hora de Aventura" (TMDb 15260), "DDUV" → "Diários de Um Vampiro" (18165), "FS" → "Família Soprano" (1398); ruído de site de torrent (`TORRENTMEGAFILMES TV`, `VIATORRENTS COM`, `LAPUMiAFiLMES COM`, `4KDS`, `AV1tester`, `Dub`) sai só do termo de busca (ChaveSerie e nomes de exibição não mudam, porque os apelidos casam com o texto cru); título antes do `[Título em inglês]`; filme que não casa pelo arquivo tenta o nome da pasta ("Guerra de Canudos (1997)"). O diagnóstico lista quem continua sem match com o termo buscado (apelido aplicado) e o campo `tmdbId` (a chave agora também casa pelo nome de exibição). Testes de caracterização com os nomes reais do catálogo.
+- **Esclarecimento:** `FS.03x11…` é a 3ª temporada de **Família Soprano** (`ApelidosPadrao` já dizia isso), não Fina Estampa.
+- **Seguem sem match de propósito:** os 2 "Curtas" de Hora de Aventura, o especial `S08EP Special` de Diários de um Vampiro (não é reconhecido como episódio) e "Além da Imaginação" (o TMDb tem 3 séries com esse nome: 1959, 1985, 2002 — o primeiro resultado é a de 1959; se não for a certa, fixar o `tmdbId` pelo diagnóstico).
+

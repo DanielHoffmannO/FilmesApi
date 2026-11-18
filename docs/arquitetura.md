@@ -50,6 +50,8 @@ Servidor pessoal de streaming (ASP.NET, .NET 10, SQLite, ffmpeg) rodando num Roc
 
 **Cache fixado ("Manter no cache").** `POST /api/cache/fixar` grava em `CacheFixado`; o `CacheFixadoService` prepara, uma de cada vez e só com o servidor ocioso, a cópia `remux/{id}.mp4` (teto `CacheFixadoMaxGB`, limite `CacheFixadoGbPorRodada` por rodada). Fixado nunca é expulso (despejo por teto, limpeza automática e "limpar").
 
+**Seguir série no cache.** `POST /api/cache/serie` grava em `SerieSeguida`; a cada rodada o `SeguirSerieService` calcula (pela `PoliticaSeguirSerie`, pura) a janela dos próximos 5 episódios não assistidos de cada série seguida e o `CacheFixadoService` os prepara e protege como os fixados à mão. Assistido continua protegido 24 h e depois sai (`CacheSeguirLiberaAposHoras`); episódio novo do scan entra sozinho se caber na janela.
+
 **Aquecimento.** `PreAquecerContinuarService` aquece o #1 do "continuar"; `pre-aquecer` aquece o episódio e o próximo; com `paraTv` basta haver slot de encoder livre e placa fria (`PodeAquecerComJobs`), senão só com tudo ocioso (`Ocioso`).
 
 **Abertura e créditos.** `AnaliseDeAberturaService` acha a abertura (capítulos do arquivo ou impressão de áudio entre episódios) e os créditos (capítulo "Credits/Ending" plausível: ≥ 2 min e ≥ 65% da duração). O servidor ignora créditos implausíveis em `ObterCreditosAsync`; o front repete o piso/fração com a duração (`creditosPlausiveis`).

@@ -412,6 +412,11 @@ usam `__` (ex.: `ConnectionStrings__Default`).
 | `ForceSoftwareEncoder` | `false` | Ignora a VPU e usa sempre `libx264`. |
 | `HlsRkmppDecodeHw` | `false` | Tenta decode por hardware no caminho 4K (experimental — ver acima). |
 | `RemuxCacheMaxGB` | `15` | Teto do cache de `/remux`; acima disso, despejo LRU. `0` = ilimitado. |
+| `CacheFixadoMaxGB` | `40` | Teto de GB das cópias "Manter no cache" prontas no NVMe (o fixado nunca é expulso; só se prepara o que cabe). `0` = ilimitado. |
+| `CacheFixadoGbPorRodada` | `5` | Quanto o servidor grava, no máximo, por rodada de preparo (uma cópia de cada vez, só com o servidor ocioso). `0` = sem limite. |
+| `CacheFixadoIntervaloSegundos` / `CacheFixadoAtrasoInicialSegundos` | `60` / `90` | Intervalo das rodadas de preparo e atraso depois do boot. Intervalo `0` desliga o preparo. |
+| `CacheSeguirJanela` | `5` | "Seguir no cache": quantos episódios não assistidos à frente ficam prontos (por série seguida; vale de 1 a 30). |
+| `CacheSeguirLiberaAposHoras` | `24` | Quanto tempo um episódio assistido de série seguida continua protegido no cache; depois vira cache comum. |
 | `PreAquecerContinuarMinutos` | `5` | De quanto em quanto tempo o servidor confere os **3 primeiros da fila do controle** (`/api/filmes/fila`) e, se um precisa de remux, **já deixa o remux pronto**, um por conferência (ver abaixo). `0` desliga. |
 | `PreAquecerAtrasoInicialSegundos` | `60` | Espera depois de subir antes da 1ª conferência. |
 | `LimpezaCacheMinutos` | `60` | De quanto em quanto tempo a **limpeza dos caches** varre o HLS e o remux (a 1ª roda `LimpezaCacheAtrasoInicialSegundos` depois de subir). `0` desliga. Ver "Limpeza do cache" abaixo. |
@@ -456,6 +461,10 @@ filmes ainda sem metadados (roda ~30s depois do boot e reprocessa a cada scan).
 | `GET` | `/api/filmes/tela?tipo=&visto=&busca=&dublagem=` | Catálogo já filtrado/agrupado (filme solto, pasta filme+extras, série, franquia) — é isto que `index.html`/`tv.html`/`controle.html` consomem pra montar a tela. `dublagem` (opcional): `qualquer` = dublado ou dublagem por IA, `dublado` = só áudio em português que não é IA, `ia` = só a dublagem por IA; ausente = sem filtro. Digitar "dublado"/"dublados" na `busca` liga o `qualquer`. O campo `dublado` de cada item vem do ffprobe guardado (`AnalisesDeDublagem.AudioPtNaoIa`) ou, até o arquivo ser analisado, da dica no nome (dual, dublado, nacional, PT-BR…). |
 | `GET` | `/api/catalogo/dublados?limite=24` | Fileira "Dublados": `[{filme, novos, rotulo}]` (mesmo formato de `/novidades`), um cartão por série apontando pro próximo episódio dublado não visto (`"Série · 12 episódios dublados"`), filmes soltos como cartão simples; o que ainda não foi visto vem primeiro, depois os mais recentes. |
 | `GET` | `/api/filmes/fila` | Fila do controle: o que ficou pela metade e o próximo episódio das séries vistas nos últimos 14 dias (`[{filme, motivo}]`). |
+| `GET` | `/api/cache` | Retrato do cache de reprodução: teto/uso, `itens` (fixados à mão, com `pronto`/`preparando`) e `seguidas` (séries seguidas com a janela e quantos estão prontos). |
+| `POST` | `/api/cache/fixar` · `/api/cache/desafixar` | `{ids:[…]}` (1 a 500): marca/desmarca "Manter no cache". |
+| `POST` | `/api/cache/limpar` | Apaga o cache de reprodução que não está protegido (fixados e séries seguidas ficam). |
+| `GET` · `POST` · `DELETE` | `/api/cache/serie` | "Seguir no cache": lista as seguidas · `{chave, janela?}` segue (404 se a série não existe) · `?chave=` para de seguir. |
 | `GET` | `/api/filmes/{id}` | Detalhes de um filme. |
 | `PUT` | `/api/filmes/{id}/assistido` | Alterna "assistido". |
 | `GET` | `/api/filmes/diagnostico` | O que o catálogo tem de estranho: **episódios faltando** (buraco entre o 1 e o maior número da temporada; arquivo duplo conta como 2), **episódio em 2+ arquivos** (com o tamanho de cada), **série com 1 só episódio**, **arquivo solto na raiz que parece episódio** e **vídeo suspeito de propaganda** (< 60 MB com nome de uploader — 1XBET, BLUDV, COMANDOTORRENTS, LAPUMIA — ou "Sample") e **sugestoesDeNomes** (mesma série sob dois nomes, nome de exibição todo em maiúsculas/minúsculas). A página `/diagnostico.html` desenha isso (🩺 no cabeçalho do catálogo). |
