@@ -53,7 +53,8 @@ function cacheDaSerie(eps) {
 const tipoDaAba = { inicio: 'all', serie: 'serie', filme: 'filme', novela: 'novela', buscar: 'all' };
 let cacheEst = { itens: new Map(), tetoFixadoBytes: 0, fixadoProntoBytes: 0, remuxBytes: 0, remuxTetoBytes: 0 };   // 'Manter no cache' (GET /api/cache)
 let itens = new Map();     // chave -> {tipo:'filme'|'serie'|'pasta', ...} do último render (a ficha lê daqui)
-let fichaAberta = null;    // chave do que está na ficha
+let fichaAberta = null;
+let padroesDaSerie = null;   // série aberta na ficha: o botão de ajustes leva à folha de padrões dela no controle da TV    // chave do que está na ficha
 
 function tile(chave, o) {
   const pct = o.pct || 0;
@@ -179,9 +180,9 @@ function botaoCacheHtml(ids, modo) {
   if (!ids.length) return '';
   const lista = JSON.stringify(ids);
   if (modo === 'filme') return `<button onclick="fixarCache(${lista})">⬇ Manter no cache</button>`;
-  if (modo === 'filme-fixado') return `<button onclick="desafixarCache(${lista})">✔ No cache · remover</button>`;
-  if (modo === 'serie') return `<button onclick="fixarCache(${lista})">⬇ Manter ${ids.length} não vistos no cache</button>`;
-  return `<button onclick="desafixarCache(${lista})">✔ ${ids.length} no cache · remover</button>`;
+  if (modo === 'filme-fixado') return `<button class="no-cache" onclick="desafixarCache(${lista})" aria-label="No cache: tocar para remover" title="Tocar para remover do cache">✔ No cache</button>`;
+  if (modo === 'serie') return `<button onclick="fixarCache(${lista})" title="Manter os ${ids.length} episódios não vistos no cache">⬇ Manter no cache <small>${ids.length}</small></button>`;
+  return `<button class="no-cache" onclick="desafixarCache(${lista})" aria-label="${ids.length} no cache: tocar para remover" title="Tocar para remover do cache">✔ No cache <small>${ids.length}</small></button>`;
 }
 
 async function postarJson(url, corpo) {
@@ -220,6 +221,9 @@ function trocarTokenDoScan() {
 }
 
 const ICONES = {
+  ajustes: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h8M16 6h4M4 12h2M10 12h10M4 18h12M20 18h0"/><circle cx="14" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>',
+  ok: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5l10-10"/></svg>',
+  vazio: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg>',
   tv: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="12" rx="2"/><path d="M16 3l-4 4l-4-4"/></svg>',
   fila: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h11M4 12h11M4 17h6M18 13v8M14 17h8"/></svg>',
 };
@@ -238,10 +242,10 @@ async function tocarASeguir(id) {
 
 // ─── Controle da TV: a folha com o controle completo (play/pausa, barra, volume, abertura/créditos/próximo, idioma e legenda, sono, fila…) ───
 // É a página controle-tv.html em modo embutido (?embed=1): a MESMA lógica e o mesmo visual do controle de sempre, sem duplicar código.
-function abrirControleTv() {
+function abrirControleTv(serie) {   // serie ({ chave, nome }): abre direto nos padrões dessa série (áudio, legenda, abertura por temporada)
   const f = document.getElementById('tvFrame'), sheet = document.getElementById('tvSheet');
   fecharFicha();
-  f.src = '/controle-tv.html?embed=1';
+  f.src = '/controle-tv.html?embed=1' + (serie ? `&serie=${encodeURIComponent(serie.chave)}&nome=${encodeURIComponent(serie.nome)}` : '');
   sheet.classList.add('on'); sheet.setAttribute('aria-hidden', 'false');
   document.body.style.overflow = 'hidden';
 }
@@ -382,38 +386,6 @@ function buscarDigitando() {
 }
 
 // ─── Ficha do título (folha que sobe de baixo) ──────────────────────────
-// ─── Padrões da série e interruptores da temporada (mesmas rotas do controle da TV) ───
-let prefsTemporadas = {};   // chave da série -> { "1": { pularAbertura, proximoAutomatico } }
-
-function pilulasHtml(chave, n) {
-  const p = (prefsTemporadas[chave] || {})[n] || {};
-  const pil = (campo, rotulo) =>
-    `<button class="pill" role="switch" aria-checked="${!!p[campo]}" onclick="alternarInterruptor(this, '${attr(chave)}', ${n}, '${campo}')">${rotulo}</button>`;
-  return `<div class="pills">${pil('pularAbertura', 'Pular abertura')}${pil('proximoAutomatico', 'Próximo automático')}</div>`;
-}
-
-async function alternarInterruptor(el, chave, temp, campo) {
-  const novo = el.getAttribute('aria-checked') !== 'true';
-  const r = await fetch(`/api/series/${encodeURIComponent(chave)}/temporadas/${temp}`, {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [campo]: novo })
-  }).catch(() => null);
-  if (!r || !r.ok) { msgScanErro('Não consegui salvar. Tente de novo.'); return; }
-  ((prefsTemporadas[chave] ||= {})[temp] ||= {})[campo] = novo;
-  el.setAttribute('aria-checked', novo);
-}
-
-function seletorLegendaSerieHtml(chave, atual) {
-  const op = (valor, rotulo) => `<option value="${valor}"${(atual || '') === valor ? ' selected' : ''}>${rotulo}</option>`;
-  return `<label class="serie-audio">Legenda padrão: <select data-chave="${attr(chave)}" onchange="definirLegendaSerie(this)">` +
-    op('', 'Automática') + op('off', 'Desligada') + op('por', 'Português') + op('eng', 'Inglês') + '</select></label>';
-}
-
-function definirLegendaSerie(select) {
-  return fetch('/api/series/' + encodeURIComponent(select.getAttribute('data-chave')) + '/legenda', {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idioma: select.value || null })
-  }).then(r => { if (!r.ok) msgScanErro('Não consegui salvar a legenda padrão.'); });
-}
-
 function sinopseHtml(texto) {
   if (!texto) return '';
   return `<p class="sinopse" id="sinopse">${esc(texto)}</p>${texto.length > 180 ? '<button class="mais" onclick="document.getElementById(\'sinopse\').classList.toggle(\'aberta\'); this.textContent = this.textContent === \'mais\' ? \'menos\' : \'mais\'">mais</button>' : ''}`;
@@ -456,13 +428,8 @@ async function montarFicha(chave) {
     const idsNaoVistos = s.episodios.filter(e => !e.assistido && !e.ehExtra).map(e => e.id);
     const idsFixados = s.episodios.filter(e => cacheEst.itens.has(e.id)).map(e => e.id);
     acoes += botaoCacheHtml(idsFixados.length ? idsFixados : idsNaoVistos, idsFixados.length ? 'serie-fixada' : 'serie');
-    // padrão da série (áudio e legenda) e os interruptores de cada temporada (pular abertura / próximo automático) — os mesmos do controle da TV
-    const [padroes, prefsTemp] = await Promise.all([
-      fetchJsonOuNull('/api/series/padroes').then(m => m || {}), fetchJsonOuNull('/api/series/temporadas').then(m => m || {})]);
-    prefsTemporadas = prefsTemp;
-    const pd = padroes[s.chave] || {};
-    corpo = corpoDaSerieHtml(s.episodios, seletorAudioSerieHtml(s.chave, pd.audio) + seletorLegendaSerieHtml(s.chave, pd.legenda), f => rowHtml(f, true),
-      { temporadaCorpo: n => pilulasHtml(s.chave, n) });
+    corpo = corpoDaSerieHtml(s.episodios, '', f => rowHtml(f, true));   // padrões de áudio/legenda/abertura moram na folha do controle da TV (botão de ajustes da ficha)
+    padroesDaSerie = { chave: s.chave, nome: s.nome };
   }
   if (fichaAberta !== chave && fichaAberta !== null && !itens.has(fichaAberta)) return;
   const abertoAntes = els.sheetBox.scrollTop;
@@ -470,6 +437,7 @@ async function montarFicha(chave) {
     : it.tipo === 'serie' && it.s.episodios.some(e => e.id === estadoTv.filmeId));
   els.sheetBox.innerHTML = `
     <button class="sheet-x" onclick="fecharFicha()" aria-label="Fechar">✕</button>
+    ${it.tipo === 'serie' ? `<button class="sheet-cfg" onclick="abrirControleTv(padroesDaSerie)" aria-label="Padrões desta série: áudio, legenda e abertura" title="Padrões desta série">${ICONES.ajustes}</button>` : ''}
     ${naTv ? '<div class="agora-tag">📺 Tocando na TV agora</div>' : ''}
     <div class="ficha">
       ${poster ? `<img src="${attr(pw(poster, 500))}" alt="">` : '<div class="semp">🎬</div>'}
@@ -539,12 +507,24 @@ function tooltipFilme(f) {
   return attr(original + (f.sinopse || f.titulo));
 }
 
+// Nome do episódio sem repetir a série: o título do arquivo costuma vir "Avenida Brasil E010 iND"; tira o prefixo da série, o marcador e o grupo.
+function nomeDoEpisodio(f) {
+  if (f.tituloEpisodio) return f.tituloEpisodio;
+  if (f.ehNovela) return '';   // "Capítulo N" já diz tudo
+  const sem = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  let nome = tituloEpisodio(f);
+  const serie = sem(f.serie);
+  if (serie && sem(nome).startsWith(serie)) nome = nome.slice(String(f.serie).length).replace(/^[\s\-–—:.]+/, '');
+  nome = nome.replace(/\bE\d{1,4}\b/gi, ' ').replace(/\s+/g, ' ').trim();
+  return sem(nome) === serie || nome.length < 3 ? '' : nome;
+}
+
 function rowHtml(f, episodio) {
   const retomar = f.posicaoSegundos ? `<span class="resume">▶ ${formatarTempo(f.posicaoSegundos)}</span>` : '';
   let titulo;
   if (episodio) {
-    const cod = codigoEpisodio(f) || (f.rotulo || '');
-    const nome = f.tituloEpisodio || tituloEpisodio(f);
+    const cod = f.ehNovela ? (f.rotulo || codigoEpisodio(f) || '') : (codigoEpisodio(f) || f.rotulo || '');
+    const nome = nomeDoEpisodio(f);
     titulo = (cod || nome)
       ? `${cod ? `<span class="rep">${esc(cod)}</span>` : ''}${esc(nome)}`
       : esc(f.titulo);
@@ -558,10 +538,10 @@ function rowHtml(f, episodio) {
       <span class="rtit">${titulo}</span>
       ${!episodio && f.anoLancamento ? `<span class="rano">${f.anoLancamento}</span>` : ''}
       ${retomar}
-      ${naTv ? '<span class="resume">📺 na TV</span>' : ''}
+      ${naTv ? '<span class="resume">📺</span>' : ''}
       <button class="rbtn" aria-label="Enviar para a TV" title="Enviar para a TV" onclick="event.stopPropagation(); enviarParaTv(${f.id})">${ICONES.tv}</button>
       <button class="rbtn" aria-label="Tocar a seguir na TV" title="Tocar a seguir" onclick="event.stopPropagation(); tocarASeguir(${f.id})">${ICONES.fila}</button>
-      <span class="badge ${f.assistido ? 'on' : ''}" role="button" aria-label="${f.assistido ? 'Assistido: desmarcar' : 'Marcar como assistido'}" title="${f.assistido ? 'Assistido' : 'Marcar como assistido'}" onclick="event.stopPropagation(); toggleAssistido(${f.id})">${f.assistido ? '✓' : '○'}</span>
+      <button class="rbtn ck ${f.assistido ? 'on' : ''}" aria-pressed="${!!f.assistido}" aria-label="${f.assistido ? 'Assistido: desmarcar' : 'Marcar como assistido'}" title="${f.assistido ? 'Assistido' : 'Marcar como assistido'}" onclick="event.stopPropagation(); toggleAssistido(${f.id})">${f.assistido ? ICONES.ok : ICONES.vazio}</button>
       <a class="baixar" href="/api/filmes/${f.id}/download" download title="Baixar o arquivo original" onclick="event.stopPropagation()">⬇</a>
       ${barraProgresso(f)}
     </div>`;

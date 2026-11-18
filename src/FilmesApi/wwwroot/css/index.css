@@ -221,3 +221,17 @@ body.com-agora main{padding-bottom:calc(var(--h-nav) + var(--h-agora) + 16px + e
 .pill[aria-checked=true]{background:var(--acc-soft);border-color:rgba(229,9,20,.45);color:var(--acc-txt)}
 .serie-audio+.serie-audio{padding-top:0}
 .agora-tag{display:inline-block;margin:0 0 8px;padding:3px 10px;border-radius:12px;background:var(--acc-soft);color:var(--acc-txt);font-size:12px}
+
+/* ficha enxuta: o botão de ajustes da série, o "No cache" do mesmo tamanho dos outros e as linhas de episódio com ícones iguais */
+.sheet-cfg{position:absolute;top:6px;left:10px;width:44px;height:44px;border-radius:50%;padding:0;z-index:2;display:inline-flex;align-items:center;justify-content:center}
+.sheet-cfg svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.acoes button{white-space:nowrap}
+.acoes button small{font-size:11px;color:var(--mut);margin-left:2px}
+.acoes .no-cache{color:#7ddf8b;border-color:rgba(125,223,139,.35)}
+.corpo-ficha .row{gap:6px;padding-right:4px}
+.corpo-ficha .row .rep{white-space:nowrap}
+.corpo-ficha .row .rbtn.ck{color:var(--mut2)}
+.corpo-ficha .row .rbtn.ck.on{color:#7ddf8b}
+.corpo-ficha .row .rbtn{width:40px;height:40px}
+.corpo-ficha .row .rep{color:#bdbdbd}
+.corpo-ficha .row.assistido .rep{color:var(--mut)}

@@ -884,10 +884,29 @@ const folhaAberta = () => document.getElementById('folha').classList.contains('o
 const LEGENDAS_VISIVEIS = 4;
 
 function abrirFolhaAgora() { if (!filmeAtualRemoto) return; folha = { modo: 'agora', todas: false }; mostrarFolha(); }
-function abrirFolhaSerie(chave) {
-  const nome = document.querySelector(`.grupo[data-serie="${CSS.escape(chave)}"] .serie b`)?.textContent?.trim() || 'série';
+function abrirFolhaSerie(chave, nomeDado) {
+  const nome = nomeDado || document.querySelector(`.grupo[data-serie="${CSS.escape(chave)}"] .serie b`)?.textContent?.trim() || 'série';
   folha = { modo: 'serie', chave, nome };
   mostrarFolha();
+  carregarTemporadasDaSerie(chave);
+}
+
+// Temporadas de uma série (pros interruptores "Pular abertura / Próximo automático" de cada uma): vêm do /tela, uma vez por série.
+const temporadasDaSerie = {};
+async function carregarTemporadasDaSerie(chave) {
+  if (temporadasDaSerie[chave]) return;
+  const t = await fetchJsonOuNull(`${API}/tela?tipo=serie&visto=all`);
+  const s = t && t.series.find(x => x.chave === chave);
+  temporadasDaSerie[chave] = s ? [...new Set(s.episodios.map(e => e.temporada).filter(n => n > 0))].sort((a, b) => a - b) : [];
+  if (folha && folha.modo === 'serie' && folha.chave === chave && folhaAberta()) desenharFolha();
+}
+
+// Interruptores de uma temporada (a mesma regra e rota da lista: PUT /api/series/{chave}/temporadas/{n}).
+function interruptoresTemporadaHtml(chave, n) {
+  const p = (prefsTemporadas[chave] || {})[n] || {};
+  const lin = (campo, rotulo, sub) => `<div class="lin" style="margin-top:8px;padding-top:10px"><div id="sw-${campo}-${n}">${rotulo}<small>${sub}</small></div>
+    <button class="sw" role="switch" aria-checked="${!!p[campo]}" aria-labelledby="sw-${campo}-${n}" data-fo="sw-temp" data-serie="${attr(chave)}" data-temp="${n}" data-campo="${campo}"></button></div>`;
+  return lin('pularAbertura', 'Pular abertura', 'Vai direto para o fim da abertura') + lin('proximoAutomatico', 'Próximo episódio automático', 'Nos créditos, com contagem de 5 s');
 }
 function mostrarFolha() {
   document.getElementById('folhaScrim').classList.add('on');
@@ -918,16 +937,21 @@ function desenharFolha() {
   const sub = document.getElementById('folhaSub');
   if (folha.modo === 'serie') {
     const p = padroes[folha.chave] || {};
-    sub.textContent = 'Padrão de ' + folha.nome;
+    sub.textContent = folha.nome;
+    document.getElementById('folhaTitulo').textContent = 'Padrões da série';
+    const temps = temporadasDaSerie[folha.chave];
+    const blocoTemps = !temps ? '<div class="vazio">Carregando temporadas…</div>'
+      : temps.map(n => `<div class="rot">Temporada ${n}</div>${interruptoresTemporadaHtml(folha.chave, n)}`).join('');
     corpo.innerHTML =
       '<div class="rot">Áudio</div><div class="seg2" role="radiogroup" aria-label="Áudio">' +
         [['', 'Automático'], ['por', 'Português'], ['eng', 'Inglês']].map(([v, t]) => segOpcao('s-audio', v, t, (p.audio || '') === v)).join('') +
       '</div><div class="rot">Legenda</div><div role="radiogroup" aria-label="Legenda">' +
         [['', 'Automática'], ['off', 'Desligada'], ['por', 'Português'], ['eng', 'Inglês']].map(([v, t]) => linhaOpcao('s-legenda', v, t, (p.legenda || '') === v)).join('') +
-      '</div>';
+      '</div>' + blocoTemps;
     return;
   }
 
+  document.getElementById('folhaTitulo').textContent = 'Idioma e legenda';
   const f = filmeAtualRemoto;
   sub.textContent = f ? (f.ehEpisodio ? [f.serie, f.temporada != null ? 'T' + f.temporada : '', codigoEp(f)].filter(Boolean).join(' · ') : f.titulo) : '';
 
@@ -965,6 +989,11 @@ function desenharFolha() {
     const ligado = !!padroes[f.serieChave];
     html += `<div class="lin"><div id="rotUsarSerie">Usar em toda a série<small>Áudio e legenda como padrão</small></div>
       <button class="sw" role="switch" aria-checked="${ligado}" aria-labelledby="rotUsarSerie" data-fo="usar-serie" data-v="${ligado ? 0 : 1}"></button></div>`;
+  }
+  if (f && f.ehEpisodio && f.serieChave) {
+    // os padrões da série e as chaves da temporada que toca agora (o resto da série: "Padrões da série")
+    if (f.temporada != null && f.temporada > 0) html += `<div class="rot">Temporada ${f.temporada}</div>${interruptoresTemporadaHtml(f.serieChave, f.temporada)}`;
+    html += `<button class="op" style="margin-top:14px" data-fo="abrir-serie"><span>Padrões da série e temporadas</span>${ico('caret')}</button>`;
   }
   corpo.innerHTML = html;
 }
@@ -1004,6 +1033,13 @@ document.getElementById('folhaCorpo').addEventListener('click', async e => {
     await fetch(`${PLAYER_API}/legenda-estilo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
     if (ultimoEstadoRemoto) ultimoEstadoRemoto = { ...ultimoEstadoRemoto, ...(fo === 'leg-tam' ? { legendaTamanho: v } : { legendaPosicao: v }) };
     pollRemote();
+  } else if (fo === 'sw-temp') {
+    const { serie, temp, campo } = b.dataset;
+    await definirInterruptor(serie, temp, campo, b.getAttribute('aria-checked') !== 'true');
+  } else if (fo === 'abrir-serie') {
+    const f = filmeAtualRemoto;
+    abrirFolhaSerie(f.serieChave, f.serie);
+    return;
   } else if (fo === 'usar-serie') {
     const chave = filmeAtualRemoto.serieChave;
     if (v === '1') await gravarEscolhaComoPadraoDaSerie();
@@ -1168,7 +1204,13 @@ async function pollRemote() {
   }
 }
 
-if (EMBED) carregarPadroes(); else render();
+if (EMBED) {
+  // ?serie=chave&nome=…: aberto pela ficha da série do index — os padrões dessa série (vale também com a TV parada)
+  carregarPadroes().then(() => {
+    const q = new URLSearchParams(location.search);
+    if (q.get('serie')) abrirFolhaSerie(q.get('serie'), q.get('nome') || '');
+  });
+} else render();
 pollRemote();
 </script>
 </body>
