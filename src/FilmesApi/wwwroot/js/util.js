@@ -196,8 +196,11 @@ function recuarRetomada(pos, recuo, minimo) {
 
 // `estado` = /api/player/state. Com o interruptor da temporada ligado e os créditos conhecidos: ao entrar neles (e uma vez por episódio) vai pro
 // próximo. O cancelamento do Daniel (proximoCancelado) vale pro resto do episódio.
-function decidirProximoAutomatico(estado, pos, jaFezNesteEpisodio) {
+// `duracao` (opcional, só o player local passa): com ela conhecida, nunca dispara antes de 50% do episódio — um início de créditos errado não pode
+// iniciar a contagem com 1 minuto de vídeo.
+function decidirProximoAutomatico(estado, pos, jaFezNesteEpisodio, duracao) {
   if (!estado || !estado.proximoAutomatico || estado.proximoCancelado || jaFezNesteEpisodio) return false;
+  if (typeof duracao === 'number' && duracao > 0 && pos < 0.5 * duracao) return false;
   return typeof estado.inicioCreditos === 'number' && pos >= estado.inicioCreditos;
 }
 

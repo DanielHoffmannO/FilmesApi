@@ -129,7 +129,9 @@ public class FilmeService
 
     /// <summary>Onde começam os créditos do episódio (segundos), ou null se não foi achado/analisado.</summary>
     public async Task<double?> ObterCreditosAsync(int id) =>
-        (await _db.Creditos.AsNoTracking().FirstOrDefaultAsync(x => x.FilmeId == id))?.InicioSegundos;
+        // linhas antigas com créditos "no começo" (capítulo "Credits" da abertura) não valem: nem o celular nem a TV disparam o próximo por elas
+        (await _db.Creditos.AsNoTracking().FirstOrDefaultAsync(x => x.FilmeId == id))?.InicioSegundos is double inicio
+        && CapituloDeAbertura.CreditosPlausivel(inicio, null) ? inicio : null;
 
     public Task<bool> ExisteAsync(int id) => _db.Filmes.AnyAsync(f => f.Id == id);
 

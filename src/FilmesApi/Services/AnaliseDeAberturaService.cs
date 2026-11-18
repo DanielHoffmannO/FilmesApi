@@ -180,7 +180,7 @@ public class AnaliseDeAberturaService(IServiceScopeFactory escopos, FfmpegOption
         var feitos = 0;
         if (config.GetValue<bool?>("AberturaUsarCapitulos") ?? true)
             foreach (var i in restantes.ToList())
-                if (CapituloDeAbertura.InicioDosCreditos(infos[i]?.Capitulos) is double inicio)
+                if (CapituloDeAbertura.InicioDosCreditos(infos[i]?.Capitulos, infos[i]?.DuracaoSegundos) is double inicio)
                 {
                     feitos += await GravarCreditosAsync(db, eps[i].Id, Math.Round(inicio, 1), OrigemMarca.Capitulo, TamanhoDe(caminhos[i]));
                     restantes.Remove(i);

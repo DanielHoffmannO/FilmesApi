@@ -656,7 +656,7 @@ async function remoteCarregarCreditos(id) {
 }
 // as regras puras moram em js/player-regras.js (compartilhadas com o player local do index.html)
 function dentroDaAbertura(pos) { return aberturaContem(remoteAbertura, pos); }
-function nosCreditos(pos) { return creditosAlcancados(remoteCreditos, remoteTemProximo, pos); }
+function nosCreditos(pos, dur) { return creditosAlcancados(remoteCreditos, remoteTemProximo, pos, dur); }
 function pintarFaixa(id, ini, fim, dur) {
   const el = document.getElementById(id), f = faixaEmPercentual(ini, fim, dur);
   el.style.display = f ? 'block' : 'none';
@@ -673,15 +673,15 @@ function definirCta(modo) {
   b.setAttribute('aria-label', modo === 'abertura' ? 'Pular abertura' : modo === 'proximo' ? 'Próximo episódio' : 'Avançar 30 segundos');
 }
 function atualizarBotaoDireita(pos, dur) {
-  const pular = dentroDaAbertura(pos), proximo = !pular && nosCreditos(pos);
+  const pular = dentroDaAbertura(pos), proximo = !pular && nosCreditos(pos, dur);
   definirCta(pular ? 'abertura' : proximo ? 'proximo' : 'neutro');
   pintarFaixa('remoteFaixaAbertura', remoteAbertura && remoteAbertura.inicioSegundos, remoteAbertura && remoteAbertura.fimSegundos, dur);
-  pintarFaixa('remoteFaixaCreditos', remoteCreditos && remoteCreditos.inicioSegundos, dur, dur);
+  pintarFaixa('remoteFaixaCreditos', creditosPlausiveis(remoteCreditos, dur) ? remoteCreditos.inicioSegundos : null, dur, dur);
 }
 function remoteDireita() {
   const pos = (ultimoEstadoRemoto && ultimoEstadoRemoto.posSegundos) || 0;
   if (dentroDaAbertura(pos)) return remotePularAbertura();
-  if (nosCreditos(pos)) return remoteProximoEp();
+  if (nosCreditos(pos, (ultimoEstadoRemoto && ultimoEstadoRemoto.duracaoSegundos) || 0)) return remoteProximoEp();
   return remoteSeek(SEEK_STEP_S);
 }
 // O servidor pula (vai pro fim da abertura que ele conhece) e liga o pulo automático da temporada: o Daniel confirmou que ali é abertura.

@@ -65,4 +65,26 @@ caso('estado local e abertura-para-salto alimentam as decisões de util.js', () 
   assert.strictEqual(chama('aberturaParaSalto(null, true, false)'), null);
 });
 
+caso('créditos implausíveis (começo do episódio) nunca disparam o botão nem o automático', () => {
+  const ruim = { inicioSegundos: 33.1 };   // Efeitos Colaterais S01E03: capítulo "Credits" da vinheta
+  assert.strictEqual(chama('creditosPlausiveis(c, 1322)', { c: ruim }), false);
+  assert.strictEqual(chama('creditosAlcancados(c, true, 70, 1322)', { c: ruim }), false);
+  assert.strictEqual(chama('modoDoBotaoDireita(null, c, true, 70, 1322)', { c: ruim }), 'neutro');
+  assert.strictEqual(chama('creditosPlausiveis(c, 1322)', { c: { inicioSegundos: 1200 } }), true);
+  assert.strictEqual(chama('creditosPlausiveis(c, 1322)', { c: { inicioSegundos: 700 } }), false);   // antes de 65% da duração
+  assert.strictEqual(chama('creditosPlausiveis(c, 0)', { c: { inicioSegundos: 700 } }), true);       // HLS: duração desconhecida, vale o piso de 2 min
+  const est = chama('estadoLocalDoPlayer(c, 1322)', { c: { proximoAutomatico: true, creditos: ruim } });
+  assert.strictEqual(est.inicioCreditos, null);
+  assert.strictEqual(chama('decidirProximoAutomatico(e, 70, false, 1322)', { e: est }), false);
+});
+caso('próximo automático: nunca antes de 50% da duração, nem depois de voltar a imagem', () => {
+  const est = { proximoAutomatico: true, proximoCancelado: false, inicioCreditos: 300 };   // créditos "plausíveis" mas a duração diz que é cedo
+  assert.strictEqual(chama('decidirProximoAutomatico(e, 400, false, 1322)', { e: est }), false);
+  assert.strictEqual(chama('decidirProximoAutomatico(e, 700, false, 1322)', { e: est }), true);
+  assert.strictEqual(chama('decidirProximoAutomatico(e, 400, false)', { e: est }), true);   // sem duração (TV, HLS): comportamento de sempre
+  const voltou = chama('estadoLocalDoPlayer(c, 1322)', { c: { proximoAutomatico: true, seekTras: true, creditos: { inicioSegundos: 1200 } } });
+  assert.strictEqual(chama('decidirProximoAutomatico(e, 1250, false, 1322)', { e: voltou }), false);
+  assert.strictEqual(chama('contagemNoFim(e, 12)', { e: voltou }), null);   // (o player local passa seekTras:false no 'ended': o fim de verdade sempre oferece)
+});
+
 console.log(`${n} casos ok`);

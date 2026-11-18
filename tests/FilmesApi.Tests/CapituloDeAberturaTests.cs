@@ -56,4 +56,24 @@ public class CapituloDeAberturaTests
         Assert.Equal(new CapituloArquivo(206.65, 298.13, "Opening"), info.Capitulos[1]);
         Assert.Empty(MediaProbeService.Parsear("""{"streams":[],"format":{}}""").Capitulos!);   // sem a chave: lista vazia
     }
+
+    [Fact]
+    public void Creditos_no_comeco_do_episodio_sao_a_vinheta_e_nao_valem()
+    {
+        // caso real (Efeitos Colaterais): "Credits" aos 3 s e 33 s — com o fim em 1322 s
+        Assert.Null(CapituloDeAbertura.InicioDosCreditos([new(33.1, 60, "Credits")], 1322));
+        Assert.Null(CapituloDeAbertura.InicioDosCreditos([new(33.1, 60, "Credits")]));
+        Assert.Null(CapituloDeAbertura.InicioDosCreditos([new(700, 1322, "Credits")], 1322));   // antes de 65%
+        Assert.Equal(1200, CapituloDeAbertura.InicioDosCreditos([new(33.1, 60, "Credits"), new(1200, 1322, "Ending")], 1322));   // vale o do fim
+    }
+
+    [Theory]
+    [InlineData(33.1, null, false)]
+    [InlineData(119, null, false)]
+    [InlineData(120, null, true)]
+    [InlineData(309.0, 330.0, true)]    // desenho curto (Pingu): créditos aos 309 s de 330
+    [InlineData(500.0, 1322.0, false)]
+    [InlineData(860.0, 1322.0, true)]
+    public void CreditosPlausivel(double inicio, double? duracao, bool esperado) =>
+        Assert.Equal(esperado, CapituloDeAbertura.CreditosPlausivel(inicio, duracao));
 }

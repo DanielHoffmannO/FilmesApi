@@ -37,7 +37,19 @@ public static class CapituloDeAbertura
         capitulos?.Where(c => Classificar(c.Titulo) == Tipo.Abertura && c.FimSegundos - c.InicioSegundos >= AberturaMinimaSegundos)
             .Select(c => ((double Inicio, double Fim)?)(c.InicioSegundos, c.FimSegundos)).FirstOrDefault();
 
-    /// <summary>Onde começam os créditos (o último capítulo "Credits"/"Ending"), ou null.</summary>
-    public static double? InicioDosCreditos(IReadOnlyList<CapituloArquivo>? capitulos) =>
-        capitulos?.Where(c => Classificar(c.Titulo) == Tipo.Creditos).Select(c => (double?)c.InicioSegundos).LastOrDefault();
+    /// <summary>Créditos de FIM só valem a partir daqui (s). Um capítulo "Credits" nos primeiros minutos é a abertura/vinheta (caso real: Efeitos Colaterais,
+    /// "Credits" aos 3 s e 33 s) — e fazia o "Próximo episódio" aparecer com 1 minuto de vídeo.</summary>
+    public const double CreditosMinimoSegundos = 120;
+
+    /// <summary>Quando a duração é conhecida, os créditos têm que começar depois desta fração dela.</summary>
+    public const double CreditosFracaoMinima = 0.65;
+
+    /// <summary>O início de créditos é plausível? Sem duração só vale o piso de <see cref="CreditosMinimoSegundos"/>.</summary>
+    public static bool CreditosPlausivel(double inicioSegundos, double? duracaoSegundos) =>
+        inicioSegundos >= CreditosMinimoSegundos && (!(duracaoSegundos > 0) || inicioSegundos >= duracaoSegundos.GetValueOrDefault() * CreditosFracaoMinima);
+
+    /// <summary>Onde começam os créditos (o último capítulo "Credits"/"Ending" plausível — ver <see cref="CreditosPlausivel"/>), ou null.</summary>
+    public static double? InicioDosCreditos(IReadOnlyList<CapituloArquivo>? capitulos, double? duracaoSegundos = null) =>
+        capitulos?.Where(c => Classificar(c.Titulo) == Tipo.Creditos && CreditosPlausivel(c.InicioSegundos, duracaoSegundos))
+            .Select(c => (double?)c.InicioSegundos).LastOrDefault();
 }
