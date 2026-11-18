@@ -41,9 +41,11 @@ caso('faixa em %: posição e largura, e some sem dado', () => {
   assert.strictEqual(chama('faixaEmPercentual(undefined, 200, 1000)'), null);
 });
 caso('próximo manual só ensina nos créditos ou no fim', () => {
-  const ensina = (c, p, d) => chama('proximoManualEnsina(c, p, d, 90)', { c, p, d });
+  const ensina = (c, p, d) => chama('proximoManualEnsina(c, p, d, PROXIMO_ENSINA_RESTANTE_PADRAO_S)', { c, p, d });   // 180 s, o padrão do servidor (ProximoManual)
   assert.strictEqual(ensina(cr, 1250, 1500), true);
   assert.strictEqual(ensina(null, 1450, 1500), true);     // restam 50 s
+  assert.strictEqual(ensina(null, 1330, 1500), true);     // restam 170 s: dentro dos 180 do servidor (com 90 não ensinava)
+  assert.strictEqual(ensina(null, 1310, 1500), false);    // restam 190 s
   assert.strictEqual(ensina(null, 600, 1500), false);     // meio do episódio: só toca
   assert.strictEqual(ensina(cr, 600, 1500), false);
   assert.strictEqual(ensina(null, 600, 0), false);        // duração desconhecida (HLS)

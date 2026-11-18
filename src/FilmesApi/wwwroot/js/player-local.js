@@ -399,7 +399,6 @@ function salvarProgresso() {
 // os interruptores da temporada); as decisões são as de util.js / player-regras.js. Nada disso toca no estado da TV (/api/player/*).
 const CTA_NEUTRO_VISIVEL_MS = 3500;   // o "30s »" some sozinho depois disso sem toque; "Pular abertura"/"Próximo episódio" ficam enquanto valerem
 const SALTO_PADRAO_S = 30;
-const PROXIMO_ENSINA_RESTANTE_S = 90;   // apertar "Próximo" a ≤ isto do fim liga o próximo automático da temporada (igual ao servidor)
 
 let ctxLocal = novoContextoLocal();
 function novoContextoLocal() {
@@ -506,7 +505,7 @@ async function pularAberturaLocal() {
 async function proximoEpisodioLocal() {
   const c = ctxLocal, prox = c.prox, f = c.filme;
   if (!prox) return;
-  if (!c.proximoAutomatico && f && f.serieChave && f.temporada != null && proximoManualEnsina(c.creditos, posLocal(), duracaoLocal(), PROXIMO_ENSINA_RESTANTE_S)) {
+  if (!c.proximoAutomatico && f && f.serieChave && f.temporada != null && proximoManualEnsina(c.creditos, posLocal(), duracaoLocal(), PROXIMO_ENSINA_RESTANTE_PADRAO_S)) {
     if (await salvarInterruptorDaTemporada(f.serieChave, f.temporada, 'proximoAutomatico', true)) {
       c.proximoAutomatico = true;
       avisoLocal(`Próximo automático ligado na temporada ${f.temporada}.`, null);

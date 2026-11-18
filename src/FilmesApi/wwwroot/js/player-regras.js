@@ -34,6 +34,10 @@ function faixaEmPercentual(ini, fim, dur) {
   return { left: 100 * ini / dur, width: 100 * (fim - ini) / dur };
 }
 
+// Restam no máximo isto (s) pra "Próximo" contar como "já acabou" e ligar o automático. Fonte da verdade: ProximoManual.RestantePadraoSegundos no servidor (180,
+// configurável por ProximoRestanteSegundos) — o player local usa o padrão; se o padrão do servidor mudar, mude aqui junto.
+var PROXIMO_ENSINA_RESTANTE_PADRAO_S = 180;
+
 // "Próximo episódio" apertado: vale como "é nessa hora que o Daniel pula" (liga o próximo automático da temporada) quando já está nos créditos
 // ou restam `restanteMax` s ou menos — apertar no meio do episódio só toca o próximo, não ensina nada (mesma regra do servidor, ProximoManual).
 function proximoManualEnsina(creditos, pos, dur, restanteMax) {
