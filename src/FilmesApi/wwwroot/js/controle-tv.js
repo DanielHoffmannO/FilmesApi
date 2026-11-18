@@ -213,7 +213,7 @@ function mmss(s) {
 
 async function enviarParaTv(id) {
   // aquece o remux deste episódio e do seguinte sem esperar: a TV só pede quando carrega o vídeo
-  fetch(`${API}/${id}/pre-aquecer`, { method: 'POST' }).catch(() => {});
+  fetch(`${API}/${id}/pre-aquecer?paraTv=1`, { method: 'POST' }).catch(() => {});
   await fetch(`${PLAYER_API}/selecionar/${id}`, { method: 'POST' });
   pollRemote();
 }
@@ -412,7 +412,7 @@ async function remoteProximoEp() {
   const res = await fetch(`${PLAYER_API}/proximo-manual`, { method: 'POST' }).catch(() => null);
   if (!res || !res.ok) { toast('Não há próximo episódio.'); return; }
   const { proximoId } = await res.json();
-  fetch(`${API}/${proximoId}/pre-aquecer`, { method: 'POST' }).catch(() => {});   // adianta o remux enquanto a TV carrega
+  fetch(`${API}/${proximoId}/pre-aquecer?paraTv=1`, { method: 'POST' }).catch(() => {});   // adianta o remux enquanto a TV carrega
   pollRemote();
 }
 
