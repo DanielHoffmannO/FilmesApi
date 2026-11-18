@@ -32,7 +32,7 @@ transcodificação sob demanda e aceleração por hardware (VPU do RK3399/RK3588
 - **Tela pra smart TV antiga** (`tv.html`) — catálogo navegável pelo controle da própria TV, em
   ES5 puro. Toca HLS quando a TV suporta (MediaSource ou HLS nativo do `<video>`); numa TV sem
   nenhum dos dois, ainda arruma o áudio incompatível via `/remux` antes de cair pro arquivo cru.
-- **Controle remoto pelo celular** (`controle.html`) — manda um filme pra TV, controla
+- **Controle remoto pelo celular** (folha "Controle da TV" do `index.html`; página `controle-tv.html`) — manda um filme pra TV, controla
   play/pause, avança/volta, volume, legenda e dublagem à distância, com barra de progresso.
 - **Pôster e sinopse** — enriquecimento opcional via [TMDB](https://www.themoviedb.org/).
 - **Três telas web** (assistir / TV / controle remoto) + página de status. Sem app pra instalar.
@@ -228,7 +228,7 @@ Cada tela tem **um** papel:
 |---|---|---|
 | `/` (`index.html`) | celular / PC | Catálogo em lista compacta, busca, filtros, "continuar assistindo", player com HLS, legenda e próximo-episódio. Navegador velho cai pra `/tv.html`. |
 | `/tv.html` | smart TV antiga | Catálogo **standalone** navegável pelo controle da TV (ES5, setas + OK). Toca HLS (MediaSource ou nativo) quando a TV suporta; senão tenta `/remux` (áudio incompatível arrumado); só cai pro arquivo cru como último recurso. Também escuta comandos do `/controle.html` por baixo dos panos. |
-| `/controle.html` | celular | Controle remoto: lista de filmes com botão "enviar pra TV" + barra fixa com play/pause, seek, volume, legenda, dublagem e progresso do que está tocando na TV. |
+| `/controle.html` | celular | Redireciona para `/?tv=1` (folha do controle no index; `/controle-tv.html` é a página embutida e o fallback `/controle-antigo.html`). Controle remoto: lista de filmes com botão "enviar pra TV" + barra fixa com play/pause, seek, volume, legenda, dublagem e progresso do que está tocando na TV. |
 | `/status.html` | — | Diagnóstico: temperatura da placa, fila de transcode, uso do cache HLS, estado da VPU. |
 | `/swagger` | — | Documentação interativa da API. |
 
@@ -314,7 +314,7 @@ vídeo (muitas TVs não renderizam `<track>`) e, se o vídeo entrar em tela chei
 
 ## 📱 Controle remoto
 
-`/controle.html` manda comandos pra TV via `PlayerStateService` (estado único em memória,
+O controle (`controle-tv.html`) manda comandos pra TV via `PlayerStateService` (estado único em memória,
 pensado pra casa com uma TV): selecionar filme, play/pause, seek relativo/absoluto, volume,
 legenda e dublagem. O `tv.html` faz *poll* desse estado por baixo dos panos e aplica os
 comandos chamando as **mesmas** funções que o controle da própria TV usa — nenhuma lógica de
@@ -565,7 +565,7 @@ src/FilmesApi/
 │   ├── AppDbContext.cs           Filmes + Progressos (SQLite)
 │   ├── DbInitializer.cs          EnsureCreated + migrações idempotentes por SQL cru
 │   └── SqlitePragmaInterceptor.cs  PRAGMA (journal_mode, etc.) em cada conexão
-├── wwwroot/                      index.html · tv.html · controle.html · status.html
+├── wwwroot/                      index.html · tv.html · controle-tv.html (controle.html redireciona) · status.html
 │                                 css/base.css · js/util.js (esc/formatarTempo/toggleGrupo —
 │                                 compartilhado pelas 3 primeiras) · vendor/hls.min.js
 └── Program.cs                    DI, pipeline, "auto-migração" no boot
@@ -603,3 +603,5 @@ autenticação de verdade (o token trafega em HTTP puro dentro da LAN), e o play
 ## 📄 Licença
 
 [MIT](LICENSE).
+
+Arquitetura atual (camadas, fluxos, débitos): [docs/arquitetura.md](docs/arquitetura.md). Relatório da simplificação: [docs/relatorio-simplificacao.md](docs/relatorio-simplificacao.md).
