@@ -4,11 +4,12 @@ using Microsoft.AspNetCore.Mvc;
 namespace FilmesApi.Controllers;
 
 public record IdsRequest(int[]? Ids);
+public record SeguirSerieRequest(string? Chave, int? Janela);
 
 /// <summary>"Manter no cache" (ver <see cref="CacheFixadoService"/>): marcar/desmarcar títulos, ver o que está pronto e limpar o resto.</summary>
 [ApiController]
 [Route("api/cache")]
-public class CacheController(CacheFixadoService fixados, HlsTranscodeService transcode, FilmeService filmes) : ControllerBase
+public class CacheController(CacheFixadoService fixados, HlsTranscodeService transcode, FilmeService filmes, SeguirSerieService seguir) : ControllerBase
 {
     public const int MaxIds = 500;
 
@@ -33,8 +34,37 @@ public class CacheController(CacheFixadoService fixados, HlsTranscodeService tra
             remuxBytes = transcode.BytesTotaisDoRemux(),
             remuxTetoBytes = TetoParaJson(transcode.TetoRemuxBytes),
             itens,
+            seguidas = RetratoDasSeguidas(),
         });
     }
+
+    /// <summary>"Seguir série no cache": cada série seguida com a janela que o servidor mantém pronta (<c>prontos</c> de <c>janela</c> episódios; <c>preparando</c> o que está sendo copiado).</summary>
+    private object[] RetratoDasSeguidas() => [.. seguir.Seguidas.Select(s =>
+    {
+        var prontos = s.Janela.Count(id => transcode.BytesDoRemux(id) is not null);
+        return new
+        {
+            chave = s.Chave, nome = s.Nome, tamanhoDaJanela = s.TamanhoDaJanela, desde = s.Desde,
+            janela = s.Janela, prontos, preparando = s.Janela.Any(transcode.RemuxEmAndamento),
+        };
+    })];
+
+    [HttpGet("serie")]
+    public IActionResult ListarSeguidas() => Ok(RetratoDasSeguidas());
+
+    /// <summary>Começa a seguir a série (<c>chave</c> = a chave da série do catálogo); <c>janela</c> opcional (padrão <c>CacheSeguirJanela</c>). 404 se a série não existe.</summary>
+    [HttpPost("serie")]
+    public async Task<IActionResult> Seguir([FromBody] SeguirSerieRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.Chave)) return BadRequest(new { mensagem = "mande a chave da série" });
+        if (!await seguir.SeguirAsync(req.Chave, req.Janela)) return NotFound(new { mensagem = "série não existe no catálogo" });
+        return Ok(RetratoDasSeguidas());
+    }
+
+    /// <summary>Para de seguir (<c>?chave=</c>). O que já está pronto fica no cache como qualquer outra cópia. 404 se não era seguida.</summary>
+    [HttpDelete("serie")]
+    public async Task<IActionResult> DeixarDeSeguir([FromQuery] string chave) =>
+        await seguir.DeixarAsync(chave) ? Ok(RetratoDasSeguidas()) : NotFound(new { mensagem = "série não era seguida" });
 
     [HttpPost("fixar")]
     public async Task<IActionResult> Fixar([FromBody] IdsRequest req)
@@ -60,5 +90,5 @@ public class CacheController(CacheFixadoService fixados, HlsTranscodeService tra
 
     /// <summary>Apaga o cache de reprodução que NÃO está fixado (e não está em uso). Os fixados ficam.</summary>
     [HttpPost("limpar")]
-    public IActionResult Limpar() => Ok(transcode.LimparNaoFixados(fixados.Fixados));
+    public IActionResult Limpar() => Ok(transcode.LimparNaoFixados(fixados.Protegidos));
 }

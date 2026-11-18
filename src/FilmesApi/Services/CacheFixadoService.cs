@@ -23,7 +23,7 @@ internal static class PoliticaCacheFixado
 /// <c>CacheFixadoGbPorRodada</c> (5) GB gravados por rodada, uma cópia de cada vez; <c>CacheFixadoIntervaloSegundos</c> (60; 0 desliga a preparação).
 /// </summary>
 public class CacheFixadoService(IServiceScopeFactory escopos, HlsTranscodeService transcode, IConfiguration config,
-    ILogger<CacheFixadoService> logger) : BackgroundService
+    ILogger<CacheFixadoService> logger, SeguirSerieService? seguir = null) : BackgroundService
 {
     // A lista (na ordem de marcação) e o conjunto andam juntos num só valor imutável: quem lê nunca vê um sem o outro.
     private sealed record EstadoFixados(IReadOnlyList<int> Ordem, IReadOnlySet<int> Conjunto);
@@ -31,8 +31,12 @@ public class CacheFixadoService(IServiceScopeFactory escopos, HlsTranscodeServic
     private readonly SemaphoreSlim _acorda = new(0);
     private readonly HashSet<int> _avisados = [];   // já logou "adiado"/"arquivo fora do ar" desta vez — não repete a cada rodada
 
+    /// <summary>O que o dono fixou à mão ("Manter no cache").</summary>
     public IReadOnlySet<int> Fixados => _estado.Conjunto;
     public IReadOnlyList<int> Ordem => _estado.Ordem;
+
+    /// <summary>Tudo que nunca é expulso do cache: o fixado à mão + as janelas e assistidos recentes das séries seguidas.</summary>
+    public IReadOnlySet<int> Protegidos => seguir is null || seguir.Protegidos.Count == 0 ? Fixados : Fixados.Union(seguir.Protegidos).ToHashSet();
 
     public long TetoFixadoBytes => ParaBytes(config.GetValue<double?>("CacheFixadoMaxGB") ?? 40);
     private long LimiteDaRodadaBytes => ParaBytes(config.GetValue<double?>("CacheFixadoGbPorRodada") ?? 5, semLimiteQuandoZero: false);
@@ -87,6 +91,7 @@ public class CacheFixadoService(IServiceScopeFactory escopos, HlsTranscodeServic
 
     protected override async Task ExecuteAsync(CancellationToken parar)
     {
+        if (seguir is not null) seguir.AoMudar += () => _acorda.Release();
         var segundos = config.GetValue<double?>("CacheFixadoIntervaloSegundos") ?? 60;
         if (segundos <= 0) return;
         try
@@ -105,7 +110,9 @@ public class CacheFixadoService(IServiceScopeFactory escopos, HlsTranscodeServic
     /// <summary>Uma rodada: percorre os fixados na ordem em que foram marcados e prepara a cópia dos que faltam, um de cada vez.</summary>
     internal async Task RodadaAsync(CancellationToken ct)
     {
-        var ordem = Ordem;
+        if (seguir is not null) await seguir.AtualizarAsync();   // a janela anda quando se assiste ou chega episódio novo
+        // primeiro o que foi fixado à mão, depois a janela de cada série seguida
+        IReadOnlyList<int> ordem = seguir is null ? Ordem : [.. Ordem.Concat(seguir.OrdemDePreparo).Distinct()];
         if (ordem.Count == 0) return;
         var teto = TetoFixadoBytes;
         var limite = LimiteDaRodadaBytes;
