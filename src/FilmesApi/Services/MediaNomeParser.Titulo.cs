@@ -142,7 +142,11 @@ public static partial class MediaNomeParser
             n = n[..anos[^1].Index];
         }
 
+        // "Título [Título em inglês] 10bit 1080p…": o nome certo vem antes do primeiro colchete (o que vem depois é título alternativo e ruído)
+        var iColchete = n.IndexOf('[');
+        if (iColchete >= 3) n = n[..iColchete];
         n = ReRuido().Replace(n, " ");
+        n = ReRuidoDeBusca().Replace(n, " ");
         n = Regex.Replace(n, @"[\[\]()_-]+", " ");
         n = Regex.Replace(n, @"\s+", " ").Trim();
 
@@ -154,6 +158,24 @@ public static partial class MediaNomeParser
                 return (serie, ano ?? TituloParaBusca(serie, null, permiteFallbackSerie: false).Ano);
         }
         return (n, ano);
+    }
+
+    /// <summary>O nome da SÉRIE que a busca do TMDB usa: o nome de exibição (apelidos padrão e <c>nomes.json</c>: "DDUV" → "Diários de Um Vampiro",
+    /// "Hora da Aventura" → "Hora de Aventura", como o TMDB em português chama) e, quando não há apelido, o nome limpo da pasta.</summary>
+    public static string NomeDaSerieParaBusca(string? arquivoPath)
+    {
+        var cru = ChaveSerie(arquivoPath);
+        return NomeExibicao(ChaveAgrupamento(cru), cru);
+    }
+
+    /// <summary>Filme dentro de uma pasta com nome próprio ("Guerra de Canudos (1997)/Guerra dos Canudos (1997) DVDRip…mp4"): o nome da pasta, limpo,
+    /// como segunda chance de busca quando o do arquivo não casa. null se o arquivo está na raiz ou a pasta não rende nada.</summary>
+    public static (string Titulo, int? Ano)? TituloDaPastaParaBusca(string? arquivoPath)
+    {
+        var segs = SegmentosPasta(arquivoPath);
+        if (segs.Length == 0) return null;
+        var (titulo, ano) = TituloParaBusca(segs[^1], null, permiteFallbackSerie: false);
+        return titulo.Length > 2 ? (titulo, ano) : null;
     }
 
     private static int IndiceOuMenos1(Regex re, string s)

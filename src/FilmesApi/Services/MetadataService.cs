@@ -82,6 +82,9 @@ public class MetadataService : BackgroundService
         {
             var s = MediaNomeParser.ChaveSerie(arquivoPath);
             if (!string.IsNullOrWhiteSpace(s)) yield return MediaNomeParser.NormalizarBusca(s);
+            // e o nome de exibição (o que o diagnóstico mostra como "buscado": "Hora de Aventura", "Diários de Um Vampiro")
+            var exibicao = MediaNomeParser.NomeDaSerieParaBusca(arquivoPath);
+            if (!string.IsNullOrWhiteSpace(exibicao)) yield return MediaNomeParser.NormalizarBusca(exibicao);
         }
     }
 
@@ -181,17 +184,16 @@ public class MetadataService : BackgroundService
 
         if (serie)
         {
-            var nome = MediaNomeParser.ChaveSerie(filme.ArquivoPath);
-            var chaveSerie = $"tv|{MediaNomeParser.NormalizarBusca(nome)}|{ano}";
-            if (_cacheSeries.TryGetValue(chaveSerie, out var guardado) && (guardado.Res is not null || DateTime.UtcNow - guardado.Quando < ValidadeDoErroDeSerie))
-                res = guardado.Res;
-            else
+            // pelo NOME DA SÉRIE: primeiro o de exibição (apelidos: "Hora da Aventura" → "Hora de Aventura", "DDUV" → "Diários de Um Vampiro"), depois o limpo da pasta
+            var cru = MediaNomeParser.ChaveSerie(filme.ArquivoPath);
+            var exibicao = MediaNomeParser.NomeDaSerieParaBusca(filme.ArquivoPath);
+            foreach (var nome in new[] { exibicao, cru }.Where(n => !string.IsNullOrWhiteSpace(n)).DistinctBy(MediaNomeParser.NormalizarBusca))
             {
-                if (!string.IsNullOrWhiteSpace(nome)) { res = await _tmdb.BuscarAsync(nome, ano, serie: true, ct); await PausaTmdb(ct); }
-                _cacheSeries[chaveSerie] = (res, DateTime.UtcNow);
-                if (res is null) AvisarSemMatch("tv", nome, titulo);
+                res = await BuscarSerieEmCacheAsync(nome, ano, ct);
+                if (res is not null) return res;
             }
-            if (res is not null || string.IsNullOrWhiteSpace(titulo) || MediaNomeParser.NormalizarBusca(titulo) == MediaNomeParser.NormalizarBusca(nome)) return res;
+            AvisarSemMatch("tv", exibicao, titulo);
+            if (string.IsNullOrWhiteSpace(titulo) || MediaNomeParser.NormalizarBusca(titulo) == MediaNomeParser.NormalizarBusca(exibicao)) return null;
         }
         if (string.IsNullOrWhiteSpace(titulo)) return null;
         // o título do arquivo também fica em cache (série cujo nome da pasta não casou: não repete a busca por episódio de mesmo título)
@@ -200,7 +202,27 @@ public class MetadataService : BackgroundService
         res = await _tmdb.BuscarAsync(titulo, ano, serie, ct);
         await PausaTmdb(ct);
         _cacheSeries[chaveTitulo] = (res, DateTime.UtcNow);
+        // filme que não casou pelo nome do arquivo: tenta o nome da PASTA ("Guerra de Canudos (1997)/Guerra dos Canudos…mp4")
+        if (res is null && !serie && MediaNomeParser.TituloDaPastaParaBusca(filme.ArquivoPath) is var (tituloPasta, anoPasta)
+            && MediaNomeParser.NormalizarBusca(tituloPasta) != MediaNomeParser.NormalizarBusca(titulo))
+        {
+            res = await _tmdb.BuscarAsync(tituloPasta, anoPasta ?? ano, serie: false, ct);
+            await PausaTmdb(ct);
+            _cacheSeries[chaveTitulo] = (res, DateTime.UtcNow);
+        }
         if (res is null) AvisarSemMatch(serie ? "tv" : "movie", titulo, null);
+        return res;
+    }
+
+    /// <summary>Uma busca de série por nome, lembrada entre lotes (acerto fica; erro, 1 h).</summary>
+    private async Task<TmdbResultado?> BuscarSerieEmCacheAsync(string nome, int? ano, CancellationToken ct)
+    {
+        var chave = $"tv|{MediaNomeParser.NormalizarBusca(nome)}|{ano}";
+        if (_cacheSeries.TryGetValue(chave, out var guardado) && (guardado.Res is not null || DateTime.UtcNow - guardado.Quando < ValidadeDoErroDeSerie))
+            return guardado.Res;
+        var res = await _tmdb.BuscarAsync(nome, ano, serie: true, ct);
+        await PausaTmdb(ct);
+        _cacheSeries[chave] = (res, DateTime.UtcNow);
         return res;
     }
 

@@ -102,6 +102,11 @@ public static partial class MediaNomeParser
     [GeneratedRegex(@"[._]+", RegexOptions.CultureInvariant)]
     private static partial Regex RePontos();
 
+    // Só pra BUSCA no TMDB (não mexe em ChaveSerie/nome de exibição, que têm apelidos casados com o texto cru): assinatura de site de torrent com o
+    // sufixo "COM/TV/HD" ("TORRENTMEGAFILMES TV", "TorrentDosFilmesHD", "VIATORRENTS COM", "LAPUMiAFiLMES COM") e sobras de release (4KDS, AV1tester, Dub).
+    [GeneratedRegex(@"\b(?:torrent[a-z]*|viatorrents|lapumia[a-z]*|comandotorrents|bludv|starckfilmes|wolverdonfilmes)\b(?:\s+(?:com|tv|net|org|hd))?|\b(?:4kds|av1[a-z]*|dub|oldies)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ReRuidoDeBusca();
+
     // Propaganda de site dentro de colchete/parênteses ("[ACESSE COMANDOTORRENTS.COM]",
     // "(baixe em www.site.com)") — só remove quando tem palavra-gatilho ou domínio dentro,
     // nunca um colchete às cegas (um filme pode legitimamente ter "[Extended]" no nome).

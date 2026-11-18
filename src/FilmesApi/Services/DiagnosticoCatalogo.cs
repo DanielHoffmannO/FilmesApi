@@ -85,7 +85,7 @@ public static partial class DiagnosticoCatalogo
         {
             var itens = g.ToList();
             if (!itens.All(Sem)) continue;   // um episódio com metadados já mostra a série
-            var nomeBusca = MediaNomeParser.ChaveSerie(itens[0].ArquivoPath);
+            var nomeBusca = MediaNomeParser.NomeDaSerieParaBusca(itens[0].ArquivoPath);   // o termo que a busca do TMDB usa (apelido aplicado)
             lista.Add(new SemMetadadosDiag(MediaNomeParser.NomeExibicao(g.Key, itens[0].Serie ?? nomeBusca), MediaNomeParser.NormalizarBusca(nomeBusca), nomeBusca, "tv", itens.Count, itens[0].Id));
         }
         foreach (var f in catalogo.Where(f => !f.EhEpisodio && !f.EhExtra && Sem(f)))
