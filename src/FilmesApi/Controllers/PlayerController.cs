@@ -15,9 +15,16 @@ public class PlayerController : ControllerBase
     private readonly PlayerStateService _state;
     private readonly AutomacaoDoPlayer _automacao;
     private readonly FilmeService _filmes;
+    private readonly HlsTranscodeService? _transcode;
+    private readonly ILogger _log;
 
-    public PlayerController(PlayerStateService state, AutomacaoDoPlayer automacao, FilmeService filmes)
+    public PlayerController(PlayerStateService state, AutomacaoDoPlayer automacao, FilmeService filmes) : this(state, automacao, filmes, null, null) { }
+
+    [ActivatorUtilitiesConstructor]
+    public PlayerController(PlayerStateService state, AutomacaoDoPlayer automacao, FilmeService filmes, HlsTranscodeService? transcode, ILogger<PlayerController>? log)
     {
+        _transcode = transcode;
+        _log = (ILogger?)log ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
         _state = state;
         _automacao = automacao;
         _filmes = filmes;
@@ -29,6 +36,7 @@ public class PlayerController : ControllerBase
     [HttpPost("selecionar/{filmeId:int}")]
     public async Task<IActionResult> Selecionar(int filmeId)
     {
+        LinhaDoTempoDeEnvio.Iniciar(_log, filmeId, _transcode?.BytesDoRemux(filmeId) is not null);
         await _automacao.SelecionarAsync(filmeId);   // seleciona e monta o contexto: abertura conhecida + interruptores da temporada vão no snapshot
         return Ok(_state.Snapshot());
     }

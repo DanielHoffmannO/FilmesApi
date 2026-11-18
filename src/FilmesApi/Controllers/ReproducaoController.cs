@@ -89,6 +89,7 @@ public class ReproducaoController : ControllerBase
     {
         var path = await _service.ResolverCaminhoAsync(id);
         if (path is null) return ArquivoNaoEncontrado();
+        LinhaDoTempoDeEnvio.Marcar(_log, id, "a TV pediu o preparo (pode-direto)");
         var compat = await _transcode.AnalisarCompatibilidadeAsync(path, ct);
         return Ok(new
         {
@@ -108,6 +109,7 @@ public class ReproducaoController : ControllerBase
         var path = await _service.ResolverCaminhoAsync(id);
         if (path is null) return ArquivoNaoEncontrado();
 
+        LinhaDoTempoDeEnvio.Marcar(_log, id, "a TV pediu o preparo (stream-status)");
         var (status, _) = await _transcode.ObterStatusAsync(id, path, ct);
         return Ok(new { status = status.ToString().ToLowerInvariant() });
     }
@@ -137,24 +139,26 @@ public class ReproducaoController : ControllerBase
         if (path is null) return ArquivoNaoEncontrado();
         await _transcode.DescartarRemuxDeOutraFaixaAsync(id, path, ct);
         var (status, progresso) = _transcode.ObterStatusRemux(id, path);
+        if (status == FilmesApi.Services.RemuxStatus.Disponivel) LinhaDoTempoDeEnvio.Marcar(_log, id, "remux pronto (sem espera)");
+        else LinhaDoTempoDeEnvio.Marcar(_log, id, "a TV está esperando o remux");
         return Ok(new { status = status.ToString().ToLowerInvariant(), progresso });
     }
 
     /// <summary>O controle abriu este episódio: começa já o remux dele e do seguinte (só se o servidor está ocioso
     /// e cabe no teto do cache — ver <see cref="PoliticaPreAquecimento"/>). Devolve os ids cujo remux começou.</summary>
     [HttpPost("{id:int}/pre-aquecer")]
-    public async Task<IActionResult> PreAquecer(int id, CancellationToken ct)
+    public async Task<IActionResult> PreAquecer(int id, [FromQuery] bool paraTv = false, CancellationToken ct = default)
     {
         var path = await _service.ResolverCaminhoAsync(id);
         if (path is null) return ArquivoNaoEncontrado();
 
         var iniciados = new List<int>();
         var atual = await _service.ObterAsync(id);
-        if (atual is not null && await _transcode.PreAquecerSeNecessarioAsync(id, path, atual.Assistido, ct)) iniciados.Add(id);
+        if (atual is not null && await _transcode.PreAquecerSeNecessarioAsync(id, path, atual.Assistido, ct, paraTv)) iniciados.Add(id);
 
         var prox = await _service.ProximoEpisodioAsync(id);
         var proxPath = prox is null ? null : await _service.ResolverCaminhoAsync(prox.Id);
-        if (prox is not null && proxPath is not null && await _transcode.PreAquecerSeNecessarioAsync(prox.Id, proxPath, prox.Assistido, ct))
+        if (prox is not null && proxPath is not null && await _transcode.PreAquecerSeNecessarioAsync(prox.Id, proxPath, prox.Assistido, ct, paraTv))
             iniciados.Add(prox.Id);
         return Ok(new { iniciados });
     }
@@ -168,6 +172,7 @@ public class ReproducaoController : ControllerBase
     public IActionResult Remux(int id)
     {
         var caminho = _transcode.ObterRemuxPronto(id);
+        if (caminho is not null) LinhaDoTempoDeEnvio.Marcar(_log, id, "a TV começou a baixar o mp4");
         return caminho is null
             ? Conflict(new { mensagem = "Remux ainda não está pronto, consulte /remux-status." })
             : ServirComRange(caminho);

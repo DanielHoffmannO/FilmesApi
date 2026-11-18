@@ -176,24 +176,29 @@ public partial class HlsTranscodeService
         catch (IOException) { }
     }
 
+    /// <summary>Tem slot de encoder livre, ninguém esperando por ele e a placa fora do throttling (o aquecimento "para a TV" não atropela o que já toca).</summary>
+    internal bool PodeAquecerComJobs => _slotEncoder.CurrentCount > 0 && Volatile.Read(ref _esperandoSlot) == 0 && !_thermal.EstaThrottling;
+
     /// <summary>Sem job de HLS/remux, ninguém esperando slot e a placa fora do throttling térmico.</summary>
     public bool Ocioso => _jobs.IsEmpty && _remuxJobs.IsEmpty && Volatile.Read(ref _esperandoSlot) == 0 && !_thermal.EstaThrottling;
 
     /// <summary>Pré-aquece o remux só de quem precisa dele (vídeo ok, áudio não: o que já toca direto ou vai por HLS não
     /// tem o que aquecer) nem o que já foi assistido. Antes, descarta um remux pronto feito com outra faixa de áudio. Devolve true se começou um job.</summary>
-    public async Task<bool> PreAquecerSeNecessarioAsync(int filmeId, string origem, bool jaAssistido, CancellationToken ct)
+    public async Task<bool> PreAquecerSeNecessarioAsync(int filmeId, string origem, bool jaAssistido, CancellationToken ct, bool paraTv = false)
     {
         if (jaAssistido) return false;   // quem revê uma série não enche o cache de episódio que já viu (dar play continua funcionando)
         await DescartarRemuxDeOutraFaixaAsync(filmeId, origem, ct);
         if (await AnalisarCompatibilidadeAsync(origem, ct) != CompatibilidadeDireta.SoAudioIncompativel) return false;
-        return PreAquecerRemux(filmeId, origem);
+        return PreAquecerRemux(filmeId, origem, paraTv);
     }
 
     /// <summary>Começa o remux de <paramref name="filmeId"/> SEM ninguém ter pedido (ver <see cref="PoliticaPreAquecimento"/>).
     /// Só com o servidor ocioso e se o arquivo cabe no teto do cache sem expulsar nada. Devolve true se o job começou.</summary>
-    public bool PreAquecerRemux(int filmeId, string origem)
+    public bool PreAquecerRemux(int filmeId, string origem, bool paraTv = false)
     {
-        if (!Ocioso || File.Exists(CaminhoRemux(filmeId))) return false;
+        // paraTv: alguém no celular vai (ou acabou de) mandar isto pra TV — pode aquecer mesmo com o HLS do celular rodando, desde que sobre slot de
+        // encoder, ninguém espere nele e a placa esteja fria. Sem a dica, só com o servidor inteiro ocioso.
+        if (File.Exists(CaminhoRemux(filmeId)) || !(paraTv ? PodeAquecerComJobs : Ocioso)) return false;
 
         long tamanho;
         try { tamanho = new FileInfo(origem).Length; }
