@@ -56,7 +56,7 @@ let itens = new Map();     // chave -> {tipo:'filme'|'serie'|'pasta', ...} do ú
 let fichaAberta = null;
 let padroesDaSerie = null;   // série aberta na ficha: o botão de ajustes leva à folha de padrões dela no controle da TV    // chave do que está na ficha
 
-function tile(chave, o) {
+function tile(o) {
   const pct = o.pct || 0;
   return `
     <div class="tile" onclick="${o.onclick}" role="button" tabindex="0">
@@ -113,17 +113,10 @@ function cartaoDaFila(i) {
   const f = i.filme;
   const ep = f.ehEpisodio ? (f.temporada != null ? `T${f.temporada} · ` : '') + (codigoEpisodio(f) || f.rotulo || '') : (f.anoLancamento || '');
   const chave = f.ehEpisodio && itens.has('s:' + f.serieChave) ? 's:' + f.serieChave : itens.has('f:' + f.id) ? 'f:' + f.id : null;
-  return tile('', {
+  return tile({
     nome: f.ehEpisodio ? (f.serie || f.titulo) : f.titulo, poster: f.posterUrl, pct: i.motivo === 'proximo' ? 0 : pctProgresso(f),
     sub: i.motivo === 'proximo' ? `A seguir · ${ep}` : ep,
     remover: i.motivo === 'proximo' ? 0 : f.id, onclick: chave ? `abrirFicha('${attr(chave)}')` : `play(${f.id})`,
-  });
-}
-
-function cartaoDeFilme(f, sub, remover) {
-  return tile('', {
-    nome: f.ehEpisodio ? (f.serie || f.titulo) : f.titulo, poster: f.posterUrl, visto: false, pct: pctProgresso(f),
-    sub, remover, onclick: `play(${f.id})`,
   });
 }
 
@@ -158,7 +151,7 @@ async function render() {
   }
   if (cartoes.length) {
     const titulos = { inicio: 'Tudo', serie: 'Séries', filme: 'Filmes', novela: 'Novelas', buscar: 'Resultados' };
-    html += `<section class="fileira"><div class="fileira-tit">${titulos[aba]} <span class="count">(${cartoes.length})</span></div><div class="posters">${cartoes.map(c => tile('', c)).join('')}</div></section>`;
+    html += `<section class="fileira"><div class="fileira-tit">${titulos[aba]} <span class="count">(${cartoes.length})</span></div><div class="posters">${cartoes.map(c => tile(c)).join('')}</div></section>`;
   }
 
   if (!html) {

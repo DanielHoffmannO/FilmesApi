@@ -10,14 +10,8 @@ h1{font-size:19px;font-weight:650;letter-spacing:-.01em}
 button{background:var(--s2);color:var(--txt);border:1px solid var(--line);padding:0 14px;height:36px;border-radius:18px;cursor:pointer;font:inherit;font-size:13px;transition:background .15s,border-color .15s}
 button:hover{background:var(--s3)}
 main{padding:12px 16px calc(var(--h-nav) + 16px + env(safe-area-inset-bottom));max-width:1100px;margin:0 auto}
-.secao{margin-bottom:28px}
-.secao-title{font-size:11.5px;letter-spacing:.08em;color:var(--mut2);padding:0 4px;margin-bottom:8px}
-.secao-title .count{color:var(--mut2);font-weight:400}
 /* cada seção vira um cartão, como as temporadas do controle */
-.lista{background:var(--s1);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
-.lista>.row,.lista .grupo-body>.row{border-radius:0}
 .row{cursor:pointer;min-height:48px;padding:0 12px;gap:12px;border-top:1px solid var(--line)}
-.lista>.row:first-child,.lista>.grupo:first-child>.grupo-hd,.lista>.grupo:first-child>.serie{border-top:0}
 .row:hover{background:var(--s2)}
 .row.assistido .rtit{color:var(--mut)}
 .row .rtit{font-size:14.5px}
@@ -25,9 +19,6 @@ main{padding:12px 16px calc(var(--h-nav) + 16px + env(safe-area-inset-bottom));m
 .rposter{width:28px;height:40px;flex-shrink:0;border-radius:4px;background:var(--s3);object-fit:cover;margin:4px 0}
 .row .rep{color:var(--mut2);font-variant-numeric:tabular-nums;margin-right:8px;font-size:12.5px}
 .row .resume{font-size:12px;color:var(--acc-txt);white-space:nowrap}
-.row .badge{border-radius:12px;padding:2px 9px;font-size:11.5px}
-.row .badge:hover{border-color:#666;color:#ccc}
-.row .badge.on{background:none;color:var(--mut);border-color:var(--line)}
 .row .rprog{left:0;right:0;height:2px;background:transparent;bottom:0}
 .row .rprog>div{opacity:.7;border-radius:0 2px 2px 0}
 .row .baixar{flex:none;display:inline-flex;align-items:center;justify-content:center;min-width:36px;min-height:36px;margin:0 -4px 0 0;color:var(--mut2);text-decoration:none;font-size:15px;border-radius:50%}
@@ -41,8 +32,6 @@ main{padding:12px 16px calc(var(--h-nav) + 16px + env(safe-area-inset-bottom));m
 .grupo-body>.row{padding-left:34px}
 .grupo.temporada{margin-left:0}
 .grupo.temporada>.grupo-hd{font-size:13.5px;font-weight:500;padding-left:26px;color:var(--mut)}
-.serie-audio{padding:6px 12px 8px 34px;color:var(--mut)}
-.serie-audio select{background:var(--s2);border:1px solid var(--line);border-radius:8px;padding:3px 6px}
 #loadbar{position:fixed;top:0;left:0;height:3px;width:0;background:var(--accent);z-index:200;opacity:0;transition:width .3s ease}
 #loadbar.on{opacity:1;width:75%}
 #loadbar.done{opacity:0;width:100%;transition:width .2s ease,opacity .4s ease .2s}
@@ -120,8 +109,6 @@ nav#abas{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inse
 button:focus-visible,a:focus-visible,.tile:focus-visible{outline:2px solid var(--acc-txt);outline-offset:2px}
 .sheet-box{max-height:92dvh;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 #sheet{overscroll-behavior:contain}
-.corpo-ficha .row .badge{min-height:44px;min-width:44px;display:inline-flex;align-items:center;justify-content:center;padding:0 12px}
-.serie-audio select{min-height:44px}
 .empty button,.empty .tentar{height:48px;padding:0 22px;font-size:15px}
 .fileira-tit{font-size:15.5px}
 /* carregando: cartões-fantasma em vez de tela vazia */
@@ -203,11 +190,6 @@ body.com-agora main{padding-bottom:calc(var(--h-nav) + var(--h-agora) + 16px + e
 .corpo-ficha .row .rbtn{flex:none;width:40px;height:40px;padding:0;border:0;background:none;color:var(--mut);display:inline-flex;align-items:center;justify-content:center;border-radius:50%}
 .corpo-ficha .row .rbtn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .corpo-ficha .row .rbtn:active{background:var(--s3)}
-.pills{display:flex;gap:8px;padding:8px 12px;flex-wrap:wrap;border-top:1px solid var(--line)}
-.pill{position:relative;display:inline-flex;align-items:center;height:34px;padding:0 12px;border-radius:17px;border:1px solid var(--line);background:none;color:var(--mut);font-size:12.5px}
-.pill::after{content:"";position:absolute;inset:-4px -2px}
-.pill[aria-checked=true]{background:var(--acc-soft);border-color:rgba(229,9,20,.45);color:var(--acc-txt)}
-.serie-audio+.serie-audio{padding-top:0}
 .agora-tag{display:inline-block;margin:0 0 8px;padding:3px 10px;border-radius:12px;background:var(--acc-soft);color:var(--acc-txt);font-size:12px}
 
 /* ficha enxuta: o botão de ajustes da série, o "No cache" do mesmo tamanho dos outros e as linhas de episódio com ícones iguais */

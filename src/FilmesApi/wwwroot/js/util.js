@@ -33,19 +33,6 @@ function fetchJsonOuNull(url) {
   return fetch(url).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
 }
 
-// Colapsa/expande um <div class="grupo"> de pasta de filme+extras (a série usa a sanfona abaixo). `folderSet` é o
-// Set que lembra quais pastas ficam abertos entre renders — hoje só o index.html usa (foldersAbertos), mas
-// ele é passado explícito aqui em vez de global pra não acoplar esta função a uma variável de uma tela.
-function toggleGrupo(el, folderSet) {
-  var grupo = el.parentNode;
-  grupo.classList.toggle('collapsed');
-  var aberto = !grupo.classList.contains('collapsed');
-  if (aberto) folderSet.add(grupo.dataset.key);
-  else folderSet.delete(grupo.dataset.key);
-  var caret = el.querySelector('.caret');
-  if (caret) caret.textContent = aberto ? '▾' : '▸';
-}
-
 // ─── Sanfona de séries: série -> temporada -> episódios (index, controle e tv) ───
 // A regra mora aqui; as três telas só desenham. Estado em memória (nada de localStorage):
 // a tela começa com tudo fechado e o estado sobrevive ao re-render da lista.
@@ -266,25 +253,3 @@ function ordenarPorIdioma(itens, pegar) {
 }
 
 // ─── Áudio padrão por série (index.html e controle.html; a TV só obedece o servidor) ───
-
-// { chave: idioma } das séries com idioma definido; {} se o servidor não responder.
-function carregarAudiosDasSeries() {
-  return fetchJsonOuNull('/api/series/audio').then(function (mapa) { return mapa || {}; });
-}
-
-// Seletor "Áudio padrão: Automático / Português / Inglês" pro topo do grupo de uma série.
-function seletorAudioSerieHtml(chave, atual) {
-  var op = function (valor, rotulo) {
-    return '<option value="' + valor + '"' + ((atual || '') === valor ? ' selected' : '') + '>' + rotulo + '</option>';
-  };
-  return '<label class="serie-audio">Áudio padrão: <select data-chave="' + attr(chave) + '" onchange="definirAudioSerie(this)">' +
-    op('', 'Automático') + op('por', 'Português') + op('eng', 'Inglês') + '</select></label>';
-}
-
-// Grava a escolha. Vale pro PRÓXIMO episódio que abrir (não derruba quem está assistindo).
-function definirAudioSerie(select) {
-  return fetch('/api/series/' + encodeURIComponent(select.getAttribute('data-chave')) + '/audio', {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ idioma: select.value || null })
-  }).then(function (r) { if (!r.ok) alert('Não consegui salvar o áudio padrão da série.'); });
-}

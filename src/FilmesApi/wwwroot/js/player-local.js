@@ -293,7 +293,6 @@ function preAquecerProximo(id) {
 }
 
 async function closePlayer() {
-  const id = filmeAtual;
   cancelarProximo();
   await salvarProgresso();  // grava ANTES de rebuscar, senão a lista volta desatualizada
   const video = els.video;
@@ -306,13 +305,7 @@ async function closePlayer() {
   reiniciarContextoLocal();
   els.player.classList.remove('active');
   els.converting.style.display = 'none';
-  await atualizarAposReproducao(id);
-}
-
-// render() já busca /tela de novo — reflete a posição/progresso salvo sem precisar
-// remendar nada em cache local.
-async function atualizarAposReproducao(id) {
-  render();
+  render();   // a lista reflete a posição salva sem remendar nada em cache local
 }
 
 // ─── Continuar de onde parou ────────────────────────────────────────────
