@@ -54,6 +54,14 @@ public static class DbInitializer
             """);
 
         db.Database.ExecuteSqlRaw("""
+            CREATE TABLE IF NOT EXISTS "SerieSeguida" (
+                "ChaveSerie" TEXT NOT NULL CONSTRAINT "PK_SerieSeguida" PRIMARY KEY,
+                "Desde" TEXT NOT NULL,
+                "Janela" INTEGER NOT NULL DEFAULT 5
+            );
+            """);
+
+        db.Database.ExecuteSqlRaw("""
             CREATE TABLE IF NOT EXISTS "CacheFixado" (
                 "FilmeId" INTEGER NOT NULL CONSTRAINT "PK_CacheFixado" PRIMARY KEY,
                 "FixadoEm" TEXT NOT NULL,

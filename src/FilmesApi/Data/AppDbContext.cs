@@ -17,6 +17,7 @@ public class AppDbContext : DbContext
     public DbSet<AberturaEpisodio> Aberturas => Set<AberturaEpisodio>();
     public DbSet<AnaliseDeDublagem> AnalisesDeDublagem => Set<AnaliseDeDublagem>();
     public DbSet<CacheFixado> CacheFixados => Set<CacheFixado>();
+    public DbSet<SerieSeguida> SeriesSeguidas => Set<SerieSeguida>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -70,6 +71,12 @@ public class AppDbContext : DbContext
             e.ToTable("Aberturas");
             e.HasKey(a => a.FilmeId);
             e.HasOne(a => a.Filme).WithMany().HasForeignKey(a => a.FilmeId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<SerieSeguida>(e =>
+        {
+            e.ToTable("SerieSeguida");
+            e.HasKey(c => c.ChaveSerie);
         });
 
         modelBuilder.Entity<CacheFixado>(e =>
