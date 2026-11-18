@@ -29,14 +29,7 @@ h1{font-size:19px;font-weight:650;letter-spacing:-.01em}
 .actions{display:flex;gap:10px;align-items:center}
 button{background:var(--s2);color:var(--txt);border:1px solid var(--line);padding:0 14px;height:36px;border-radius:18px;cursor:pointer;font:inherit;font-size:13px;transition:background .15s,border-color .15s}
 button:hover{background:var(--s3)}
-.filters{padding:12px 24px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--line)}
-.filter-label{font-size:11.5px;color:var(--mut2);text-transform:uppercase;letter-spacing:.08em;font-weight:600;margin-left:12px}
-.filter-label:first-child{margin-left:0}
-.filter-sep{width:1px;align-self:stretch;background:var(--line);margin:2px 4px}
-.filter-btn{background:none;height:32px;padding:0 12px;border-radius:16px;border:1px solid var(--line);color:var(--mut);font-size:12.5px}
-.filter-btn:hover{background:var(--s1)}
-.filter-btn.active{background:var(--acc-soft);border-color:rgba(229,9,20,.45);color:var(--acc-txt)}
-main{padding:16px 24px 40px;max-width:1000px;margin:0 auto}
+main{padding:12px 16px calc(84px + env(safe-area-inset-bottom));max-width:1100px;margin:0 auto}
 .secao{margin-bottom:28px}
 .secao-title{font-size:11.5px;letter-spacing:.08em;color:var(--mut2);padding:0 4px;margin-bottom:8px}
 .secao-title .count{color:var(--mut2);font-weight:400}
@@ -88,11 +81,61 @@ main{padding:16px 24px 40px;max-width:1000px;margin:0 auto}
 .empty{text-align:center;color:var(--mut);padding:70px 20px;font-size:16px}
 .empty .ico{font-size:52px;display:block;margin-bottom:12px;opacity:.6}
 .empty button{margin-top:16px}
-.search{background:var(--s1);border:1px solid var(--line);color:var(--txt);padding:0 14px;height:36px;border-radius:18px;font-size:13px;width:200px;transition:width .2s,border-color .2s}
-.search:focus{outline:none;border-color:var(--acc);width:260px}
 .header-links{display:flex;gap:14px;align-items:center;font-size:13px}
 .scan-msg{position:fixed;bottom:20px;right:20px;background:var(--ok);color:#000;padding:10px 16px;border-radius:var(--r);font-size:13px;display:none}
-@media(max-width:700px){header{flex-direction:column;align-items:stretch;gap:10px;padding:12px 16px}.actions{flex-wrap:wrap}.search,.search:focus{flex:1;width:auto;min-width:140px}.filters{padding:10px 16px}main{padding:12px 16px 32px}.row .baixar{display:none}}
+/* ─── Grade de pôsteres, fileiras, abas e ficha (mobile-first) ─── */
+header{padding:10px 16px;gap:10px}
+header h1{font-size:18px;white-space:nowrap}
+.actions{flex-wrap:nowrap}
+.actions button{white-space:nowrap}
+.actions button{height:44px;min-width:44px;padding:0 12px}
+.header-links a{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px}
+.busca-wrap{display:none;padding:0 0 12px}
+.busca-wrap.on{display:block}
+#busca{width:100%;height:48px;border-radius:24px;border:1px solid var(--line);background:var(--s1);color:var(--txt);padding:0 18px;font-size:16px}
+#busca:focus{outline:none;border-color:var(--acc)}
+.fileira{margin:4px 0 20px}
+.fileira-tit{font-size:15px;font-weight:650;margin:0 2px 8px}
+.fileira-tit .count{color:var(--mut2);font-weight:400;font-size:13px}
+.trilho{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x proximity;padding-bottom:6px;-webkit-overflow-scrolling:touch}
+.trilho .tile{flex:0 0 112px;scroll-snap-align:start}
+.posters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 10px}
+.tile{cursor:pointer;min-width:0;-webkit-tap-highlight-color:transparent}
+.tile .cap{position:relative;aspect-ratio:2/3;background:var(--s2);border-radius:8px;overflow:hidden}
+.tile img{width:100%;height:100%;object-fit:cover;display:block}
+.tile .sem{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:8px;font-size:12.5px;color:var(--mut);background:linear-gradient(160deg,var(--s3),var(--s1))}
+.tile .ok{position:absolute;top:5px;right:5px;background:rgba(0,0,0,.7);color:#7ddf8b;border-radius:10px;font-size:11px;padding:1px 6px}
+.tile .rm{position:absolute;top:0;left:0;width:44px;height:44px;border:0;border-radius:0 0 14px 0;background:rgba(0,0,0,.55);color:#fff;padding:0;font-size:14px}
+.tile .qtd{position:absolute;bottom:5px;left:5px;background:rgba(0,0,0,.72);color:#fff;border-radius:10px;font-size:11px;padding:1px 7px}
+.tile .rprog{position:absolute;left:0;right:0;bottom:0;height:3px;background:rgba(255,255,255,.18)}
+.tile .rprog>div{height:100%;background:var(--acc)}
+.tile .nome{font-size:12.5px;margin-top:5px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tile .sub{font-size:11.5px;color:var(--mut);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+nav#abas{position:fixed;left:0;right:0;bottom:0;z-index:40;display:flex;background:rgba(13,13,13,.97);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+nav#abas button{flex:1;height:58px;border:0;border-radius:0;background:none;color:var(--mut);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px}
+nav#abas button span{font-size:20px;line-height:1}
+nav#abas button.on{color:var(--acc-txt)}
+#sheet{position:fixed;inset:0;z-index:60;display:none;background:rgba(0,0,0,.6)}
+#sheet.on{display:block}
+.sheet-box{position:absolute;left:0;right:0;bottom:0;max-height:92vh;overflow-y:auto;background:var(--bg);border-radius:18px 18px 0 0;border-top:1px solid var(--line);padding:16px 16px calc(24px + env(safe-area-inset-bottom));max-width:720px;margin:0 auto;animation:sobe .22s ease-out}
+@keyframes sobe{from{transform:translateY(40px);opacity:.4}to{transform:none;opacity:1}}
+.sheet-x{position:absolute;top:8px;right:8px;width:44px;height:44px;border-radius:50%;font-size:18px;padding:0;z-index:2}
+.ficha{display:flex;gap:14px}
+.ficha img,.ficha .semp{flex:0 0 38%;max-width:200px;aspect-ratio:2/3;border-radius:10px;background:var(--s2);object-fit:cover}
+.ficha .semp{display:flex;align-items:center;justify-content:center;color:var(--mut);font-size:40px}
+.ficha h2{font-size:19px;line-height:1.2;margin:4px 40px 4px 0}
+.ficha .meta{color:var(--mut);font-size:13px;margin-bottom:10px}
+.sinopse{font-size:14px;line-height:1.45;color:#cfcfcf;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.sinopse.aberta{display:block}
+.mais{background:none;border:0;color:var(--acc-txt);height:44px;padding:0;font-size:13px}
+.acoes{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}
+.acoes button,.acoes a{height:48px;border-radius:24px;padding:0 20px;font-size:15px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;color:var(--txt)}
+.acoes .pri{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+.corpo-ficha{margin-top:6px;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--s1)}
+.corpo-ficha .row{min-height:52px}
+.corpo-ficha .row .baixar{display:none}
+.scan-msg{bottom:calc(76px + env(safe-area-inset-bottom))}
+@media(min-width:700px){.posters{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:16px 14px}.trilho .tile{flex-basis:140px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
 </style>
 </head>
@@ -101,8 +144,7 @@ main{padding:16px 24px 40px;max-width:1000px;margin:0 auto}
 <header>
   <h1>🎬 Filmes</h1>
   <div class="actions">
-    <input class="search" id="busca" type="search" placeholder="Buscar…  ( / )" oninput="render()">
-    <button onclick="scanMedia()">📂 Scan Mídia</button>
+    <button onclick="scanMedia()" aria-label="Escanear a pasta de mídia" title="Escanear a pasta de mídia">📂 Scan</button>
     <span class="header-links">
       <a href="/status.html" title="Status do servidor">📊</a>
       <a href="/diagnostico.html" title="Diagnóstico do catálogo">🩺</a>
@@ -111,23 +153,21 @@ main{padding:16px 24px 40px;max-width:1000px;margin:0 auto}
   </div>
 </header>
 
-<div class="filters" id="filters">
-  <span class="filter-label">Tipo</span>
-  <button class="filter-btn active" data-grupo="tipo" data-filter="all">Todos</button>
-  <button class="filter-btn" data-grupo="tipo" data-filter="filme">🎬 Filmes</button>
-  <button class="filter-btn" data-grupo="tipo" data-filter="serie">📺 Séries</button>
-  <button class="filter-btn" data-grupo="tipo" data-filter="novela">🎭 Novelas</button>
-  <span class="filter-sep"></span>
-  <span class="filter-label">Status</span>
-  <button class="filter-btn active" data-grupo="visto" data-filter="all">Todos</button>
-  <button class="filter-btn" data-grupo="visto" data-filter="assistido">Assistidos</button>
-  <button class="filter-btn" data-grupo="visto" data-filter="nao-assistido">Não assistidos</button>
-</div>
-
 <main>
+  <div class="busca-wrap" id="buscaWrap"><input id="busca" type="search" placeholder="Buscar filme, série ou novela…" autocomplete="off" oninput="buscarDigitando()"></div>
   <div id="grid"></div>
   <div class="empty" id="empty" style="display:none"></div>
 </main>
+
+<nav id="abas" aria-label="Seções">
+  <button data-aba="inicio" class="on"><span>🏠</span>Início</button>
+  <button data-aba="serie"><span>📺</span>Séries</button>
+  <button data-aba="filme"><span>🎬</span>Filmes</button>
+  <button data-aba="novela"><span>🎭</span>Novelas</button>
+  <button data-aba="buscar"><span>🔍</span>Buscar</button>
+</nav>
+
+<div id="sheet" onclick="if (event.target === this) fecharFicha()"><div class="sheet-box" id="sheetBox"></div></div>
 
 <div class="player-overlay" id="player">
   <span class="player-close" onclick="closePlayer()">✕</span>
@@ -148,9 +188,7 @@ main{padding:16px 24px 40px;max-width:1000px;margin:0 auto}
 
 <script>
 const API = '/api/filmes';
-let filtroTipo = 'all';   // all | filme | serie | novela
-let filtroVisto = 'all';  // all | assistido | nao-assistido
-let filtroDublagem = 'all';  // all | qualquer (dublado ou IA) | ia — a palavra "dublado" na busca liga o 'qualquer' no servidor
+let aba = 'inicio';   // inicio | serie | filme | novela | buscar
 const foldersAbertos = new Set();  // pastas de filme expandidas — sobrevive ao re-render
 
 // Elementos consultados em 2+ lugares (funções diferentes) — pegos uma vez só. Os que só
@@ -160,6 +198,8 @@ const els = {
   converting: document.getElementById('converting'),
   player: document.getElementById('player'),
   busca: document.getElementById('busca'),
+  sheet: document.getElementById('sheet'),
+  sheetBox: document.getElementById('sheetBox'),
   proximoBox: document.getElementById('proximoBox'),
 };
 
@@ -200,104 +240,205 @@ async function load() {
 // episódios) vêm prontos de /api/filmes/tela — esta tela só desenha o que chega, sem
 // nenhuma lógica própria de agrupar (era assim que o mesmo bug precisava ser corrigido
 // em 3 lugares diferentes: index.html, controle.html e tv.html).
+// Miniatura pequena na grade (w185) e pôster maior só na ficha (w500): o TMDb serve o mesmo arquivo em vários tamanhos,
+// trocando o segmento "/w342/" da URL guardada — se a URL não tiver esse segmento, usa como veio.
+const pw = (url, w) => url ? url.replace('/w342/', `/w${w}/`) : '';
+
+const tipoDaAba = { inicio: 'all', serie: 'serie', filme: 'filme', novela: 'novela', buscar: 'all' };
+let itens = new Map();     // chave -> {tipo:'filme'|'serie'|'pasta', ...} do último render (a ficha lê daqui)
+let fichaAberta = null;    // chave do que está na ficha
+
+function tile(chave, o) {
+  const pct = o.pct || 0;
+  return `
+    <div class="tile" onclick="${o.onclick}" role="button" tabindex="0">
+      <div class="cap">
+        ${o.poster ? `<img src="${attr(pw(o.poster, 185))}" loading="lazy" alt="">` : ''}
+        ${o.poster ? '' : `<span class="sem">${esc(o.nome)}</span>`}
+        ${o.visto ? '<span class="ok">✓</span>' : ''}
+        ${o.remover ? `<button class="rm" title="Tirar de continuar assistindo" aria-label="Tirar de continuar assistindo" onclick="event.stopPropagation(); removerDeContinuar(${o.remover})">✕</button>` : ''}
+        ${o.qtd ? `<span class="qtd">${esc(o.qtd)}</span>` : ''}
+        ${pct ? `<div class="rprog"><div style="width:${pct}%"></div></div>` : ''}
+      </div>
+      <div class="nome">${esc(o.nome)}</div>
+      ${o.sub ? `<div class="sub">${esc(o.sub)}</div>` : ''}
+    </div>`;
+}
+
+// Monta os cartões da grade a partir de /tela e registra cada um em `itens`.
+function cartoesDaTela(t) {
+  const lista = [];
+  const filmeTile = f => {
+    itens.set('f:' + f.id, { tipo: 'filme', f });
+    return { nome: f.titulo, sort: f.titulo, poster: f.posterUrl, visto: f.assistido, pct: pctProgresso(f),
+             sub: f.anoLancamento ? String(f.anoLancamento) : '', onclick: `abrirFicha('f:${f.id}')` };
+  };
+  t.filmesSoltos.forEach(f => lista.push(filmeTile(f)));
+  t.pastasFilme.forEach(p => {
+    const k = 'p:' + p.chave;
+    itens.set(k, { tipo: 'pasta', p });
+    const pst = p.itens.find(f => f.posterUrl);
+    lista.push({ nome: p.nome, sort: p.nome, poster: pst && pst.posterUrl, qtd: `📁 ${p.itens.length}`, onclick: `abrirFicha('${attr(k)}')` });
+  });
+  t.series.forEach(s => {
+    const k = 's:' + s.chave;
+    itens.set(k, { tipo: 'serie', s });
+    const pst = s.episodios.find(f => f.posterUrl);
+    const vistos = s.episodios.filter(e => e.assistido).length;
+    lista.push({ nome: s.nome, sort: s.nome, poster: pst && pst.posterUrl, visto: vistos === s.episodios.length,
+                 qtd: contagemEpisodios(s.episodios.length).replace(' episódios', ' eps').replace(' episódio', ' ep'),
+                 onclick: `abrirFicha('${attr(k)}')` });
+  });
+  lista.sort((a, b) => a.sort.localeCompare(b.sort, 'pt', { sensitivity: 'base' }));
+  return lista;
+}
+
+// Fileira horizontal (Continuar assistindo / Novidades / Dublados): tocar já reproduz — é o que a pessoa quer ali.
+function fileira(titulo, cartoes) {
+  if (!cartoes.length) return '';
+  return `<section class="fileira"><div class="fileira-tit">${titulo} <span class="count">(${cartoes.length})</span></div><div class="trilho">${cartoes.join('')}</div></section>`;
+}
+
+function cartaoDeFilme(f, sub, remover) {
+  return tile('', {
+    nome: f.ehEpisodio ? (f.serie || f.titulo) : f.titulo, poster: f.posterUrl, visto: false, pct: pctProgresso(f),
+    sub, remover, onclick: `play(${f.id})`,
+  });
+}
+
 async function render() {
   const grid = document.getElementById('grid');
   const empty = document.getElementById('empty');
   const scrollAntes = window.scrollY;  // não pular pro topo ao re-renderizar
-
   const mostrarVazio = html => { grid.innerHTML = ''; empty.innerHTML = html; empty.style.display = 'block'; };
 
-  const q = els.busca.value.trim();
-  const params = new URLSearchParams({ tipo: filtroTipo, visto: filtroVisto });
-  if (filtroDublagem !== 'all') params.set('dublagem', filtroDublagem);
+  const q = aba === 'buscar' ? els.busca.value.trim() : '';
+  if (aba === 'buscar' && !q) {
+    mostrarVazio('<span class="ico">🔍</span>Digite o nome de um filme, série ou novela.');
+    return;
+  }
+  const params = new URLSearchParams({ tipo: tipoDaAba[aba], visto: 'all' });
   if (q) params.set('busca', q);
-  const t = await fetchJsonOuNull(`${API}/tela?${params}`);
+  const buscaDoInicio = aba === 'inicio'
+    ? Promise.all([fetchJsonOuNull('/api/catalogo/novidades?limite=20'), fetchJsonOuNull('/api/catalogo/dublados?limite=24')])
+    : Promise.resolve([null, null]);
+  const [t, [novidades, dublados]] = await Promise.all([fetchJsonOuNull(`${API}/tela?${params}`), buscaDoInicio]);
 
   if (!t) {
     mostrarVazio('<span class="ico">🔍</span>Não consegui falar com o servidor.');
     return;
   }
+  itens = new Map();
+  const cartoes = cartoesDaTela(t);
 
-  const nada = !t.continuarAssistindo.length && !t.filmesSoltos.length && !t.pastasFilme.length && !t.series.length;
-  if (nada) {
+  let html = '';
+  if (aba === 'inicio') {
+    html += fileira('▶ Continuar assistindo', t.continuarAssistindo.map(c =>
+      cartaoDeFilme(c, c.ehEpisodio ? `${codigoEpisodio(c) || c.rotulo || ''}` : `faltam ${formatarTempo(Math.max(0, (c.duracaoSegundos || 0) - c.posicaoSegundos))}`, c.id)));
+    html += fileira('🆕 Novidades', (novidades || []).map(n => cartaoDeFilme(n.filme, n.rotulo.replace(/^.*·\s*/, ''))));
+    html += fileira('🔊 Dublados', (dublados || []).map(n => cartaoDeFilme(n.filme, n.rotulo.replace(/^.*·\s*/, ''))));
+  }
+  if (cartoes.length) {
+    const titulos = { inicio: 'Tudo', serie: 'Séries', filme: 'Filmes', novela: 'Novelas', buscar: 'Resultados' };
+    html += `<section class="fileira"><div class="fileira-tit">${titulos[aba]} <span class="count">(${cartoes.length})</span></div><div class="posters">${cartoes.map(c => tile('', c)).join('')}</div></section>`;
+  }
+
+  if (!html) {
     mostrarVazio(t.catalogoVazio
       ? `<span class="ico">🎬</span>Catálogo vazio.<br><button onclick="scanMedia()">📂 Escanear a pasta de mídia</button>`
-      : filtroTipo === 'novela' && !q
+      : aba === 'novela' && !q
       ? `<span class="ico">🎭</span>Nenhuma novela ainda.<br>Coloque os capítulos em <b>novelas/Nome da novela/</b> na pasta de mídia e escaneie.`
-      : `<span class="ico">🔍</span>${q ? 'Nada encontrado pra “' + esc(q) + '”.' : 'Nada corresponde a esse filtro.'}`);
-    return;
+      : `<span class="ico">🔍</span>${q ? 'Nada encontrado pra “' + esc(q) + '”.' : 'Nada por aqui ainda.'}`);
+  } else {
+    empty.style.display = 'none';
+    grid.innerHTML = html;
   }
-  empty.style.display = 'none';
-
-  const grupo = (key, tituloHtml, rows) => {
-    const aberto = foldersAbertos.has(key);
-    return `
-      <div class="grupo ${aberto ? '' : 'collapsed'}" data-key="${attr(key)}">
-        <div class="grupo-hd" onclick="toggleGrupo(this, foldersAbertos)"><span class="caret">${aberto ? '▾' : '▸'}</span>${tituloHtml}</div>
-        <div class="grupo-body">${rows}</div>
-      </div>`;
-  };
-
-  let html = await novidadesHtml(q);
-  if (t.continuarAssistindo.length) {
-    html += `
-    <div class="secao">
-      <div class="secao-title">▶ Continuar assistindo <span class="count">(${t.continuarAssistindo.length})</span></div>
-      <div class="lista">${t.continuarAssistindo.map(continuarRowHtml).join('')}</div>
-    </div>`;
-  }
-
-  const totalFilmes = t.filmesSoltos.length + t.pastasFilme.reduce((s, p) => s + p.itens.length, 0);
-  if (totalFilmes) {
-    html += `<div class="secao"><div class="secao-title">🎬 Filmes <span class="count">(${totalFilmes})</span></div><div class="lista">`;
-    html += t.filmesSoltos.map(f => rowHtml(f)).join('');
-    html += t.pastasFilme.map(p =>
-      grupo('f:' + p.chave, `📁 ${esc(p.nome)} <span class="count">(${p.itens.length} arquivos)</span>`,
-        p.itens.map(f => rowHtml(f)).join(''))
-    ).join('');
-    html += `</div></div>`;
-  }
-
-  if (t.series.length) {
-    const audiosDasSeries = await carregarAudiosDasSeries();
-    html += `<div class="secao"><div class="secao-title">${filtroTipo === 'novela' ? '🎭 Novelas' : '📺 Séries'} <span class="count">(${t.series.length})</span></div><div class="lista">`;
-    html += t.series.map(s => {
-      const poster = s.episodios.find(f => f.posterUrl);   // um pôster já basta pra série inteira
-      return serieHtml(s, poster ? posterHtml(poster) : '', seletorAudioSerieHtml(s.chave, audiosDasSeries[s.chave]), f => rowHtml(f, true));
-    }).join('');
-    html += `</div></div>`;
-  }
-  grid.innerHTML = html;
   window.scrollTo(0, scrollAntes);
+  if (fichaAberta) { if (itens.has(fichaAberta)) montarFicha(fichaAberta); else fecharFicha(); }   // ficha aberta reflete o que mudou (visto, progresso)
 }
 
-// toggleGrupo(el, folderSet) (pastas de filme) e a sanfona das séries vêm de /js/util.js.
+function irParaAba(nome) {
+  aba = nome;
+  document.querySelectorAll('#abas button').forEach(b => b.classList.toggle('on', b.dataset.aba === nome));
+  document.getElementById('buscaWrap').classList.toggle('on', nome === 'buscar');
+  if (nome === 'buscar') els.busca.focus();
+  window.scrollTo(0, 0);
+  load();
+}
+document.getElementById('abas').addEventListener('click', e => {
+  const b = e.target.closest('button[data-aba]');
+  if (b) irParaAba(b.dataset.aba);
+});
 
-// ─── Novidades (fileira no topo) ────────────────────────────────────────
-// O que o Sonarr/Radarr acabou de importar e ainda não foi visto: GET /api/catalogo/novidades devolve [{filme, novos, rotulo}]
-// (episódios da mesma série já vêm colapsados num cartão só, apontando pro mais novo não visto). Só com os filtros neutros, como o
-// "Continuar assistindo"; sem novidade, não devolve nada e a fileira some.
-async function novidadesHtml(busca) {
-  if (filtroTipo !== 'all' || filtroVisto !== 'all' || filtroDublagem !== 'all' || busca) return '';
-  const lista = await fetchJsonOuNull('/api/catalogo/novidades?limite=20');
-  if (!lista || !lista.length) return '';
-  return `
-    <div class="secao">
-      <div class="secao-title">🆕 Novidades <span class="count">(${lista.length})</span></div>
-      <div class="lista">${lista.map(novidadeRowHtml).join('')}</div>
-    </div>`;
+let buscaTimer = null;
+function buscarDigitando() {
+  clearTimeout(buscaTimer);
+  buscaTimer = setTimeout(render, 250);
 }
 
-function novidadeRowHtml(n) {
-  const f = n.filme;
-  return `
-    <div class="row" onclick="play(${f.id})" title="${tooltipFilme(f)}">
-      ${posterHtml(f)}
-      <span class="rtit">${esc(n.rotulo)}</span>
-      ${!f.ehEpisodio && f.anoLancamento ? `<span class="rano">${f.anoLancamento}</span>` : ''}
-      <span class="resume">🆕 ${n.novos > 1 ? n.novos + ' novos' : 'novo'}</span>
-      ${barraProgresso(f)}
-    </div>`;
+// ─── Ficha do título (folha que sobe de baixo) ──────────────────────────
+function sinopseHtml(texto) {
+  if (!texto) return '';
+  return `<p class="sinopse" id="sinopse">${esc(texto)}</p>${texto.length > 180 ? '<button class="mais" onclick="document.getElementById(\'sinopse\').classList.toggle(\'aberta\'); this.textContent = this.textContent === \'mais\' ? \'menos\' : \'mais\'">mais</button>' : ''}`;
+}
+
+async function montarFicha(chave) {
+  const it = itens.get(chave);
+  if (!it) return;
+  let poster = '', titulo = '', meta = '', sinopse = '', acoes = '', corpo = '';
+  if (it.tipo === 'filme') {
+    const f = it.f;
+    poster = f.posterUrl; titulo = f.titulo;
+    meta = [f.anoLancamento, f.tituloOriginal && f.tituloOriginal !== f.titulo ? f.tituloOriginal : ''].filter(Boolean).join(' · ');
+    sinopse = f.sinopse;
+    const retomar = f.posicaoSegundos ? `▶ Continuar de ${formatarTempo(f.posicaoSegundos)}` : '▶ Assistir aqui';
+    acoes = `<button class="pri" onclick="play(${f.id})">${retomar}</button>
+      <button onclick="toggleAssistido(${f.id})">${f.assistido ? '✓ Assistido' : 'Marcar como assistido'}</button>
+      <a href="/api/filmes/${f.id}/download" download title="Baixar o arquivo original" class="btn-baixar">⬇ Baixar</a>`;
+  } else if (it.tipo === 'pasta') {
+    const p = it.p, pst = p.itens.find(f => f.posterUrl);
+    poster = pst && pst.posterUrl; titulo = p.nome; meta = `${p.itens.length} arquivos`;
+    sinopse = (p.itens.find(f => f.sinopse) || {}).sinopse;
+    corpo = p.itens.map(f => rowHtml(f)).join('');
+  } else {
+    const s = it.s, pst = s.episodios.find(f => f.posterUrl);
+    poster = pst && pst.posterUrl; titulo = s.nome;
+    const temps = new Set(s.episodios.map(e => e.temporada).filter(t => t > 0)).size;
+    const orig = s.episodios.map(e => e.tituloOriginal).find(Boolean);
+    meta = [temps > 1 ? `${temps} temporadas` : '', contagemEpisodios(s.episodios.length), textoVistos(s.episodios)].filter(Boolean).join(' · ');
+    sinopse = (s.episodios.find(f => f.sinopse) || {}).sinopse;
+    const proximo = s.episodios.find(e => !e.assistido) || s.episodios[0];
+    const emAndamento = s.episodios.find(e => e.posicaoSegundos);
+    const alvo = emAndamento || proximo;
+    acoes = alvo ? `<button class="pri" onclick="play(${alvo.id})">${emAndamento ? '▶ Continuar' : '▶ Assistir'} ${esc(codigoEpisodio(alvo) || alvo.rotulo || '')}</button>` : '';
+    const audios = await carregarAudiosDasSeries();
+    corpo = corpoDaSerieHtml(s.episodios, seletorAudioSerieHtml(s.chave, audios[s.chave]), f => rowHtml(f, true));
+  }
+  if (fichaAberta !== chave && fichaAberta !== null && !itens.has(fichaAberta)) return;
+  const abertoAntes = els.sheetBox.scrollTop;
+  els.sheetBox.innerHTML = `
+    <button class="sheet-x" onclick="fecharFicha()" aria-label="Fechar">✕</button>
+    <div class="ficha">
+      ${poster ? `<img src="${attr(pw(poster, 500))}" alt="">` : '<div class="semp">🎬</div>'}
+      <div><h2>${esc(titulo)}</h2><div class="meta">${esc(meta)}</div>${sinopseHtml(sinopse)}</div>
+    </div>
+    <div class="acoes">${acoes}</div>
+    ${corpo ? `<div class="corpo-ficha">${corpo}</div>` : ''}`;
+  els.sheetBox.scrollTop = abertoAntes;
+}
+
+async function abrirFicha(chave) {
+  fichaAberta = chave;
+  els.sheetBox.scrollTop = 0;
+  await montarFicha(chave);
+  els.sheet.classList.add('on');
+  document.body.style.overflow = 'hidden';
+}
+
+function fecharFicha() {
+  fichaAberta = null;
+  els.sheet.classList.remove('on');
+  document.body.style.overflow = '';
 }
 
 function pctProgresso(item) {
@@ -796,28 +937,20 @@ async function scanMedia() {
     setTimeout(() => msg.style.display = 'none', SCAN_MSG_DURATION_MS);
     await load();
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '📂 Scan Mídia'; }
+    if (btn) { btn.disabled = false; btn.textContent = '📂 Scan'; }
   }
 }
 
-document.getElementById('filters').addEventListener('click', e => {
-  const btn = e.target.closest('.filter-btn');
-  if (!btn) return;
-  const grupo = btn.dataset.grupo;
-  document.querySelectorAll(`.filter-btn[data-grupo="${grupo}"]`).forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  if (grupo === 'tipo') filtroTipo = btn.dataset.filter;
-  else if (grupo === 'dublagem') filtroDublagem = btn.dataset.filter;
-  else filtroVisto = btn.dataset.filter;
-  render();
-});
-
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closePlayer(); els.busca.blur(); }
+  if (e.key === 'Escape') {
+    if (els.player.classList.contains('active')) closePlayer();
+    else if (fichaAberta) fecharFicha();
+    els.busca.blur();
+  }
   // "/" foca a busca (a não ser que já esteja digitando em algum campo)
   if (e.key === '/' && !/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) {
     e.preventDefault();
-    els.busca.focus();
+    irParaAba('buscar');
   }
 });
 configurarProgresso();
