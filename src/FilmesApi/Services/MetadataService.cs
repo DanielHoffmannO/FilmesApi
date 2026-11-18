@@ -175,7 +175,7 @@ public class MetadataService : BackgroundService
         {
             // id inexistente (404) devolve null: cai na busca normal em vez de deixar o item sem metadados
             res = await _tmdb.BuscarPorIdAsync(idForcado, serie, ct);
-            if (res is null) await Task.Delay(TimeSpan.FromMilliseconds(300), ct);
+            await PausaTmdb(ct);
         }
         if (res is not null) return res;
 
@@ -187,8 +187,7 @@ public class MetadataService : BackgroundService
                 res = guardado.Res;
             else
             {
-                res = string.IsNullOrWhiteSpace(nome) ? null : await _tmdb.BuscarAsync(nome, ano, serie: true, ct);
-                await Task.Delay(TimeSpan.FromMilliseconds(300), ct);
+                if (!string.IsNullOrWhiteSpace(nome)) { res = await _tmdb.BuscarAsync(nome, ano, serie: true, ct); await PausaTmdb(ct); }
                 _cacheSeries[chaveSerie] = (res, DateTime.UtcNow);
                 if (res is null) AvisarSemMatch("tv", nome, titulo);
             }
@@ -199,10 +198,14 @@ public class MetadataService : BackgroundService
         var chaveTitulo = $"{(serie ? "tvt" : "mv")}|{MediaNomeParser.NormalizarBusca(titulo)}|{ano}";
         if (_cacheSeries.TryGetValue(chaveTitulo, out var g2) && (g2.Res is not null || DateTime.UtcNow - g2.Quando < ValidadeDoErroDeSerie)) return g2.Res;
         res = await _tmdb.BuscarAsync(titulo, ano, serie, ct);
+        await PausaTmdb(ct);
         _cacheSeries[chaveTitulo] = (res, DateTime.UtcNow);
         if (res is null) AvisarSemMatch(serie ? "tv" : "movie", titulo, null);
         return res;
     }
+
+    /// <summary>Intervalo de cortesia depois de CADA chamada ao TMDB (resposta vinda do cache de série não espera nada).</summary>
+    private static Task PausaTmdb(CancellationToken ct) => Task.Delay(TimeSpan.FromMilliseconds(300), ct);
 
     private void AvisarSemMatch(string tipo, string buscado, string? alternativa)
     {
@@ -250,8 +253,6 @@ public class MetadataService : BackgroundService
                     break;
                 }
                 cache[chave] = res;
-                try { await Task.Delay(TimeSpan.FromMilliseconds(300), ct); }
-                catch (OperationCanceledException) { break; }
             }
 
             filme.TmdbId = res?.TmdbId;

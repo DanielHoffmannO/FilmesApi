@@ -79,7 +79,10 @@ public class MetadadosPorSerieTests : IDisposable
     {
         Semear(1, 35);
         var svc = Servico();
+        var relogio = System.Diagnostics.Stopwatch.StartNew();
         while (await svc.ProcessarLoteAsync(CancellationToken.None) > 0) { }
+        // 1 busca (300 ms de cortesia); os outros 34 vêm do cache de série e não esperam nada (antes: 300 ms por episódio, ~10 s)
+        Assert.True(relogio.Elapsed < TimeSpan.FromSeconds(5), $"demorou {relogio.Elapsed.TotalSeconds:F1} s");
 
         Assert.Single(_http.Urls, u => u.Contains("/search/tv"));   // 1 busca, não 35
         using var db = _sp.CreateScope().ServiceProvider.GetRequiredService<AppDbContext>();
