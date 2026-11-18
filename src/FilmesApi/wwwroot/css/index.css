@@ -4,7 +4,7 @@
 /* Visual alinhado ao do controle.html (tokens, pílulas, cartões, linhas de 48 px); marcação e comportamento seguem os mesmos. */
 :root{--h-nav:52px;--h-agora:52px;--bg:#0d0d0d;--s1:#141414;--s2:#1b1b1b;--s3:#242424;--line:#262626;--txt:#ececec;--mut:#8b8b8b;--mut2:#7d7d7d;--acc:#e50914;--acc-soft:rgba(229,9,20,.14);--acc-txt:#ff7b82;--r:12px}
 body{background:var(--bg);color:var(--txt);-webkit-font-smoothing:antialiased}
-header{background:var(--bg);border-bottom:1px solid var(--line);padding:14px 24px}
+header{background:var(--bg);border-bottom:1px solid var(--line);padding:max(10px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 6px max(16px,env(safe-area-inset-left));gap:10px}
 h1{font-size:19px;font-weight:650;letter-spacing:-.01em}
 .actions{display:flex;gap:10px;align-items:center}
 button{background:var(--s2);color:var(--txt);border:1px solid var(--line);padding:0 14px;height:36px;border-radius:18px;cursor:pointer;font:inherit;font-size:13px;transition:background .15s,border-color .15s}
@@ -38,19 +38,17 @@ main{padding:12px 16px calc(var(--h-nav) + 16px + env(safe-area-inset-bottom));m
 .empty{text-align:center;color:var(--mut);padding:70px 20px;font-size:16px}
 .empty .ico{font-size:52px;display:block;margin-bottom:12px;opacity:.6}
 .empty button{margin-top:16px}
-.scan-msg{position:fixed;bottom:20px;right:20px;background:var(--ok);color:#000;padding:10px 16px;border-radius:var(--r);font-size:13px;display:none}
+.scan-msg{position:fixed;bottom:calc(var(--h-nav) + var(--h-agora) + 14px + env(safe-area-inset-bottom));right:20px;z-index:300;background:var(--ok);color:#000;padding:10px 16px;border-radius:var(--r);font-size:13px;display:none}
 /* ─── Grade de pôsteres, fileiras, abas e ficha (mobile-first) ─── */
-header{padding:6px 16px;gap:10px}
 header h1{font-size:18px;white-space:nowrap}
 .actions{flex-wrap:nowrap}
-.actions button{white-space:nowrap}
-.actions button{height:40px;min-width:40px;padding:0 12px}
+.actions button{white-space:nowrap;height:40px;min-width:40px;padding:0 12px}
 .busca-wrap{display:none;padding:0 0 12px}
 .busca-wrap.on{display:block}
 #busca{width:100%;height:48px;border-radius:24px;border:1px solid var(--line);background:var(--s1);color:var(--txt);padding:0 18px;font-size:16px}
 #busca:focus{outline:none;border-color:var(--acc)}
 .fileira{margin:4px 0 20px}
-.fileira-tit{font-size:15px;font-weight:650;margin:0 2px 8px}
+.fileira-tit{font-size:15.5px;font-weight:650;margin:0 2px 8px}
 .fileira-tit .count{color:var(--mut2);font-weight:400;font-size:13px}
 .trilho{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x proximity;padding-bottom:6px;-webkit-overflow-scrolling:touch}
 .trilho .tile{flex:0 0 112px;scroll-snap-align:start}
@@ -71,24 +69,23 @@ header h1{font-size:18px;white-space:nowrap}
 .tile .sub{font-size:11.5px;color:var(--mut);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #sheet{position:fixed;inset:0;z-index:60;display:none;background:rgba(0,0,0,.6)}
 #sheet.on{display:block}
-.sheet-box{position:absolute;left:0;right:0;bottom:0;max-height:92vh;overflow-y:auto;background:var(--bg);border-radius:18px 18px 0 0;border-top:1px solid var(--line);padding:16px 16px calc(24px + env(safe-area-inset-bottom));max-width:720px;margin:0 auto;animation:sobe .22s ease-out}
+.sheet-box{position:absolute;left:0;right:0;bottom:0;max-height:92vh;overflow-y:auto;background:var(--bg);border-radius:18px 18px 0 0;border-top:1px solid var(--line);padding:54px 16px calc(24px + env(safe-area-inset-bottom));max-width:720px;margin:0 auto;animation:sobe .22s ease-out}
 @keyframes sobe{from{transform:translateY(40px);opacity:.4}to{transform:none;opacity:1}}
-.sheet-x{position:absolute;top:8px;right:8px;width:44px;height:44px;border-radius:50%;font-size:18px;padding:0;z-index:2}
+.sheet-x{position:absolute;top:6px;right:10px;width:44px;height:44px;border-radius:50%;font-size:18px;padding:0;z-index:2}
 .ficha{display:flex;gap:14px}
-.ficha img,.ficha .semp{flex:0 0 38%;max-width:200px;aspect-ratio:2/3;border-radius:10px;background:var(--s2);object-fit:cover}
+.ficha img,.ficha .semp{flex:0 0 32%;max-width:200px;aspect-ratio:2/3;border-radius:10px;background:var(--s2);object-fit:cover}
 .ficha .semp{display:flex;align-items:center;justify-content:center;color:var(--mut);font-size:40px}
-.ficha h2{font-size:19px;line-height:1.2;margin:4px 40px 4px 0}
+.ficha h2{font-size:19px;line-height:1.2;margin:0 0 4px;overflow-wrap:break-word;hyphens:auto}
 .ficha .meta{color:var(--mut);font-size:13px;margin-bottom:10px}
-.sinopse{font-size:14px;line-height:1.45;color:#cfcfcf;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.sinopse{font-size:14px;line-height:1.45;color:#cfcfcf;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 .sinopse.aberta{display:block}
 .mais{background:none;border:0;color:var(--acc-txt);height:44px;padding:0;font-size:13px}
-.acoes{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}
-.acoes button,.acoes a{height:48px;border-radius:24px;padding:0 20px;font-size:15px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;color:var(--txt)}
-.acoes .pri{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+.acoes{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}
+.acoes button,.acoes a{height:48px;border-radius:24px;min-width:0;padding:0 14px;font-size:14.5px;line-height:1.15;display:inline-flex;align-items:center;justify-content:center;text-align:center;text-decoration:none;color:var(--txt)}
+.acoes .pri{grid-column:1/-1;background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
 .corpo-ficha{margin-top:6px;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--s1)}
 .corpo-ficha .row{min-height:52px}
 .corpo-ficha .row .baixar{display:none}
-.scan-msg{bottom:calc(130px + env(safe-area-inset-bottom));z-index:300}
 .cfg-lista{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--s1);margin-top:14px}
 .cfg-lista a,.cfg-lista button{display:flex;align-items:center;gap:12px;width:100%;min-height:52px;padding:0 16px;border:0;border-top:1px solid var(--line);border-radius:0;background:none;color:var(--txt);font-size:15px;text-decoration:none;text-align:left;height:auto}
 .cfg-lista>:first-child{border-top:0}
@@ -97,20 +94,18 @@ header h1{font-size:18px;white-space:nowrap}
 .cfg-item{display:flex;align-items:center;gap:8px;min-height:48px;padding:0 8px 0 16px;border-top:1px solid var(--line);font-size:13.5px}
 .cfg-item span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cfg-item button{height:44px;width:44px;padding:0;flex:none;border-radius:50%}
-.sheet-tit{font-size:19px;font-weight:650;margin:4px 40px 0 0}
+.sheet-tit{font-size:19px;font-weight:650;margin:4px 0 0}
 @media(min-width:700px){.posters{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:16px 14px}.trilho .tile{flex-basis:140px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
 
 /* ─── Acabamento mobile (360/390 px): safe-area, alvos de toque, estados, landscape ─── */
 html{-webkit-text-size-adjust:100%}
-header{padding-top:max(10px,env(safe-area-inset-top));padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}
 main{padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}
 nav#abas{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
 button:focus-visible,a:focus-visible,.tile:focus-visible{outline:2px solid var(--acc-txt);outline-offset:2px}
 .sheet-box{max-height:92dvh;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 #sheet{overscroll-behavior:contain}
 .empty button,.empty .tentar{height:48px;padding:0 22px;font-size:15px}
-.fileira-tit{font-size:15.5px}
 /* carregando: cartões-fantasma em vez de tela vazia */
 .esqueleto .tile .cap{animation:pulsa 1.2s ease-in-out infinite}
 .esqueleto .tile .nome{height:12px;width:70%;background:var(--s2);border-radius:6px;margin-top:8px}
@@ -142,24 +137,12 @@ button:focus-visible,a:focus-visible,.tile:focus-visible{outline:2px solid var(-
 #trilhoLocal i{position:absolute;top:0;height:4px;border-radius:2px;background:rgba(255,255,255,.55)}
 #trilhoLocal #trilhoCreditos{background:rgba(229,9,20,.75)}
 @media(orientation:landscape) and (max-height:500px){
-  #acaoLocal{bottom:calc(62px + env(safe-area-inset-bottom))}
   #trilhoLocal{bottom:54px}
   :root{--h-nav:44px;--h-agora:44px}
 }
 
 /* ficha: texto não vaza da coluna (a 360 px o título e a sinopse saíam cortados) e as ações viram uma grade */
-.ficha img,.ficha .semp{flex:0 0 36%}
 .ficha>div:last-child{flex:1;min-width:0}
-.ficha h2{overflow-wrap:anywhere;margin-right:44px}
-.sinopse{overflow-wrap:anywhere}
-.acoes{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.acoes .pri{grid-column:1/-1}
-.acoes button,.acoes a{min-width:0;padding:0 14px;font-size:14.5px;text-align:center;line-height:1.15}
-.sheet-box{padding-top:54px}
-.sheet-x{top:6px;right:10px}
-.ficha h2{margin:0 0 4px;overflow-wrap:break-word;hyphens:auto}
-.ficha img,.ficha .semp{flex:0 0 32%}
-.sheet-tit{margin-right:0}
 
 /* ─── Barras de baixo compactas: abas (52 px) e "Tocando na TV" (52 px, uma linha) ─── */
 nav#abas{position:fixed;left:0;right:0;bottom:0;z-index:40;display:flex;background:rgba(13,13,13,.98);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
@@ -179,7 +162,6 @@ nav#abas button.on::before{content:'';position:absolute;top:0;left:30%;right:30%
 #agora button svg.cheio{fill:var(--txt);stroke:none}
 #agora .fio{position:absolute;left:0;top:-1px;height:2px;background:var(--acc);border-radius:0 2px 2px 0}
 body.com-agora main{padding-bottom:calc(var(--h-nav) + var(--h-agora) + 16px + env(safe-area-inset-bottom))}
-.scan-msg{bottom:calc(var(--h-nav) + var(--h-agora) + 14px + env(safe-area-inset-bottom))}
 
 /* ─── Folha "Controle da TV" (a página controle-tv.html em modo embutido) e itens novos da ficha ─── */
 .actions button svg.ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
@@ -202,7 +184,6 @@ body.com-agora main{padding-bottom:calc(var(--h-nav) + var(--h-agora) + 16px + e
 .corpo-ficha .row .rep{white-space:nowrap}
 .corpo-ficha .row .rbtn.ck{color:var(--mut2)}
 .corpo-ficha .row .rbtn.ck.on{color:#7ddf8b}
-.corpo-ficha .row .rbtn{width:40px;height:40px}
 .corpo-ficha .row .rep{color:#bdbdbd}
 .corpo-ficha .row.assistido .rep{color:var(--mut)}
 
