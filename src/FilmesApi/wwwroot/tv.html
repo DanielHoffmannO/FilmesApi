@@ -223,7 +223,7 @@ html.leg-g video::cue { font-size: 135%; }
   var retomadaPedida = 0;           // a retomada que o /progresso pediu (posicaoRetomar zera ao aplicar); so a conferencia abaixo olha
   var retomadaTimer = null;
   var retomadaMetaTimer = null;
-  var RETOMADA_META_MS = 45000;     // dada a URL, os metadados nao chegam: tambem recomeca do inicio
+  var RETOMADA_META_MS = 15000;     // dada a URL, os metadados nao chegam: tambem recomeca do inicio
   var RETOMADA_CONFERE_MS = 20000;  // metadados carregaram mas o video nao anda a partir da retomada: recomeca do inicio
   var retomarTentativas = 0;
   // video.duration so e confiavel fora do HLS (stream/remux/original ja sao arquivo completo
@@ -691,7 +691,9 @@ html.leg-g video::cue { font-size: 135%; }
     // As 3 chamadoras (stream/remux/original) sao sempre arquivo completo com
     // Content-Length — duration nunca cresce depois, ao contrario do HLS.
     duracaoConfiavel = true;
-    v.src = url + (seg ? '#t=' + seg : '');
+    // Sem '#t=N' na URL: na J5200 o fragmento de tempo trava a abertura do mp4 (readyState=0 por 45 s, em TODAS as vezes com retomada; o mesmo
+    // arquivo sem o fragmento abre em ~3 s). A posicao entra pelo aplicarRetomada (loadeddata/canplay/seeked), que ja cobre este caso.
+    v.src = url;
     conferirMetadadosDaRetomada(id);
     if (comAviso) {
       pmsg.innerHTML = 'Arquivo original (pode nao rodar em TV muito antiga).';
@@ -777,7 +779,7 @@ html.leg-g video::cue { font-size: 135%; }
         conferirMetadadosDaRetomada(id);
         if (status === 'compativel') {
           duracaoConfiavel = true;  // arquivo completo, sem HLS — mesma razao do tocarUrl acima
-          v.src = API + '/' + id + '/stream' + (t ? ('#t=' + t) : '');
+          v.src = API + '/' + id + '/stream';   // sem '#t=N' (ver tocarUrl): a retomada vai pelo aplicarRetomada
           try { v.load(); v.play(); } catch (e) {}
         } else if (window.Hls && window.Hls.isSupported && window.Hls.isSupported()) {
           iniciarHls(id, url, t);
