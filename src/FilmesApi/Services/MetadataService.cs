@@ -74,11 +74,11 @@ public class MetadataService : BackgroundService
     }
 
     /// <summary>Chave de override de um item: título de busca normalizado (e, p/ episódio, também o nome da série).</summary>
-    internal static IEnumerable<string> ChavesDeOverride(string? arquivoPath, string? tituloFallback)
+    internal static IEnumerable<string> ChavesDeOverride(string? arquivoPath, string? tituloFallback, IReadOnlyDictionary<string, int>? numerados = null)
     {
         var (titulo, _) = MediaNomeParser.TituloParaBusca(arquivoPath, tituloFallback);
         if (!string.IsNullOrWhiteSpace(titulo)) yield return MediaNomeParser.NormalizarBusca(titulo);
-        if (MediaNomeParser.EhEpisodio(arquivoPath))
+        if (MediaNomeParser.EhEpisodio(arquivoPath, numerados))
         {
             var s = MediaNomeParser.ChaveSerie(arquivoPath);
             if (!string.IsNullOrWhiteSpace(s)) yield return MediaNomeParser.NormalizarBusca(s);
@@ -89,16 +89,16 @@ public class MetadataService : BackgroundService
     }
 
     /// <summary>Override vigente do item, se houver.</summary>
-    internal static int? OverrideDe(IReadOnlyDictionary<string, int> overrides, string? arquivoPath, string? tituloFallback)
+    internal static int? OverrideDe(IReadOnlyDictionary<string, int> overrides, string? arquivoPath, string? tituloFallback, IReadOnlyDictionary<string, int>? numerados = null)
     {
         if (overrides.Count == 0) return null;
-        foreach (var k in ChavesDeOverride(arquivoPath, tituloFallback))
+        foreach (var k in ChavesDeOverride(arquivoPath, tituloFallback, numerados))
             if (overrides.TryGetValue(k, out var id)) return id;
         return null;
     }
 
     /// <summary>Re-enriquece só os itens cujo override de tmdbId é novo (ou mudou): zera o <c>MetadadosEm</c> deles.</summary>
-    private async Task InvalidarOverridesNovosAsync(AppDbContext db, CancellationToken ct)
+    private async Task InvalidarOverridesNovosAsync(AppDbContext db, IReadOnlyDictionary<string, int> numerados, CancellationToken ct)
     {
         var overrides = _nomes?.TmdbOverrides;
         if (!_overridesSujos) return;   // nenhum override novo desde a última conferência: não relê o catálogo inteiro a cada lote
@@ -109,7 +109,7 @@ public class MetadataService : BackgroundService
         var invalidados = 0;
         foreach (var f in candidatos)
         {
-            if (OverrideDe(overrides, f.ArquivoPath, f.Titulo) is not int id || f.TmdbId == id) continue;
+            if (OverrideDe(overrides, f.ArquivoPath, f.Titulo, numerados) is not int id || f.TmdbId == id) continue;
             if (!_overridesAplicados.Add($"{f.Id}|{id}")) continue;
             f.MetadadosEm = null;
             invalidados++;
@@ -125,13 +125,13 @@ public class MetadataService : BackgroundService
 
     /// <summary>Uma vez por execução: filme já enriquecido cujo título ficou em japonês/coreano/etc. (de antes de o serviço buscar a
     /// tradução em português) volta pro enriquecimento, que agora troca pelo título em português.</summary>
-    private async Task ReenriquecerTitulosNaoLatinosAsync(AppDbContext db, CancellationToken ct)
+    private async Task ReenriquecerTitulosNaoLatinosAsync(AppDbContext db, IReadOnlyDictionary<string, int> numerados, CancellationToken ct)
     {
         if (_varreuNaoLatinos || !_tmdb.Habilitado) return;
         _varreuNaoLatinos = true;
 
         var candidatos = await db.Filmes.Where(f => f.ArquivoPath != null && f.MetadadosEm != null).ToListAsync(ct);
-        var voltam = candidatos.Where(f => TmdbService.TemEscritaNaoLatina(f.Titulo) && !MediaNomeParser.EhEpisodio(f.ArquivoPath)).ToList();
+        var voltam = candidatos.Where(f => TmdbService.TemEscritaNaoLatina(f.Titulo) && !MediaNomeParser.EhEpisodio(f.ArquivoPath, numerados)).ToList();
         if (voltam.Count == 0) return;
         foreach (var f in voltam) f.MetadadosEm = null;
         await db.SaveChangesAsync(ct);
@@ -141,13 +141,13 @@ public class MetadataService : BackgroundService
     private bool _varreuSeries;
 
     /// <summary>Uma vez por execução: episódio já enriquecido antes de o serviço guardar o nome da série no TMDB volta pro enriquecimento.</summary>
-    private async Task ReenriquecerSeriesSemNomeAsync(AppDbContext db, CancellationToken ct)
+    private async Task ReenriquecerSeriesSemNomeAsync(AppDbContext db, IReadOnlyDictionary<string, int> numerados, CancellationToken ct)
     {
         if (_varreuSeries || !_tmdb.Habilitado) return;
         _varreuSeries = true;
 
         var candidatos = await db.Filmes.Where(f => f.ArquivoPath != null && f.MetadadosEm != null && f.SerieTitulo == null).ToListAsync(ct);
-        var voltam = candidatos.Where(f => MediaNomeParser.EhEpisodio(f.ArquivoPath)).ToList();
+        var voltam = candidatos.Where(f => MediaNomeParser.EhEpisodio(f.ArquivoPath, numerados)).ToList();
         if (voltam.Count == 0) return;
         foreach (var f in voltam) f.MetadadosEm = null;
         await db.SaveChangesAsync(ct);
@@ -156,13 +156,13 @@ public class MetadataService : BackgroundService
 
     /// <summary>Uma vez por execução: episódio que passou pelo enriquecimento SEM match (ex.: novela buscada pelo nome do arquivo) volta pra fila — agora
     /// o match é por série. Filme sem match não volta (nada mudou pra ele).</summary>
-    private async Task ReenriquecerEpisodiosSemMatchAsync(AppDbContext db, CancellationToken ct)
+    private async Task ReenriquecerEpisodiosSemMatchAsync(AppDbContext db, IReadOnlyDictionary<string, int> numerados, CancellationToken ct)
     {
         if (_varreuSemMatch || !_tmdb.Habilitado) return;
         _varreuSemMatch = true;
 
         var candidatos = await db.Filmes.Where(f => f.ArquivoPath != null && f.MetadadosEm != null && f.TmdbId == null).ToListAsync(ct);
-        var voltam = candidatos.Where(f => MediaNomeParser.EhEpisodio(f.ArquivoPath)).ToList();
+        var voltam = candidatos.Where(f => MediaNomeParser.EhEpisodio(f.ArquivoPath, numerados)).ToList();
         if (voltam.Count == 0) return;
         foreach (var f in voltam) f.MetadadosEm = null;
         await db.SaveChangesAsync(ct);
@@ -241,10 +241,12 @@ public class MetadataService : BackgroundService
         using var escopo = _escopos.CreateScope();
         var db = escopo.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        await InvalidarOverridesNovosAsync(db, ct);
-        await ReenriquecerTitulosNaoLatinosAsync(db, ct);
-        await ReenriquecerSeriesSemNomeAsync(db, ct);
-        await ReenriquecerEpisodiosSemMatchAsync(db, ct);
+        // a mesma conta da grade: pasta de antologia sem SxxExx ("13- Pingu e a gaivota", "36 Fusao Fria") conta como série aqui também
+        var numerados = MediaNomeParser.ContarNumeradosPorPasta(await db.Filmes.Select(f => f.ArquivoPath).ToListAsync(ct));
+        await InvalidarOverridesNovosAsync(db, numerados, ct);
+        await ReenriquecerTitulosNaoLatinosAsync(db, numerados, ct);
+        await ReenriquecerSeriesSemNomeAsync(db, numerados, ct);
+        await ReenriquecerEpisodiosSemMatchAsync(db, numerados, ct);
 
         var pendentes = await db.Filmes
             .Where(f => f.MetadadosEm == null && f.ArquivoPath != null)
@@ -260,8 +262,8 @@ public class MetadataService : BackgroundService
         foreach (var filme in pendentes)
         {
             var (titulo, ano) = MediaNomeParser.TituloParaBusca(filme.ArquivoPath, filme.Titulo);
-            var serie = MediaNomeParser.EhEpisodio(filme.ArquivoPath);
-            var overrideId = OverrideDe(_nomes?.TmdbOverrides ?? new Dictionary<string, int>(), filme.ArquivoPath, filme.Titulo);
+            var serie = MediaNomeParser.EhEpisodio(filme.ArquivoPath, numerados);
+            var overrideId = OverrideDe(_nomes?.TmdbOverrides ?? new Dictionary<string, int>(), filme.ArquivoPath, filme.Titulo, numerados);
             var chave = overrideId is int oid ? $"{(serie ? "tv" : "mv")}|#{oid}" : $"{(serie ? "tv" : "mv")}|{titulo}|{ano}";
 
             if (!cache.TryGetValue(chave, out var res))

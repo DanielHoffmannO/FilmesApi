@@ -269,6 +269,11 @@ public static partial class MediaNomeParser
     public static bool EhEpisodio(string? arquivoPath, int arquivosNumeradosNaPasta = 0) =>
         OrdemEpisodio(arquivoPath, arquivosNumeradosNaPasta) is not null;
 
+    /// <summary>Mesmo veredito da grade: usa a contagem de numerados por pasta do catálogo inteiro
+    /// (<see cref="ContarNumeradosPorPasta"/>), então uma antologia sem SxxExx ("13- Pingu e a gaivota") é episódio.</summary>
+    public static bool EhEpisodio(string? arquivoPath, IReadOnlyDictionary<string, int>? contagemNumeradosPorPasta) =>
+        EhEpisodio(arquivoPath, contagemNumeradosPorPasta?.GetValueOrDefault(PastaDe(arquivoPath)) ?? 0);
+
     /// <summary>(temporada, episódio) do arquivo, ou null se não é episódio. Ordem de sinal:
     /// SxxExx / NxNN no nome &gt; "Episódio N" no nome &gt; número solto no nome QUANDO a pasta
     /// diz a temporada (senão seria falso-positivo com pasta de filmes numerados) &gt; número
