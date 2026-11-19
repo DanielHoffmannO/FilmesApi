@@ -173,8 +173,8 @@ public static partial class MediaNomeParser
     // propósito. Só é consultado quando ContarNumeradosPorPasta já garantiu que a pasta tem
     // MUITOS arquivos assim (ver MinArquivosAntologia); fora desse contexto controlado, um
     // filme comum cujo título começa com número ("12 Homens e uma Sentença") daria falso
-    // positivo fácil demais.
-    [GeneratedRegex(@"^\s*([0-9]{1,3})(?:\s*-\s*|\s+)\S", RegexOptions.CultureInvariant)]
+    // positivo fácil demais. "11e 12 O Reparador…" (episódio duplo) conta como o 11.
+    [GeneratedRegex(@"^\s*([0-9]{1,3})(?:\s*e\s*[0-9]{1,3})?(?:\s*-\s*|\s+)\S", RegexOptions.CultureInvariant)]
     private static partial Regex ReEpNumeroAntologia();
 
     // Novela = tudo que mora numa pasta de 1º nível "novelas" (ou "novela"). Dentro dela, o nome do arquivo costuma ser
