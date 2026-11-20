@@ -200,3 +200,10 @@ body.embed .embed-capa.off{display:none}
 .ir button:active{background:var(--line)}
 .ir-dpad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:260px;margin:0 auto;width:100%}
 .ir-dpad button.ok{font-weight:650}
+.ir-power{min-height:52px;font-weight:600;background:#5a2024!important}
+.ir .rot small{text-transform:none;letter-spacing:0;font-weight:400}
+.ir .rot{margin:6px 0 0}
+.ir-dica{color:var(--mut);font-size:12.5px;line-height:1.4;margin:0}
+.irpill{height:34px;padding:0 12px;border-radius:17px;background:var(--s2);color:var(--acc-txt);font-weight:650;font-size:13px;border:1px solid var(--line)}
+.irpill[hidden]{display:none}
+#irFolha .sub{white-space:normal}

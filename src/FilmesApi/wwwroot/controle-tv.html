@@ -25,7 +25,7 @@
   <span data-ico="tv"></span><b>A TV está parada</b>
   <span>Escolha um título na biblioteca e toque em "Enviar para a TV".</span>
   <button onclick="abrirFila()">Ver "tocar a seguir"</button>
-  <button class="irbtn" onclick="abrirIr()" hidden>Teclas da TV (IR)</button>
+  <button class="irbtn" onclick="abrirIr()" hidden>📺 Controle da TV (liga/desliga, volume, setas)</button>
   <button onclick="fecharEmbed()">Voltar à biblioteca</button>
 </div>
 
@@ -59,26 +59,35 @@
 <div class="folha-scrim" id="irScrim" onclick="fecharIr()"></div>
 <div class="folha" id="irFolha" role="dialog" aria-modal="true" aria-labelledby="irTitulo" tabindex="-1">
   <div class="alca"></div>
-  <h2 id="irTitulo">Teclas da TV</h2>
-  <div class="sub">Infravermelho. A TV pode não reagir (o IR não avisa).</div>
+  <h2 id="irTitulo">Controle da TV (infravermelho)</h2>
+  <div class="sub">Comandos da própria TV Samsung — não mexem no player. O IR não avisa se a TV obedeceu.</div>
   <div class="ir">
+    <button class="ir-power" data-tecla="energia" aria-label="Ligar ou desligar a TV">Ligar / desligar a TV</button>
+
+    <div class="rot">Entrada e apps da TV</div>
     <div class="ir-linha">
-      <button data-tecla="energia" aria-label="Ligar ou desligar">⏻</button>
       <button data-tecla="fonte">Fonte</button>
-      <button data-tecla="menu">Menu</button>
-      <button data-tecla="mudo" aria-label="Mudo">🔇</button>
+      <button data-tecla="menu">Menu / Smart Hub</button>
+      <button data-tecla="voltar">Voltar</button>
     </div>
+    <p class="ir-dica">Navegador e YouTube: a J5200 não tem tecla de app. Aperte <b>Menu</b> (abre o Smart Hub), escolha o app com as setas e confirme no <b>OK</b>.</p>
+
+    <div class="rot">Setas da TV</div>
     <div class="ir-dpad">
       <span></span><button data-tecla="cima" aria-label="Cima">▲</button><span></span>
       <button data-tecla="esquerda" aria-label="Esquerda">◀</button><button data-tecla="ok" class="ok">OK</button><button data-tecla="direita" aria-label="Direita">▶</button>
       <span></span><button data-tecla="baixo" aria-label="Baixo">▼</button><span></span>
     </div>
+
+    <div class="rot">Volume da TV <small>(não é o do player)</small></div>
     <div class="ir-linha">
-      <button data-tecla="voltar">Voltar</button>
+      <button data-tecla="vol-" aria-label="Volume da TV menos">TV Vol −</button>
+      <button data-tecla="mudo" aria-label="Mudo da TV">🔇 Mudo</button>
+      <button data-tecla="vol+" aria-label="Volume da TV mais">TV Vol +</button>
     </div>
+
+    <div class="rot">Canal</div>
     <div class="ir-linha">
-      <button data-tecla="vol-" aria-label="Volume menos">Vol −</button>
-      <button data-tecla="vol+" aria-label="Volume mais">Vol +</button>
       <button data-tecla="canal-" aria-label="Canal menos">Canal −</button>
       <button data-tecla="canal+" aria-label="Canal mais">Canal +</button>
     </div>
@@ -127,7 +136,7 @@
     <span data-ico="vol" style="margin-left:6px;display:grid"></span>
     <input type="range" class="vol" id="remoteVolume" min="0" max="1" step="0.05" oninput="remoteVolume(this.value)" aria-label="Volume">
     <button class="ib" id="remoteFilaBtn" onclick="abrirFila()" aria-label="Fila" style="position:relative;display:none"><span data-ico="fila" style="display:grid"></span><span class="fila-n" id="remoteFilaN"></span></button>
-    <button class="ib irbtn" onclick="abrirIr()" aria-label="Teclas da TV (IR)" data-ico="tv" hidden></button>
+    <button class="irbtn irpill" onclick="abrirIr()" aria-label="Abrir o controle da TV (infravermelho)" hidden>TV</button>
     <button class="ib" id="remoteSonoBtn" onclick="abrirSono()" aria-label="Dormir"></button>
     <button class="ib" onclick="remoteParar()" aria-label="Parar" data-ico="stop"></button>
   </div>
