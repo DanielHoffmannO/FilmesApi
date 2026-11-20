@@ -54,6 +54,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<LimpezaCacheServic
 builder.Services.AddSingleton<NomesPersonalizadosService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<NomesPersonalizadosService>());
 builder.Services.AddHttpClient();
+builder.Services.AddSingleton<TvIrService>();
 builder.Services.AddSingleton<TmdbService>();
 builder.Services.AddHostedService<MetadataService>();
 

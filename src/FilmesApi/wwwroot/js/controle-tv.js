@@ -889,6 +889,35 @@ async function pollRemote() {
   }
 }
 
+// ─── Teclas da TV por infravermelho (volume, canal, setas…): o servidor repassa ao painel; só aparece se o IR está configurado ───
+const folhaIrAberta = () => document.getElementById('irFolha').classList.contains('on');
+function abrirIr() {
+  document.getElementById('irScrim').classList.add('on');
+  const f = document.getElementById('irFolha');
+  f.classList.add('on');
+  f.focus({ preventScroll: true });
+}
+function fecharIr() {
+  document.getElementById('irScrim').classList.remove('on');
+  document.getElementById('irFolha').classList.remove('on');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && folhaIrAberta()) fecharIr(); });
+
+// "Enviado" não promete que a TV reagiu (o IR não devolve estado); o erro vem em português do servidor
+async function teclaIr(tecla) {
+  const r = await fetch('/api/tv/tecla', opcoesJson('POST', { tecla })).catch(() => null);
+  if (r && r.ok) { toast('Enviado: ' + tecla); return; }
+  const j = r ? await r.json().catch(() => null) : null;
+  toast((j && j.mensagem) || 'Não consegui falar com o servidor.');
+}
+document.getElementById('irFolha').addEventListener('click', e => {
+  const b = e.target.closest('[data-tecla]');
+  if (b) teclaIr(b.dataset.tecla);
+});
+fetchJsonOuNull('/api/tv/teclas').then(j => {
+  if (j && j.configurado) document.querySelectorAll('.irbtn').forEach(b => { b.hidden = false; });
+});
+
 if (EMBED) {
   // ?serie=chave&nome=…: aberto pela ficha da série do index — os padrões dessa série (vale também com a TV parada)
   carregarPadroes().then(() => {

@@ -415,6 +415,7 @@ usam `__` (ex.: `ConnectionStrings__Default`).
 | `CacheFixadoMaxGB` | `40` | Teto de GB das cópias "Manter no cache" prontas no NVMe (o fixado nunca é expulso; só se prepara o que cabe). `0` = ilimitado. |
 | `CacheFixadoGbPorRodada` | `5` | Quanto o servidor grava, no máximo, por rodada de preparo (uma cópia de cada vez, só com o servidor ocioso). `0` = sem limite. |
 | `CacheFixadoIntervaloSegundos` / `CacheFixadoAtrasoInicialSegundos` | `60` / `90` | Intervalo das rodadas de preparo e atraso depois do boot. Intervalo `0` desliga o preparo. |
+| `PainelIrUrl` · `PainelIrId` | _(vazio: desligado)_ | Controle IR da TV: URL do gateway do PainelServer (ex.: `http://192.168.0.122:5001`) e id do hub IR. Sem eles os botões "Teclas da TV" não aparecem. |
 | `CacheSeguirJanela` | `5` | "Seguir no cache": quantos episódios não assistidos à frente ficam prontos (por série seguida; vale de 1 a 30). |
 | `CacheSeguirLiberaAposHoras` | `24` | Quanto tempo um episódio assistido de série seguida continua protegido no cache; depois vira cache comum. |
 | `PreAquecerContinuarMinutos` | `5` | De quanto em quanto tempo o servidor confere os **3 primeiros da fila do controle** (`/api/filmes/fila`) e, se um precisa de remux, **já deixa o remux pronto**, um por conferência (ver abaixo). `0` desliga. |
@@ -465,6 +466,8 @@ filmes ainda sem metadados (roda ~30s depois do boot e reprocessa a cada scan).
 | `POST` | `/api/cache/fixar` · `/api/cache/desafixar` | `{ids:[…]}` (1 a 500): marca/desmarca "Manter no cache". |
 | `POST` | `/api/cache/limpar` | Apaga o cache de reprodução que não está protegido (fixados e séries seguidas ficam). |
 | `GET` · `POST` · `DELETE` | `/api/cache/serie` | "Seguir no cache": lista as seguidas · `{chave, janela?}` segue (404 se a série não existe) · `?chave=` para de seguir. |
+| `GET` | `/api/tv/teclas` | Teclas IR aceitas (lista fechada de 14) e se o IR está configurado (`configurado`). |
+| `POST` | `/api/tv/tecla` | `{tecla}` → o servidor manda ao painel (`POST {PainelIrUrl}/api/ir`, `X-Painel: 1`, sem Origin), timeout 8 s. `enviado` não promete que a TV reagiu; erros voltam em português (400/429/502/503/504). |
 | `GET` | `/api/filmes/{id}` | Detalhes de um filme. |
 | `PUT` | `/api/filmes/{id}/assistido` | Alterna "assistido". |
 | `GET` | `/api/filmes/diagnostico` | O que o catálogo tem de estranho: **episódios faltando** (buraco entre o 1 e o maior número da temporada; arquivo duplo conta como 2), **episódio em 2+ arquivos** (com o tamanho de cada), **série com 1 só episódio**, **arquivo solto na raiz que parece episódio** e **vídeo suspeito de propaganda** (< 60 MB com nome de uploader — 1XBET, BLUDV, COMANDOTORRENTS, LAPUMIA — ou "Sample") e **sugestoesDeNomes** (mesma série sob dois nomes, nome de exibição todo em maiúsculas/minúsculas). A página `/diagnostico.html` desenha isso (🩺 no cabeçalho do catálogo). |

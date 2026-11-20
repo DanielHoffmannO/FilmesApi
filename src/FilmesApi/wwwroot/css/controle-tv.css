@@ -191,3 +191,12 @@ body.embed .embed-ocioso.on{display:flex}
 .embed-ocioso b{color:var(--txt);font-size:16px}
 .embed-ocioso button{height:48px;padding:0 22px;border-radius:24px;background:var(--s2);border:1px solid var(--line);color:var(--txt);font-size:15px}
 body.embed .embed-capa.off{display:none}
+
+/* Teclas da TV por IR */
+.irbtn[hidden]{display:none}
+.ir{display:grid;gap:10px;margin-top:12px}
+.ir-linha{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:8px}
+.ir button{min-height:48px;border-radius:10px;background:var(--s3);color:#fff;font-size:15px}
+.ir button:active{background:var(--line)}
+.ir-dpad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:260px;margin:0 auto;width:100%}
+.ir-dpad button.ok{font-weight:650}
