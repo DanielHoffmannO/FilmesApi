@@ -903,16 +903,19 @@ function fecharIr() {
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && folhaIrAberta()) fecharIr(); });
 
-// "Enviado" não promete que a TV reagiu (o IR não devolve estado); o erro vem em português do servidor
+// "Enviado" não promete que a TV reagiu (o IR não devolve estado): só erro aparece em toast; o toque dá feedback visual e vibração curta
 async function teclaIr(tecla) {
   const r = await fetch('/api/tv/tecla', opcoesJson('POST', { tecla })).catch(() => null);
-  if (r && r.ok) { toast('Enviado: ' + tecla); return; }
+  if (r && r.ok) return;
   const j = r ? await r.json().catch(() => null) : null;
   toast((j && j.mensagem) || 'Não consegui falar com o servidor.');
 }
 document.getElementById('irFolha').addEventListener('click', e => {
   const b = e.target.closest('[data-tecla]');
-  if (b) teclaIr(b.dataset.tecla);
+  if (!b) return;
+  b.classList.add('tocou'); setTimeout(() => b.classList.remove('tocou'), 160);
+  try { if (navigator.vibrate) navigator.vibrate(15); } catch { /* sem vibração */ }
+  teclaIr(b.dataset.tecla);
 });
 fetchJsonOuNull('/api/tv/teclas').then(j => {
   if (j && j.configurado) document.querySelectorAll('.irbtn').forEach(b => { b.hidden = false; });

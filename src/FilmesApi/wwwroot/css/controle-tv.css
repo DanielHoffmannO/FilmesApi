@@ -192,18 +192,40 @@ body.embed .embed-ocioso.on{display:flex}
 .embed-ocioso button{height:48px;padding:0 22px;border-radius:24px;background:var(--s2);border:1px solid var(--line);color:var(--txt);font-size:15px}
 body.embed .embed-capa.off{display:none}
 
-/* Teclas da TV por IR */
+/* Controle remoto da TV (IR): coluna estreita, botões redondos com ícone */
 .irbtn[hidden]{display:none}
-.ir{display:grid;gap:10px;margin-top:12px}
-.ir-linha{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:8px}
-.ir button{min-height:48px;border-radius:10px;background:var(--s3);color:#fff;font-size:15px}
-.ir button:active{background:var(--line)}
-.ir-dpad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:260px;margin:0 auto;width:100%}
-.ir-dpad button.ok{font-weight:650}
-.ir-power{min-height:52px;font-weight:600;background:#5a2024!important}
-.ir .rot small{text-transform:none;letter-spacing:0;font-weight:400}
-.ir .rot{margin:6px 0 0}
-.ir-dica{color:var(--mut);font-size:12.5px;line-height:1.4;margin:0}
 .irpill{height:34px;padding:0 12px;border-radius:17px;background:var(--s2);color:var(--acc-txt);font-weight:650;font-size:13px;border:1px solid var(--line)}
-.irpill[hidden]{display:none}
-#irFolha .sub{white-space:normal}
+.ir-rotulo{text-align:center;font-size:10.5px;letter-spacing:.2em;color:var(--mut2);font-weight:650;margin:2px 0 8px}
+.ir{display:grid;gap:18px;max-width:300px;margin:0 auto;justify-items:center}
+.ir button{display:grid;place-items:center;color:var(--txt);background:var(--s3);border:1px solid var(--line);transition:transform .08s,background .12s,box-shadow .12s;-webkit-tap-highlight-color:transparent}
+.ir button svg{width:24px;height:24px}
+.ir button:active,.ir button.tocou{transform:scale(.92);background:#303030;box-shadow:0 0 0 3px var(--acc-soft)}
+.ir-power{width:60px;height:60px;border-radius:50%;background:var(--acc)!important;border-color:transparent!important}
+.ir-power svg{width:28px;height:28px}
+.ir-power:active,.ir-power.tocou{box-shadow:0 0 0 5px rgba(229,9,20,.3)!important}
+.ir-funcs{display:flex;justify-content:space-between;width:100%}
+.ir-funcs button{width:56px;height:56px;border-radius:50%}
+.ir-dpad{position:relative;width:216px;height:216px;border-radius:50%;background:var(--s2);border:1px solid var(--line)}
+.ir-dpad button{position:absolute;width:64px;height:64px;border-radius:50%;background:transparent;border-color:transparent}
+.ir-dpad .d-c{top:6px;left:76px}.ir-dpad .d-b{bottom:6px;left:76px}
+.ir-dpad .d-e{left:6px;top:76px}.ir-dpad .d-d{right:6px;top:76px}
+.ir-dpad .d-ok{left:68px;top:68px;width:80px;height:80px;background:var(--s3);border-color:var(--line);font-weight:650;font-size:15px;letter-spacing:.06em}
+.ir-dpad button svg{width:28px;height:28px}
+.ir-baixo{display:flex;align-items:center;justify-content:space-between;width:100%;padding:0 4px}
+.ir-pilula{display:grid;grid-template-rows:1fr auto 1fr;width:64px;height:156px;border-radius:32px;background:var(--s2);border:1px solid var(--line);overflow:hidden}
+.ir-pilula button{background:transparent;border:0;border-radius:0}
+.ir-pilula i{display:grid;place-items:center;color:var(--mut)}
+.ir-pilula i svg{width:20px;height:20px}
+.ir-mudo{width:56px;height:56px;border-radius:50%}
+/* paisagem curta: duas colunas (liga/funções/direcional à esquerda, volume/mudo/canal à direita) */
+@media (orientation:landscape) and (max-height:520px){
+  .folha#irFolha{max-width:560px;padding-top:6px;padding-bottom:10px}
+  .ir-rotulo{display:none}
+  .ir{max-width:none;grid-template-columns:auto auto;grid-template-areas:"topo baixo" "funcs baixo" "dpad baixo";gap:6px 28px;justify-content:center;align-items:center}
+  .ir-topo{grid-area:topo}.ir-funcs{grid-area:funcs;width:240px}.ir-dpad{grid-area:dpad;width:150px;height:150px}
+  .ir-dpad button{width:46px;height:46px}.ir-dpad .d-c{top:3px;left:52px}.ir-dpad .d-b{bottom:3px;left:52px}.ir-dpad .d-e{left:3px;top:52px}.ir-dpad .d-d{right:3px;top:52px}
+  .ir-dpad .d-ok{left:44px;top:44px;width:62px;height:62px}
+  .ir-power{width:48px;height:48px}.ir-funcs button{width:48px;height:48px}.ir-pilula{height:120px!important}
+  .ir-baixo{grid-area:baixo;flex-direction:row;gap:10px;width:auto}
+  .ir-pilula{width:56px;height:96px;display:grid}
+}

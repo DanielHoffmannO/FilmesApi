@@ -25,7 +25,7 @@
   <span data-ico="tv"></span><b>A TV está parada</b>
   <span>Escolha um título na biblioteca e toque em "Enviar para a TV".</span>
   <button onclick="abrirFila()">Ver "tocar a seguir"</button>
-  <button class="irbtn" onclick="abrirIr()" hidden>📺 Controle da TV (liga/desliga, volume, setas)</button>
+  <button class="irbtn" onclick="abrirIr()" hidden>📺 Controle remoto da TV</button>
   <button onclick="fecharEmbed()">Voltar à biblioteca</button>
 </div>
 
@@ -57,42 +57,38 @@
 </div>
 
 <div class="folha-scrim" id="irScrim" onclick="fecharIr()"></div>
-<div class="folha" id="irFolha" role="dialog" aria-modal="true" aria-labelledby="irTitulo" tabindex="-1">
+<div class="folha" id="irFolha" role="dialog" aria-modal="true" aria-label="Controle da TV" tabindex="-1">
   <div class="alca"></div>
-  <h2 id="irTitulo">Controle da TV (infravermelho)</h2>
-  <div class="sub">Comandos da própria TV Samsung — não mexem no player. O IR não avisa se a TV obedeceu.</div>
+  <div class="ir-rotulo">TV</div>
   <div class="ir">
-    <button class="ir-power" data-tecla="energia" aria-label="Ligar ou desligar a TV">Ligar / desligar a TV</button>
-
-    <div class="rot">Entrada e apps da TV</div>
-    <div class="ir-linha">
-      <button data-tecla="smarthub" aria-label="Smart Hub"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg> Smart Hub</button>
+    <div class="ir-topo">
+      <button class="ir-power" data-tecla="energia" aria-label="Ligar ou desligar a TV" title="Ligar ou desligar a TV"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v8"/><path d="M6.3 6.6a8 8 0 1 0 11.4 0"/></svg></button>
     </div>
-    <div class="ir-linha">
-      <button data-tecla="fonte">Fonte</button>
-      <button data-tecla="menu">Menu (config)</button>
-      <button data-tecla="voltar">Voltar</button>
+    <div class="ir-funcs">
+      <button data-tecla="fonte" aria-label="Fonte" title="Fonte"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h11"/><path d="M11 8l4 4l-4 4"/><path d="M20 5v14"/></svg></button>
+      <button data-tecla="smarthub" aria-label="Smart Hub" title="Smart Hub"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg></button>
+      <button data-tecla="menu" aria-label="Menu (configurações)" title="Menu (configurações)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+      <button data-tecla="voltar" aria-label="Voltar" title="Voltar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
     </div>
-    <p class="ir-dica">Navegador e YouTube: a J5200 não tem tecla de app. Aperte <b>Smart Hub</b>, escolha o app com as setas e confirme no <b>OK</b>.</p>
-
-    <div class="rot">Setas da TV</div>
     <div class="ir-dpad">
-      <span></span><button data-tecla="cima" aria-label="Cima">▲</button><span></span>
-      <button data-tecla="esquerda" aria-label="Esquerda">◀</button><button data-tecla="ok" class="ok">OK</button><button data-tecla="direita" aria-label="Direita">▶</button>
-      <span></span><button data-tecla="baixo" aria-label="Baixo">▼</button><span></span>
+      <button class="d-c" data-tecla="cima" aria-label="Cima" title="Cima"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button>
+      <button class="d-e" data-tecla="esquerda" aria-label="Esquerda" title="Esquerda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>
+      <button class="d-ok" data-tecla="ok" aria-label="OK" title="OK">OK</button>
+      <button class="d-d" data-tecla="direita" aria-label="Direita" title="Direita"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+      <button class="d-b" data-tecla="baixo" aria-label="Baixo" title="Baixo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
     </div>
-
-    <div class="rot">Volume da TV <small>(não é o do player)</small></div>
-    <div class="ir-linha">
-      <button data-tecla="vol-" aria-label="Volume da TV menos">TV Vol −</button>
-      <button data-tecla="mudo" aria-label="Mudo da TV">🔇 Mudo</button>
-      <button data-tecla="vol+" aria-label="Volume da TV mais">TV Vol +</button>
-    </div>
-
-    <div class="rot">Canal</div>
-    <div class="ir-linha">
-      <button data-tecla="canal-" aria-label="Canal menos">Canal −</button>
-      <button data-tecla="canal+" aria-label="Canal mais">Canal +</button>
+    <div class="ir-baixo">
+      <div class="ir-pilula" role="group" aria-label="Volume da TV">
+        <button data-tecla="vol+" aria-label="Volume da TV mais" title="Volume da TV mais"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+        <i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15H4a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h2l3.5-4.5a.8.8 0 0 1 1.5.5v14a.8.8 0 0 1-1.5.5L6 15"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 6a9 9 0 0 1 0 12"/></svg></i>
+        <button data-tecla="vol-" aria-label="Volume da TV menos" title="Volume da TV menos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+      </div>
+      <button class="ir-mudo" data-tecla="mudo" aria-label="Mudo da TV" title="Mudo da TV"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15H4a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h2l3.5-4.5a.8.8 0 0 1 1.5.5v14a.8.8 0 0 1-1.5.5L6 15"/><path d="M16 9l5 6M21 9l-5 6"/></svg></button>
+      <div class="ir-pilula" role="group" aria-label="Canal">
+        <button data-tecla="canal+" aria-label="Canal mais" title="Canal mais"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+        <i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h9"/></svg></i>
+        <button data-tecla="canal-" aria-label="Canal menos" title="Canal menos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+      </div>
     </div>
   </div>
 </div>
