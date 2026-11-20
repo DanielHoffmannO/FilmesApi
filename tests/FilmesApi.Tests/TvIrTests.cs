@@ -35,7 +35,7 @@ public class TvIrTests
     private static Fabrica Ok() => new((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
 
     [Theory]
-    [InlineData("energia"), InlineData("vol+"), InlineData("vol-"), InlineData("canal+"), InlineData("ok"), InlineData("esquerda")]
+    [InlineData("energia"), InlineData("vol+"), InlineData("vol-"), InlineData("canal+"), InlineData("ok"), InlineData("esquerda"), InlineData("smarthub"), InlineData("smarthub2")]
     public async Task Tecla_valida_vai_ao_painel_com_id_da_config_X_Painel_e_sem_Origin(string tecla)
     {
         var f = Ok();
@@ -65,8 +65,8 @@ public class TvIrTests
     }
 
     [Fact]
-    public void Lista_fechada_tem_as_14_teclas_do_painel() =>
-        Assert.Equal(14, TvIrService.Teclas.Distinct().Count());
+    public void Lista_fechada_tem_as_16_teclas_do_painel() =>
+        Assert.Equal(16, TvIrService.Teclas.Distinct().Count());
 
     [Fact]
     public async Task Sem_configuracao_responde_503_amigavel_sem_chamar()

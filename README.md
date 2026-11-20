@@ -466,7 +466,7 @@ filmes ainda sem metadados (roda ~30s depois do boot e reprocessa a cada scan).
 | `POST` | `/api/cache/fixar` · `/api/cache/desafixar` | `{ids:[…]}` (1 a 500): marca/desmarca "Manter no cache". |
 | `POST` | `/api/cache/limpar` | Apaga o cache de reprodução que não está protegido (fixados e séries seguidas ficam). |
 | `GET` · `POST` · `DELETE` | `/api/cache/serie` | "Seguir no cache": lista as seguidas · `{chave, janela?}` segue (404 se a série não existe) · `?chave=` para de seguir. |
-| `GET` | `/api/tv/teclas` | Teclas IR aceitas (lista fechada de 14) e se o IR está configurado (`configurado`). |
+| `GET` | `/api/tv/teclas` | Teclas IR aceitas (lista fechada de 16, com `smarthub` e `smarthub2`) e se o IR está configurado (`configurado`). |
 | `POST` | `/api/tv/tecla` | `{tecla}` → o servidor manda ao painel (`POST {PainelIrUrl}/api/ir`, `X-Painel: 1`, sem Origin), timeout 8 s. `enviado` não promete que a TV reagiu; erros voltam em português (400/429/502/503/504). |
 | `GET` | `/api/filmes/{id}` | Detalhes de um filme. |
 | `PUT` | `/api/filmes/{id}/assistido` | Alterna "assistido". |

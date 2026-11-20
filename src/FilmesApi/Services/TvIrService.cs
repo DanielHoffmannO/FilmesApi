@@ -13,7 +13,7 @@ public record TvIrResultado(bool Enviado, int Status, string Mensagem);
 public class TvIrService(IHttpClientFactory http, IConfiguration config, ILogger<TvIrService> logger)
 {
     public static readonly IReadOnlyList<string> Teclas =
-        ["energia", "fonte", "menu", "voltar", "ok", "vol+", "vol-", "mudo", "canal+", "canal-", "cima", "baixo", "esquerda", "direita"];
+        ["energia", "fonte", "menu", "voltar", "ok", "vol+", "vol-", "mudo", "canal+", "canal-", "cima", "baixo", "esquerda", "direita", "smarthub", "smarthub2"];
 
     public TimeSpan Limite { get; init; } = TimeSpan.FromSeconds(8);
 
