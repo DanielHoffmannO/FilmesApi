@@ -221,21 +221,142 @@ async function enviarParaTv(id) {
 // Modo embutido: pede ao index.html (a página de fora) que feche a folha.
 function fecharEmbed(parou) { try { parent.postMessage({ tipo: 'fechar-controle', parou: !!parou }, location.origin); } catch (e) { /* sem pai: nada a fechar */ } }
 
-// Modo embutido: a capa (pôster, nome e sinopse) do que toca, ou o aviso de TV parada.
+// Modo embutido: a capa do que toca (pôster, nome, ficha da série, sinopse do episódio, lista de episódios da temporada) ou o aviso de TV parada.
+const serieNaCapa = { chave: null, temporada: null, info: undefined, pedido: 0, rolar: false };   // info: undefined = ainda não pedi, null = não há
+const durTxt = s => { const m = Math.round(s / 60); return m >= 60 ? Math.floor(m / 60) + ' h ' + (m % 60 ? pad2(m % 60) : '') : m + ' min'; };
+const dataBr = iso => { const d = new Date(iso + 'T12:00:00'); return isNaN(d) ? '' : d.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' }); };
+const decimalBr = n => String(n).replace('.', ',');
+
 function atualizarCapa() {
   if (!EMBED) return;
   const f = filmeAtualRemoto, capa = document.getElementById('embedCapa');
   document.getElementById('embedOcioso').classList.toggle('on', !f);
   capa.classList.toggle('off', !f);
-  if (!f) return;
+  if (!f) { serieNaCapa.chave = null; return; }
   const img = document.getElementById('capaImg');
   img.style.display = f.posterUrl ? '' : 'none';
-  if (f.posterUrl) img.src = pw(f.posterUrl, 500);
+  if (f.posterUrl) img.src = pw(f.posterUrl, 400);
   document.getElementById('capaTit').textContent = f.ehEpisodio && f.serie ? f.serie : f.titulo;
   document.getElementById('capaSub').textContent = f.ehEpisodio
     ? [f.temporada != null ? 'T' + f.temporada : '', codigoEp(f), f.tituloEpisodio].filter(Boolean).join(' · ')
     : [f.anoLancamento, f.tituloOriginal && f.tituloOriginal !== f.titulo ? f.tituloOriginal : ''].filter(Boolean).join(' · ');
-  document.getElementById('capaSin').textContent = f.sinopse || '';
+  const bloco = document.getElementById('serieBloco');
+  bloco.hidden = !(f.ehEpisodio && f.serieChave);
+  document.getElementById('capaMeta').innerHTML = '';
+  // filme (ou episódio sem lista): a sinopse que já temos; episódio: a dele chega com a lista, a da série fica em "Sobre a série"
+  document.getElementById('capaSinEp').textContent = f.ehEpisodio ? '' : (f.sinopse || '');
+  if (!bloco.hidden) abrirSerieNaCapa(f);
+}
+
+// Abriu um episódio: carrega a lista da temporada dele (sempre de novo: o "visto" muda) e, uma vez por série, a ficha do TMDB.
+function abrirSerieNaCapa(f) {
+  const trocouSerie = serieNaCapa.chave !== f.serieChave;
+  serieNaCapa.chave = f.serieChave;
+  serieNaCapa.temporada = f.temporada ?? 0;
+  serieNaCapa.rolar = true;
+  if (trocouSerie) {
+    serieNaCapa.info = undefined;
+    document.getElementById('capaTemps').innerHTML = '';
+    document.getElementById('capaSobreCorpo').innerHTML = '';
+    document.getElementById('capaSobre').open = false;
+    carregarInfoDaSerie(f);
+  } else desenharFichaDaSerie();
+  carregarEpisodiosDaCapa();
+}
+
+async function carregarInfoDaSerie(f) {
+  const chave = f.serieChave;
+  const info = await fetchJsonOuNull(`/api/series/${encodeURIComponent(chave)}/info`);
+  if (serieNaCapa.chave !== chave) return;
+  serieNaCapa.info = info;
+  desenharFichaDaSerie();
+}
+
+function desenharFichaDaSerie() {
+  const f = filmeAtualRemoto, i = serieNaCapa.info;
+  if (!f || !f.ehEpisodio) return;
+  const meta = [];
+  if (i) {
+    const l1 = [i.ano ? esc(String(i.ano)) : '', i.nota ? `<span class="nota">★ ${decimalBr(i.nota)}</span>` : '', i.situacao ? esc(i.situacao) : ''].filter(Boolean).join(' · ');
+    if (l1) meta.push(l1);
+    if (i.generos && i.generos.length) meta.push(esc(i.generos.slice(0, 3).join(' · ')));
+  }
+  document.getElementById('capaMeta').innerHTML = meta.join('<br>');
+  const corpo = [];
+  const sinopse = (i && i.sinopse) || f.sinopse;
+  if (sinopse) corpo.push(`<div>${esc(sinopse)}</div>`);
+  if (i) {
+    const tam = [i.temporadas ? i.temporadas + (i.temporadas === 1 ? ' temporada' : ' temporadas') : '', i.episodios ? i.episodios + ' episódios' : ''].filter(Boolean).join(' · ');
+    if (tam) corpo.push(`<div><span class="k">Tamanho</span>${esc(tam)}</div>`);
+    if (i.elenco && i.elenco.length) corpo.push(`<div><span class="k">Elenco</span>${esc(i.elenco.join(', '))}</div>`);
+    if (i.proximo && i.proximo.data) {
+      const ep = [i.proximo.temporada != null ? 'T' + i.proximo.temporada : '', i.proximo.episodio != null ? 'E' + pad2(i.proximo.episodio) : '', i.proximo.titulo].filter(Boolean).join(' · ');
+      corpo.push(`<div><span class="k">Próximo episódio</span>${esc(dataBr(i.proximo.data))}${ep ? ' — ' + esc(ep) : ''}</div>`);
+    }
+  }
+  document.getElementById('capaSobreCorpo').innerHTML = corpo.join('');
+  document.getElementById('capaSobre').hidden = !corpo.length;
+}
+
+function esqueletoDeEpisodios() {
+  document.getElementById('capaEps').innerHTML = '<div class="sk"></div>'.repeat(5);
+}
+
+async function carregarEpisodiosDaCapa() {
+  const { chave, temporada } = serieNaCapa, pedido = ++serieNaCapa.pedido;
+  esqueletoDeEpisodios();
+  const r = await fetchJsonOuNull(`/api/series/${encodeURIComponent(chave)}/temporada/${temporada}`);
+  if (pedido !== serieNaCapa.pedido) return;   // abriram outra temporada/episódio no meio
+  desenharEpisodiosDaCapa(r);
+}
+
+const ICO_VISTO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const ICO_TOCANDO = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
+
+function desenharEpisodiosDaCapa(r) {
+  const f = filmeAtualRemoto, el = document.getElementById('capaEps');
+  if (!r) { el.innerHTML = '<div class="vazio">Não consegui carregar os episódios.</div>'; return; }
+  const temps = document.getElementById('capaTemps');
+  temps.innerHTML = r.temporadas.length > 1
+    ? r.temporadas.map(t => `<button role="tab" aria-selected="${t.numero === r.temporada}" class="${t.numero === r.temporada ? 'on' : ''}" data-t="${t.numero}" aria-label="Temporada ${t.numero}">T${t.numero}</button>`).join('')
+    : '';
+  if (!r.episodios.length) { el.innerHTML = '<div class="vazio">Sem episódios nesta temporada.</div>'; return; }
+  el.innerHTML = r.episodios.map(e => {
+    const tocando = f && e.id === f.id, andamento = !e.assistido && e.posicaoSegundos && e.duracaoSegundos;
+    const sub = e.duracaoSegundos ? durTxt(e.duracaoSegundos) : '';
+    const rotulo = `Episódio ${e.episodio}${e.titulo ? ', ' + e.titulo : ''}${tocando ? ', tocando agora' : e.assistido ? ', já assistido' : ''}`;
+    return `<button class="e${tocando ? ' tc' : ''}${e.assistido ? ' vi' : ''}" data-id="${e.id}" aria-label="${esc(rotulo)}"${tocando ? ' aria-current="true"' : ''}>
+      <span class="n">${pad2(e.episodio)}</span>
+      <span class="tx"><b>${esc(e.titulo || 'Episódio ' + e.episodio)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</span>
+      <span class="st">${tocando ? ICO_TOCANDO : e.assistido ? ICO_VISTO : ''}</span>
+      ${andamento ? `<i class="ini" style="width:${Math.min(100, 100 * e.posicaoSegundos / e.duracaoSegundos)}%"></i>` : ''}
+    </button>`;
+  }).join('');
+  // sinopse do episódio que toca (a da série fica em "Sobre a série")
+  const atual = f && r.episodios.find(e => e.id === f.id);
+  document.getElementById('capaSinEp').textContent = (atual && atual.sinopse) || '';
+  if (serieNaCapa.rolar && r.temporada === f?.temporada) {
+    serieNaCapa.rolar = false;
+    const t = el.querySelector('.e.tc');
+    if (t) el.scrollTop = t.offsetTop - (el.clientHeight - t.offsetHeight) / 2;   // rola só a lista (o cabeçalho fica no lugar)
+  }
+  const sel = temps.querySelector('.on'); if (sel) temps.scrollLeft = sel.offsetLeft - (temps.clientWidth - sel.offsetWidth) / 2;
+}
+
+if (EMBED) {
+  document.getElementById('capaTemps').addEventListener('click', e => {
+    const b = e.target.closest('[data-t]');
+    if (!b || +b.dataset.t === serieNaCapa.temporada) return;
+    serieNaCapa.temporada = +b.dataset.t;
+    carregarEpisodiosDaCapa();
+  });
+  // tocar num episódio manda a TV pra ele (o mesmo caminho de "Enviar para a TV"); o destaque muda quando o estado da TV chega
+  document.getElementById('capaEps').addEventListener('click', e => {
+    const b = e.target.closest('[data-id]');
+    if (!b || b.classList.contains('tc')) return;
+    try { if (navigator.vibrate) navigator.vibrate(10); } catch { /* sem vibração */ }
+    enviarParaTv(+b.dataset.id);
+  });
 }
 
 // Padrões da série e interruptores da temporada: a lista os carrega junto do /tela; no modo embutido (sem lista) vêm daqui.

@@ -20,7 +20,18 @@
   <h1>Controle da TV</h1>
   <button class="ib" onclick="fecharEmbed()" aria-label="Fechar o controle" data-ico="close"></button>
 </div>
-<div class="embed-capa off" id="embedCapa"><img id="capaImg" alt=""><div class="ct"><b id="capaTit"></b><small id="capaSub"></small><p id="capaSin"></p></div></div>
+<div class="embed-capa off" id="embedCapa">
+  <div class="cab">
+    <img id="capaImg" alt="">
+    <div class="ct"><b id="capaTit"></b><small id="capaSub"></small><div class="meta" id="capaMeta"></div></div>
+  </div>
+  <p class="sinep" id="capaSinEp"></p>
+  <div id="serieBloco" hidden>
+    <div class="temps" id="capaTemps" role="tablist" aria-label="Temporadas"></div>
+    <div class="eps2" id="capaEps" aria-live="polite"></div>
+    <details class="sobre" id="capaSobre"><summary>Sobre a série</summary><div id="capaSobreCorpo"></div></details>
+  </div>
+</div>
 <div class="embed-ocioso" id="embedOcioso">
   <span data-ico="tv"></span><b>A TV está parada</b>
   <span>Escolha um título na biblioteca e toque em "Enviar para a TV".</span>
