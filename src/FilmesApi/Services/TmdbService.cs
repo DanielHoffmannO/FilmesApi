@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Caching.Memory;
 using System.Text.Json;
 
 namespace FilmesApi.Services;
@@ -27,6 +28,10 @@ public class TmdbService
         _lang = config.GetValue<string>("TmdbLanguage") ?? "pt-BR";
         _imgBase = (config.GetValue<string>("TmdbImageBase") ?? "https://image.tmdb.org/t/p/w342").TrimEnd('/');
     }
+
+    private readonly MemoryCache _detalhes = new(new MemoryCacheOptions { SizeLimit = 400 });
+    private static readonly TimeSpan ValidadeDosDetalhes = TimeSpan.FromHours(12);
+    private static readonly TimeSpan ValidadeDoFracasso = TimeSpan.FromMinutes(5);
 
     private volatile bool _chaveInvalida;
     public bool Habilitado => !string.IsNullOrWhiteSpace(_apiKey) && !_chaveInvalida;
@@ -88,6 +93,41 @@ public class TmdbService
 
         using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
         return await GarantirTituloLatinoAsync(ExtrairItem(doc.RootElement, serie, _imgBase), serie, ct);
+    }
+
+    /// <summary>Ficha da série pro controle (ano, nota, gêneros, situação, próximo episódio, elenco): <c>/tv/{id}?append_to_response=credits</c>.
+    /// Guardada 12 h (o fracasso, 5 min); <c>null</c> sem chave, sem rede ou id inexistente — a tela só não mostra a ficha.</summary>
+    public Task<SerieInfoTmdb?> SerieInfoAsync(int id, CancellationToken ct) =>
+        Detalhe($"tv|{id}", $"tv/{id}?append_to_response=credits", SerieInfoTmdbLeitor.Serie, ct);
+
+    /// <summary>Episódios de uma temporada (título, sinopse, duração aproximada): <c>/tv/{id}/season/{n}</c>. Mesmo cache e tolerância de <see cref="SerieInfoAsync"/>.</summary>
+    public Task<IReadOnlyList<EpisodioTmdb>?> TemporadaAsync(int id, int temporada, CancellationToken ct) =>
+        Detalhe($"tv|{id}|t{temporada}", $"tv/{id}/season/{temporada}", d => (IReadOnlyList<EpisodioTmdb>?)SerieInfoTmdbLeitor.Temporada(d), ct);
+
+    private async Task<T?> Detalhe<T>(string chave, string caminho, Func<JsonDocument, T?> ler, CancellationToken ct) where T : class
+    {
+        if (!Habilitado) return null;
+        if (_detalhes.TryGetValue(chave, out T? guardado)) return guardado;
+        T? res = null;
+        try
+        {
+            var url = $"https://api.themoviedb.org/3/{caminho}{(caminho.Contains('?') ? '&' : '?')}api_key={_apiKey}&language={Uri.EscapeDataString(_lang)}";
+            using var cli = _http.CreateClient();
+            cli.Timeout = TimeSpan.FromSeconds(8);
+            using var resp = await cli.GetAsync(url, ct);
+            if (resp.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden) { _chaveInvalida = true; return null; }
+            if (resp.IsSuccessStatusCode)
+            {
+                using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+                res = ler(doc);
+            }
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested && ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            _logger.LogInformation("TMDB: não consegui {Caminho} ({Erro}).", caminho.Split('?')[0], ex.GetType().Name);
+        }
+        _detalhes.Set(chave, res, new MemoryCacheEntryOptions { Size = 1, AbsoluteExpirationRelativeToNow = res is null ? ValidadeDoFracasso : ValidadeDosDetalhes });
+        return res;
     }
 
     /// <summary>Sem tradução pro português, o TMDB devolve o título original — que pode vir em japonês, coreano, cirílico etc.

@@ -7,7 +7,8 @@ namespace FilmesApi.Controllers;
 /// <summary>Preferências por série: idioma de áudio e legenda padrão, e por temporada o que liga sozinho (pular abertura, próximo episódio).</summary>
 [ApiController]
 [Route("api/series")]
-public class SeriesController(PreferenciasAudioService prefs, PreferenciasTemporadaService temporadas, AutomacaoDoPlayer automacao, PlayerStateService player) : ControllerBase
+public class SeriesController(PreferenciasAudioService prefs, PreferenciasTemporadaService temporadas, AutomacaoDoPlayer automacao, PlayerStateService player,
+    FilmeService filmes, TmdbService tmdb) : ControllerBase
 {
     /// <summary>Os dois padrões de uma vez, pro controle desenhar os chips: <c>{ chave: { audio, legenda } }</c> (null = automático).</summary>
     [HttpGet("padroes")]
@@ -54,4 +55,28 @@ public class SeriesController(PreferenciasAudioService prefs, PreferenciasTempor
         => prefs.DefinirIdiomaDaSerie(chave, req.Idioma)
             ? Ok(new SerieAudioResponse(prefs.IdiomaDaSerie(chave)))
             : BadRequest(new { mensagem = "idioma não reconhecido (use eng, por, spa, fra, deu, ita ou jpn)" });
+
+    /// <summary>Episódios de uma temporada pra lista do controle (número, título, duração, visto, em andamento) e as temporadas que existem.
+    /// Título, sinopse e duração aproximada do TMDB entram quando há; sem TMDB a lista segue só com o catálogo. 404 = série sem episódios.</summary>
+    [HttpGet("{chave}/temporada/{n:int}")]
+    public async Task<IActionResult> Episodios(string chave, int n, CancellationToken ct)
+    {
+        var eps = await filmes.EpisodiosDaSerieAsync(chave);
+        if (eps.Count == 0) return NotFound();
+        IReadOnlyList<EpisodioTmdb>? doTmdb = null;
+        if (tmdb.Habilitado && await filmes.TmdbIdDaSerieAsync([.. eps.Select(e => e.Id)]) is int id)
+            doTmdb = await tmdb.TemporadaAsync(id, n, ct);
+        return Ok(ListaDeEpisodios.Montar(eps, n, doTmdb));
+    }
+
+    /// <summary>Ficha da série (TMDB): ano, nota, gêneros, temporadas/episódios, situação, elenco principal e próximo episódio a sair.
+    /// 204 quando não há ficha (sem chave do TMDB, série sem id ou TMDB fora do ar) — a tela só não mostra.</summary>
+    [HttpGet("{chave}/info")]
+    public async Task<IActionResult> Info(string chave, CancellationToken ct)
+    {
+        if (!tmdb.Habilitado) return NoContent();
+        var eps = await filmes.EpisodiosDaSerieAsync(chave);
+        if (eps.Count == 0 || await filmes.TmdbIdDaSerieAsync([.. eps.Select(e => e.Id)]) is not int id) return NoContent();
+        return await tmdb.SerieInfoAsync(id, ct) is { } info ? Ok(info) : NoContent();
+    }
 }

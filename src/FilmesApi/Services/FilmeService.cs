@@ -120,6 +120,19 @@ public class FilmeService
     public async Task<FilmeResponse?> ObterAsync(int id) =>
         (await ListarAsync()).FirstOrDefault(f => f.Id == id);
 
+    /// <summary>Episódios (sem extras) de uma série, na ordem temporada/episódio — a lista do controle. Via <see cref="ListarAsync"/> pelo mesmo motivo de <see cref="ObterAsync"/>.</summary>
+    public async Task<List<FilmeResponse>> EpisodiosDaSerieAsync(string chave)
+    {
+        var eps = (await ListarAsync()).Where(f => f.EhEpisodio && !f.EhExtra && f.SerieChave == chave).ToList();
+        CatalogoAgrupador.OrdenarEpisodios(eps);
+        return eps;
+    }
+
+    /// <summary>O id do TMDB da série: o mais comum entre os episódios dela (a busca grava o mesmo em todos).</summary>
+    public async Task<int?> TmdbIdDaSerieAsync(IReadOnlyCollection<int> idsDosEpisodios) =>
+        (await _db.Filmes.AsNoTracking().Where(f => idsDosEpisodios.Contains(f.Id) && f.TmdbId != null).Select(f => f.TmdbId!.Value).ToListAsync())
+            .GroupBy(i => i).OrderByDescending(g => g.Count()).Select(g => (int?)g.Key).FirstOrDefault();
+
     /// <summary>Onde fica a abertura do episódio (segundos), ou null se não foi achada/analisada.</summary>
     public async Task<(double Inicio, double Fim)?> ObterAberturaAsync(int id)
     {
