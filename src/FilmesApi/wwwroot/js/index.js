@@ -171,16 +171,35 @@ function botaoCacheHtml(ids, modo) {
   if (!ids.length) return '';
   const lista = JSON.stringify(ids);
   if (modo === 'filme') return `<button onclick="fixarCache(${lista})">⬇ Manter no cache</button>`;
-  if (modo === 'filme-fixado') return `<button class="no-cache" onclick="desafixarCache(${lista})" aria-label="No cache: tocar para remover" title="Tocar para remover do cache">✔ No cache</button>`;
-  if (modo === 'serie') return `<button onclick="fixarCache(${lista})" title="Manter os ${ids.length} episódios não vistos no cache">⬇ Manter no cache <small>${ids.length}</small></button>`;
-  return `<button class="no-cache" onclick="desafixarCache(${lista})" aria-label="${ids.length} no cache: tocar para remover" title="Tocar para remover do cache">✔ No cache <small>${ids.length}</small></button>`;
+  return `<button class="no-cache" onclick="desafixarCache(${lista})" aria-label="No cache: tocar para remover" title="Tocar para remover do cache">✔ No cache</button>`;
 }
 
-// "Seguir no cache": o servidor mantém pronta a janela dos próximos episódios não assistidos da série (novela ou série) e a empurra conforme se assiste.
-function botaoSeguirHtml(chave) {
-  const s = cacheEst.seguidas.get(chave);
-  if (!s) return `<button onclick="seguirSerie('${attr(chave)}')" title="Mantém prontos no cache os próximos episódios não assistidos">👁 Seguir no cache</button>`;
-  return `<button class="no-cache" onclick="deixarDeSeguirSerie('${attr(chave)}')" aria-label="Seguindo: ${s.prontos} de ${s.janela.length} prontos. Tocar para parar" title="Tocar para parar de seguir">✔ Seguindo <small>${s.prontos}/${s.janela.length}</small></button>`;
+// Série/novela: UM botão "Manter no cache" — ligado, o servidor mantém pronta a janela dos próximos episódios não assistidos e a empurra
+// conforme se assiste ("Seguir"); desligado, só o rótulo. "Fixar todos os episódios de uma vez" fica no menu ⋯, com confirmação.
+let cacheMaisAberto = false;
+function botaoCacheSerieHtml(chave, idsNaoVistos, idsFixados) {
+  const s = cacheEst.seguidas.get(chave), c = attr(chave);
+  const principal = s
+    ? `<button class="no-cache" onclick="deixarDeSeguirSerie('${c}')" aria-pressed="true" aria-label="Manter no cache ligado: ${s.prontos} de ${s.janela.length} prontos. Tocar para desligar" title="Ligado. Tocar para desligar">⬇ Manter no cache <small>${s.preparando && s.prontos < s.janela.length ? 'preparando' : s.prontos + ' prontos'}</small></button>`
+    : `<button onclick="seguirSerie('${c}')" aria-pressed="false" title="Mantém prontos no cache os próximos episódios não assistidos">⬇ Manter no cache</button>`;
+  const menu = [];
+  if (idsNaoVistos.length) menu.push(`<button onclick="fixarSerieInteira(${JSON.stringify(idsNaoVistos)})">Fixar todos os ${idsNaoVistos.length} episódios</button>`);
+  if (idsFixados.length) menu.push(`<button onclick="desafixarCache(${JSON.stringify(idsFixados)})">Soltar os ${idsFixados.length} fixados</button>`);
+  if (!menu.length) return `<div class="cache-par">${principal}</div>`;
+  return `<div class="cache-par">${principal}<button class="mais" onclick="alternarCacheMais()" aria-expanded="${cacheMaisAberto}" aria-label="Mais opções do cache" title="Mais opções">⋯</button></div>`
+    + (cacheMaisAberto ? `<div class="cache-mais">${menu.join('')}</div>` : '');
+}
+function alternarCacheMais() { cacheMaisAberto = !cacheMaisAberto; if (fichaAberta) montarFicha(fichaAberta); }
+
+// Fixar a série inteira de propósito: confirma com o tamanho estimado e o teto (CacheFixadoMaxGB).
+async function fixarSerieInteira(ids) {
+  const prontos = [...cacheEst.itens.values()].filter(i => i.bytes > 0);
+  const porEpGb = prontos.length ? prontos.reduce((t, i) => t + i.bytes, 0) / prontos.length / 1073741824 : 0.6;   // sem amostra: ~0,6 GB por episódio
+  const total = (porEpGb * ids.length).toFixed(0);
+  const teto = cacheEst.tetoFixadoBytes ? `${Math.round(cacheEst.tetoFixadoBytes / 1073741824)} GB` : 'sem teto';
+  if (!confirm(`Fixar ${ids.length} episódios no cache?\nCerca de ${total} GB (estimativa), teto de ${teto}. O que não couber fica de fora.`)) return;
+  cacheMaisAberto = false;
+  await fixarCache(ids);
 }
 
 async function seguirSerie(chave) {
@@ -470,11 +489,10 @@ async function montarFicha(chave) {
     const alvo = emAndamento || proximo;
     const nomeAlvo = esc(codigoEpisodio(alvo) || alvo.rotulo || '');
     acoes = alvo ? `<button class="pri" onclick="enviarParaTv(${alvo.id})">📺 Enviar para a TV · ${nomeAlvo}</button>
-      <button onclick="play(${alvo.id})">${emAndamento ? '▶ Continuar aqui' : '▶ Assistir aqui'}</button>` : '';
+      <button class="cheio" onclick="play(${alvo.id})">${emAndamento ? '▶ Continuar aqui' : '▶ Assistir aqui'}</button>` : '';
     const idsNaoVistos = s.episodios.filter(e => !e.assistido && !e.ehExtra).map(e => e.id);
     const idsFixados = s.episodios.filter(e => cacheEst.itens.has(e.id)).map(e => e.id);
-    acoes += botaoCacheHtml(idsFixados.length ? idsFixados : idsNaoVistos, idsFixados.length ? 'serie-fixada' : 'serie');
-    acoes += botaoSeguirHtml(s.chave);
+    acoes += botaoCacheSerieHtml(s.chave, idsNaoVistos, idsFixados);
     corpo = corpoDaSerieHtml(s.episodios, '', f => rowHtml(f, true));   // padrões de áudio/legenda/abertura moram na folha do controle da TV (botão de ajustes da ficha)
     padroesDaSerie = { chave: s.chave, nome: s.nome };
   }
@@ -497,6 +515,7 @@ async function montarFicha(chave) {
 
 async function abrirFicha(chave) {
   fichaAberta = chave;
+  cacheMaisAberto = false;
   els.sheetBox.scrollTop = 0;
   await montarFicha(chave);
   els.sheet.classList.add('on');

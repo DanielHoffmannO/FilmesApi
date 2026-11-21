@@ -205,3 +205,9 @@ body.com-agora main{padding-bottom:calc(var(--h-nav) + var(--h-agora) + 16px + e
 #proximoBox .prox-acoes{display:flex;gap:8px;flex-wrap:wrap}
 #proximoBox .prox-acoes button{margin:0;flex:1 1 auto}
 .cfg-item small{color:var(--mut);font-size:12px;margin-left:6px}
+.acoes .cheio,.acoes .cache-par,.acoes .cache-mais{grid-column:1/-1}
+.cache-par{display:flex;gap:10px}
+.cache-par>button:first-child{flex:1}
+.acoes .cache-par .mais{flex:none;width:48px;padding:0;font-size:20px;color:var(--mut)}
+.acoes .cache-par .no-cache small{color:#7ddf8b;opacity:.85}
+.cache-mais{display:grid;gap:8px}
