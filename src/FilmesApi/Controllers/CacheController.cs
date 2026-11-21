@@ -35,6 +35,7 @@ public class CacheController(CacheFixadoService fixados, HlsTranscodeService tra
             remuxTetoBytes = TetoParaJson(transcode.TetoRemuxBytes),
             itens,
             seguidas = RetratoDasSeguidas(),
+            janelaPadrao = seguir.JanelaPadrao,   // quantos "Seguir" mantém prontos (CacheSeguirJanela): a ficha escreve o número real
         });
     }
 

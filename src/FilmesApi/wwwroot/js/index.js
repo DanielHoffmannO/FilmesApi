@@ -170,36 +170,34 @@ async function render() {
 function botaoCacheHtml(ids, modo) {
   if (!ids.length) return '';
   const lista = JSON.stringify(ids);
-  if (modo === 'filme') return `<button onclick="fixarCache(${lista})">⬇ Manter no cache</button>`;
-  return `<button class="no-cache" onclick="desafixarCache(${lista})" aria-label="No cache: tocar para remover" title="Tocar para remover do cache">✔ No cache</button>`;
+  if (modo === 'filme') return `<button onclick="fixarCache(${lista})" title="Guarda uma cópia deste filme no servidor">${ICONES.servidor} Manter no cache</button>`;
+  return `<button class="no-cache" onclick="desafixarCache(${lista})" aria-label="No cache do servidor: tocar para remover" title="Tocar para remover do cache do servidor">✔ No cache</button>`;
 }
 
-// Série/novela: UM botão "Manter no cache" — ligado, o servidor mantém pronta a janela dos próximos episódios não assistidos e a empurra
-// conforme se assiste ("Seguir"); desligado, só o rótulo. "Fixar todos os episódios de uma vez" fica no menu ⋯, com confirmação.
-let cacheMaisAberto = false;
-function botaoCacheSerieHtml(chave, idsNaoVistos, idsFixados) {
+// Série/novela: dois botões, cada um com a sua descrição. "Manter" copia TODOS os episódios não vistos pro servidor (NVMe); "Seguir" mantém só os próximos
+// (a janela) prontos e avança conforme se assiste. Os dois são "no servidor" — diferente do ⬇ Baixar, que é pro aparelho.
+const gbDoTeto = () => cacheEst.tetoFixadoBytes ? Math.round(cacheEst.tetoFixadoBytes / 1073741824) : 0;
+function linhaDoCache(botao, descricao) { return `<div class="cache-op">${botao}<small class="desc">${descricao}</small></div>`; }
+
+function botaoManterSerieHtml(idsNaoVistos, idsFixados) {
+  if (idsFixados.length) {
+    const prontos = idsFixados.filter(id => (cacheEst.itens.get(id) || {}).pronto).length;
+    const estado = prontos === idsFixados.length ? `${prontos} de ${idsFixados.length} prontos` : `${prontos} de ${idsFixados.length} prontos · preparando`;
+    return linhaDoCache(`<button class="no-cache" onclick="desafixarCache(${JSON.stringify(idsFixados)})" aria-pressed="true" aria-label="Manter no cache ligado: ${estado}. Tocar para soltar" title="Tocar para soltar do cache do servidor">${ICONES.servidor} Manter no cache <small>${idsFixados.length}</small></button>`, `No servidor: ${estado}`);
+  }
+  if (!idsNaoVistos.length) return '';
+  const teto = gbDoTeto();
+  return linhaDoCache(`<button onclick="fixarCache(${JSON.stringify(idsNaoVistos)})" aria-pressed="false" title="Guarda os ${idsNaoVistos.length} episódios não vistos no servidor">${ICONES.servidor} Manter no cache <small>${idsNaoVistos.length}</small></button>`,
+    `Guarda os ${idsNaoVistos.length} episódios não vistos no servidor${teto ? ` (até ${teto} GB)` : ''}`);
+}
+
+function botaoSeguirSerieHtml(chave) {
   const s = cacheEst.seguidas.get(chave), c = attr(chave);
-  const principal = s
-    ? `<button class="no-cache" onclick="deixarDeSeguirSerie('${c}')" aria-pressed="true" aria-label="Manter no cache ligado: ${s.prontos} de ${s.janela.length} prontos. Tocar para desligar" title="Ligado. Tocar para desligar">⬇ Manter no cache <small>${s.preparando && s.prontos < s.janela.length ? 'preparando' : s.prontos + ' prontos'}</small></button>`
-    : `<button onclick="seguirSerie('${c}')" aria-pressed="false" title="Mantém prontos no cache os próximos episódios não assistidos">⬇ Manter no cache</button>`;
-  const menu = [];
-  if (idsNaoVistos.length) menu.push(`<button onclick="fixarSerieInteira(${JSON.stringify(idsNaoVistos)})">Fixar todos os ${idsNaoVistos.length} episódios</button>`);
-  if (idsFixados.length) menu.push(`<button onclick="desafixarCache(${JSON.stringify(idsFixados)})">Soltar os ${idsFixados.length} fixados</button>`);
-  if (!menu.length) return `<div class="cache-par">${principal}</div>`;
-  return `<div class="cache-par">${principal}<button class="mais" onclick="alternarCacheMais()" aria-expanded="${cacheMaisAberto}" aria-label="Mais opções do cache" title="Mais opções">⋯</button></div>`
-    + (cacheMaisAberto ? `<div class="cache-mais">${menu.join('')}</div>` : '');
-}
-function alternarCacheMais() { cacheMaisAberto = !cacheMaisAberto; if (fichaAberta) montarFicha(fichaAberta); }
-
-// Fixar a série inteira de propósito: confirma com o tamanho estimado e o teto (CacheFixadoMaxGB).
-async function fixarSerieInteira(ids) {
-  const prontos = [...cacheEst.itens.values()].filter(i => i.bytes > 0);
-  const porEpGb = prontos.length ? prontos.reduce((t, i) => t + i.bytes, 0) / prontos.length / 1073741824 : 0.6;   // sem amostra: ~0,6 GB por episódio
-  const total = (porEpGb * ids.length).toFixed(0);
-  const teto = cacheEst.tetoFixadoBytes ? `${Math.round(cacheEst.tetoFixadoBytes / 1073741824)} GB` : 'sem teto';
-  if (!confirm(`Fixar ${ids.length} episódios no cache?\nCerca de ${total} GB (estimativa), teto de ${teto}. O que não couber fica de fora.`)) return;
-  cacheMaisAberto = false;
-  await fixarCache(ids);
+  if (!s) return linhaDoCache(`<button onclick="seguirSerie('${c}')" aria-pressed="false" title="Mantém os próximos episódios prontos no servidor">${ICONES.olho} Seguir no cache</button>`,
+    `Mantém os próximos ${cacheEst.janelaPadrao || 5} prontos no servidor e avança sozinho`);
+  const estado = s.preparando && s.prontos < s.janela.length ? `${s.prontos} de ${s.janela.length} prontos · preparando` : `${s.prontos} de ${s.janela.length} prontos`;
+  return linhaDoCache(`<button class="no-cache" onclick="deixarDeSeguirSerie('${c}')" aria-pressed="true" aria-label="Seguindo: ${estado}. Tocar para parar" title="Tocar para parar de seguir">${ICONES.olho} Seguindo <small>${s.prontos}/${s.janela.length}</small></button>`,
+    `${estado}; avança conforme você assiste`);
 }
 
 async function seguirSerie(chave) {
@@ -253,6 +251,8 @@ function trocarTokenDoScan() {
 }
 
 const ICONES = {
+  servidor: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>',
+  olho: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
   ajustes: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h8M16 6h4M4 12h2M10 12h10M4 18h12M20 18h0"/><circle cx="14" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>',
   ok: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5l10-10"/></svg>',
   vazio: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg>',
@@ -471,7 +471,7 @@ async function montarFicha(chave) {
       <button onclick="tocarASeguir(${f.id})">➕ Tocar a seguir</button>
       ${botaoCacheHtml([f.id], cacheDoFilme(f.id) ? 'filme-fixado' : 'filme')}
       <button onclick="toggleAssistido(${f.id})">${f.assistido ? '✓ Assistido' : 'Marcar como assistido'}</button>
-      <a href="/api/filmes/${f.id}/download" download title="Baixar o arquivo original" class="btn-baixar">⬇ Baixar</a>`;
+      <a href="/api/filmes/${f.id}/download" download title="Baixar o arquivo para este aparelho" aria-label="Baixar o arquivo para este aparelho" class="btn-baixar">⬇ Baixar</a>`;
   } else if (it.tipo === 'pasta') {
     const p = it.p, pst = p.itens.find(f => f.posterUrl);
     poster = pst && pst.posterUrl; titulo = p.nome; meta = `${p.itens.length} arquivos`;
@@ -492,7 +492,7 @@ async function montarFicha(chave) {
       <button class="cheio" onclick="play(${alvo.id})">${emAndamento ? '▶ Continuar aqui' : '▶ Assistir aqui'}</button>` : '';
     const idsNaoVistos = s.episodios.filter(e => !e.assistido && !e.ehExtra).map(e => e.id);
     const idsFixados = s.episodios.filter(e => cacheEst.itens.has(e.id)).map(e => e.id);
-    acoes += botaoCacheSerieHtml(s.chave, idsNaoVistos, idsFixados);
+    acoes += botaoManterSerieHtml(idsNaoVistos, idsFixados) + botaoSeguirSerieHtml(s.chave);
     corpo = corpoDaSerieHtml(s.episodios, '', f => rowHtml(f, true));   // padrões de áudio/legenda/abertura moram na folha do controle da TV (botão de ajustes da ficha)
     padroesDaSerie = { chave: s.chave, nome: s.nome };
   }
@@ -515,7 +515,6 @@ async function montarFicha(chave) {
 
 async function abrirFicha(chave) {
   fichaAberta = chave;
-  cacheMaisAberto = false;
   els.sheetBox.scrollTop = 0;
   await montarFicha(chave);
   els.sheet.classList.add('on');
@@ -607,7 +606,7 @@ function rowHtml(f, episodio) {
       <button class="rbtn" aria-label="Enviar para a TV" title="Enviar para a TV" onclick="event.stopPropagation(); enviarParaTv(${f.id})">${ICONES.tv}</button>
       <button class="rbtn" aria-label="Tocar a seguir na TV" title="Tocar a seguir" onclick="event.stopPropagation(); tocarASeguir(${f.id})">${ICONES.fila}</button>
       <button class="rbtn ck ${f.assistido ? 'on' : ''}" aria-pressed="${!!f.assistido}" aria-label="${f.assistido ? 'Assistido: desmarcar' : 'Marcar como assistido'}" title="${f.assistido ? 'Assistido' : 'Marcar como assistido'}" onclick="event.stopPropagation(); toggleAssistido(${f.id})">${f.assistido ? ICONES.ok : ICONES.vazio}</button>
-      <a class="baixar" href="/api/filmes/${f.id}/download" download title="Baixar o arquivo original" onclick="event.stopPropagation()">⬇</a>
+      <a class="baixar" href="/api/filmes/${f.id}/download" download title="Baixar o arquivo para este aparelho" aria-label="Baixar o arquivo para este aparelho" onclick="event.stopPropagation()">⬇</a>
       ${barraProgresso(f)}
     </div>`;
 }
